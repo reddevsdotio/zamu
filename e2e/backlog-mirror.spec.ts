@@ -1,17 +1,22 @@
 // Backlog.md mirror end to end, against a real Forgejo (e2e/forgejo.ts): a git connection, a project created from
 // Backlog.md with a custom status mapped by hand, the mirrored tasks in the list, board and task view, the native
-// fields filled from the files (labels, due date, blockers, parent) and read-only in the app, a push that
-// arrives through the webhook, a new webhook secret (Forgejo deliveries signed with the old one are refused), a
-// broken, a deleted and a restored file, the board refusing a status change, cycles and comments on a mirrored
-// task, the agent's zamu backlog commands and refused update, a name match in Edit mappings, detach, and deleting
-// the project.
+// fields filled from the files (labels, due date, blockers, parent) and read-only in the app, the work record
+// filled from the file (criteria, done items, plan, notes, summary) and read-only, a push that arrives through
+// the webhook, a new webhook secret (Forgejo deliveries signed with the old one are refused), a broken, a
+// deleted and a restored file, the board refusing a status change, cycles and comments on a mirrored task, the
+// agent's zamu backlog commands and refused update, a name match in Edit mappings, the switch to Zamu with one
+// open pull request in the check, `zamu backlog export` into a local git repository whose folder parses back
+// into the same tasks, and deleting the project.
 //
 // The tests build on each other, so they share one page and run in order. Forgejo starts in beforeAll and is
 // removed in afterAll. E2E_SKIP_BACKLOG=1 skips the spec; so does a missing Docker daemon.
 import { createHmac } from 'node:crypto';
+import { join } from 'node:path';
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
+import { parseBacklogFolder, taskWorkRecord } from '../packages/backlog-md/src/index';
 import { createCli, parseJson } from './cli';
 import { dockerAvailable, type Forgejo, fixtureFolder, readTree, startForgejo } from './forgejo';
+import { createGitRepo } from './git-repo';
 import { addAgent, admin, api, collectPageErrors, openNewProject, settle, signInAsAdmin } from './session';
 import { baseURL, forgejoAliases, mainStack } from './stack';
 
@@ -48,6 +53,7 @@ Alert when a merchant hits the rate limit.
 <!-- SECTION:DESCRIPTION:END -->
 `;
 
+const parentPath = 'backlog/tasks/pay-12 - Webhook-retries.md';
 const subtaskPath = 'backlog/tasks/pay-12.1 - Retry-backoff.md';
 const nestedPath = 'backlog/tasks/pay-12.1.2 - Backoff-jitter.md';
 const qaPath = 'backlog/tasks/pay-20 - Rate-limit-alerts.md';
@@ -57,9 +63,16 @@ interface TaskRef {
   title: string;
   status: string;
 }
+interface WorkItem {
+  number: number;
+  text: string;
+  state: string;
+  locked: boolean;
+}
 interface TaskShape {
   key: string;
   title: string;
+  description: string | null;
   status: string;
   priority: string;
   assignee: { name: string } | null;
@@ -74,6 +87,13 @@ interface TaskShape {
   blockedBy: (TaskRef | null)[];
   blocks: (TaskRef | null)[];
   blocked: boolean;
+  criteria?: WorkItem[];
+  doneItems?: WorkItem[];
+  plan?: string | null;
+  finalSummary?: string | null;
+}
+interface MirroredTask extends TaskShape {
+  backlog: { id: string; file: string | null; data: { implementationNotes?: string | null } } | null;
 }
 interface LabelShape {
   id: string;
@@ -461,6 +481,53 @@ test('labels, due date, blockers and parent come from the files and are read-onl
   expect(recoloured).toMatchObject({ name: 'alerts', color });
 });
 
+test('the work record comes from the file and is read-only', async () => {
+  // PAY-12's Acceptance Criteria, Definition of Done, plan, notes and summary sections fill the work record;
+  // the description keeps only the Description section (its fenced "## Acceptance Criteria" is content).
+  const parent = await api<MirroredTask>(page.request, 'GET', `/tasks/${project.key}-12`);
+  expect(
+    parent.criteria?.map(({ number, text, state, locked }) => ({ number, text, state, locked })),
+  ).toEqual([
+    { number: 1, text: 'Failed deliveries are retried', state: 'checked', locked: true },
+    { number: 2, text: 'Retries back off exponentially', state: 'open', locked: true },
+  ]);
+  expect(parent.doneItems?.map(({ text, state }) => ({ text, state }))).toEqual([
+    { text: 'Tests pass', state: 'open' },
+  ]);
+  expect(parent.plan).toBe('1. Add a retry queue.\n2. Schedule with backoff.');
+  // The fixture's "## Testing" section, which Backlog.md doesn't know, comes after the summary in the file.
+  expect(parent.finalSummary).toMatch(/^Retries ship behind a flag\./);
+  expect(parent.backlog?.data.implementationNotes).toBe('Queue lives in Redis.');
+  expect(parent.description).toContain('Retry failed webhook deliveries with backoff.');
+  expect(parent.description).not.toContain('## Acceptance criteria');
+  expect(parent.description).not.toContain('Retries back off exponentially');
+  expect(parent.description).not.toContain('## Implementation plan');
+
+  // Every work-record write is refused, notes too; ordinary comments still work (see below).
+  await expectMirroredRefusal(parent.key, { checkCriteria: [2] }, 'criteria');
+  await expectMirroredRefusal(parent.key, { addDoneItems: ['Docs updated'] }, 'doneItems');
+  await expectMirroredRefusal(parent.key, { plan: 'Another plan' }, 'plan');
+  await expectMirroredRefusal(parent.key, { finalSummary: null }, 'finalSummary');
+  const note = await page.request.post(`/api/v1/tasks/${parent.key}/comments`, {
+    data: { body: 'Backoff verified', kind: 'note' },
+  });
+  expect(note.status(), await note.text()).toBe(409);
+  expect(await note.json()).toMatchObject({ code: 'TASK_MIRRORED', field: 'notes', file: parentPath });
+
+  // The task view shows the lists read-only, with the file as their source.
+  await page.goto(`/p/${project.key}/${parent.key}`);
+  await settle(page);
+  const criteria = page.locator('[data-work-list="criterion"]');
+  await expect(criteria).toContainText('Retries back off exponentially');
+  await expect(criteria).toContainText('from the file');
+  await expect(criteria.getByRole('checkbox', { name: 'Retries back off exponentially' })).toHaveAttribute(
+    'aria-readonly',
+    'true',
+  );
+  await expect(page.locator('[data-work-list="done"]')).toContainText('Tests pass');
+  await expect(page.getByText('Retries ship behind a flag.')).toBeVisible();
+});
+
 test('webhook: a push shows up within seconds', async () => {
   await page.goto(`/p/${project.key}/settings/backlog?webhook=1`);
   await settle(page);
@@ -670,6 +737,17 @@ test('agent: zamu backlog status and refresh --wait; zamu refuses a mirrored fie
 
   const comment = cli.run(['comments', 'add', 'PAY-12.1.2', 'Jitter is in.', '--json']);
   expect(comment.code, comment.stdout + comment.stderr).toBe(0);
+
+  // The work record of a mirrored task is written in the file: notes and criteria exit 6 too.
+  const note = cli.run(['notes', 'add', 'PAY-12', 'Backoff verified']);
+  expect(note.code, note.stdout + note.stderr).toBe(6);
+  const check = cli.run(['tasks', 'update', 'PAY-12', '--check-ac', '2']);
+  expect(check.code, check.stdout + check.stderr).toBe(6);
+  expect(check.stderr).toContain('--check-ac 2');
+  // A project that still mirrors has no export: its files are the source.
+  const exported = cli.run(['backlog', 'export', '--project', project.key, '--dry-run', '--json']);
+  expect(exported.code, exported.stdout + exported.stderr).toBe(6);
+  expect(parseJson<{ code: string }>(exported, 'zamu.v1.error').code).toBe('PROJECT_MIRRORED');
 });
 
 test('Edit mappings: an agent added later matches the "No one" row of @codex by name', async () => {
@@ -715,19 +793,48 @@ test('the delete dialog of a mirrored project asks to remove the webhook too', a
   await expect(dialog).toBeHidden();
 });
 
-test('detach: every field is editable and new tasks continue the numbering', async () => {
+test('switch to Zamu: the check lists the open pull request; afterwards every field is editable', async () => {
+  // An open pull request that edits a task file: its edit would never arrive after the switch.
+  const pull = {
+    branch: 'agent/cap-jitter',
+    title: 'Cap the backoff jitter',
+    changes: {
+      [nestedPath]: (files[nestedPath] as string).replace('title: Backoff jitter', 'title: Capped jitter'),
+    },
+  };
+  const number = await forgejo.openPullRequest(repo, pull);
+
   await page.goto(`/p/${project.key}/settings/backlog`);
   await settle(page);
-  await page.getByRole('button', { name: 'Detach…' }).click();
+  await page.getByRole('button', { name: 'Switch to Zamu…' }).click();
   const dialog = page.getByRole('alertdialog');
-  await expect(
-    dialog.getByRole('heading', { name: `Detach ${project.name} from Backlog.md?` }),
-  ).toBeVisible();
-  await expect(dialog).toContainText(`New tasks continue at ${project.key}-22.`);
-  await dialog.getByLabel(`Type ${project.key} to confirm`).fill(project.key);
-  await dialog.getByRole('button', { name: 'Detach' }).click();
-  await expect(dialog).toBeHidden();
+  await expect(dialog.getByRole('heading', { name: `Switch ${project.name} to Zamu` })).toBeVisible();
+  const confirm = dialog.getByLabel(`Type ${project.key} to confirm`);
+  const submit = dialog.getByRole('button', { name: 'Switch to Zamu', exact: true });
+  await expect(dialog.getByRole('status')).toContainText(
+    '1 open pull request changes task files. Its task edits will be lost.',
+    { timeout: 30_000 },
+  );
+  const requests = dialog.getByRole('list', { name: 'Open requests that change task files' });
+  await expect(requests.getByRole('listitem')).toHaveCount(1);
+  await expect(requests).toContainText(`#${number}`);
+  await expect(requests).toContainText(pull.title);
+  await expect(requests).toContainText(pull.branch);
+  // The confirm button unlocks once the check has answered and the key is typed.
+  await expect(submit).toBeDisabled();
+  await confirm.fill(project.key);
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect(dialog).toBeHidden({ timeout: 20_000 });
   await expect.poll(async () => (await sourceStatus()).state).toBe('detached');
+
+  // The page now says who owns the tasks and offers the export command.
+  await page.reload();
+  await settle(page);
+  await expect(page.getByRole('note').filter({ hasText: 'Owned by Zamu' })).toContainText(
+    `Switched by ${admin.name}.`,
+  );
+  await expect(page.getByText(`zamu backlog export --project ${project.key}`)).toBeVisible();
 
   const updated = await api<TaskShape>(page.request, 'PATCH', `/tasks/${project.key}-12.1`, {
     status: 'done',
@@ -748,15 +855,117 @@ test('detach: every field is editable and new tasks continue the numbering', asy
   expect(relabelled.labels.map((label) => label.name).sort()).toEqual(['alerts', 'urgent']);
   expect(relabelled.dueDate).toBeNull();
 
+  // The work record is editable too: the items keep their states, and notes work.
+  const parent = await api<TaskShape>(page.request, 'PATCH', `/tasks/${project.key}-12`, {
+    checkCriteria: [2],
+    checkDoneItems: [1],
+  });
+  expect(parent.criteria?.map(({ state, locked }) => ({ state, locked }))).toEqual([
+    { state: 'checked', locked: false },
+    { state: 'checked', locked: false },
+  ]);
+  const note = cli.run(['notes', 'add', 'PAY-12', 'Backoff verified on staging', '--json']);
+  expect(note.code, note.stdout + note.stderr).toBe(0);
+
+  // New tasks continue the numbering.
   const created = await api<TaskShape>(page.request, 'POST', '/tasks', {
     project: project.key,
     title: 'Sign webhook payloads',
   });
   expect(created.key).toBe(`${project.key}-22`);
 
-  // The webhook URL of a detached mirror answers 410 Gone.
+  // The webhook URL of a switched project answers 410 Gone.
   const delivery = await page.request.post(webhookUrl, { data: {} });
   expect(delivery.status()).toBe(410);
+});
+
+test('zamu backlog export writes the tasks into a git repository, and the folder parses back', async () => {
+  // A clone that already has the Backlog.md config, a document and a task file Zamu doesn't have.
+  const clone = createGitRepo('main');
+  try {
+    const docPath = 'backlog/docs/doc-1 - Webhook-guide.md';
+    const stalePath = 'backlog/tasks/pay-99 - Old-copy.md';
+    const config = files['backlog/config.yml'] as string;
+    const doc = files[docPath] as string;
+    clone.commit('Add the Backlog.md folder', {
+      'backlog/config.yml': config,
+      [docPath]: doc,
+      [stalePath]: '---\nid: PAY-99\ntitle: Old copy\nstatus: To Do\n---\n',
+    });
+
+    const dryRun = cli.run(
+      ['backlog', 'export', '--project', project.key, '--dry-run', '--json'],
+      {},
+      {
+        cwd: clone.dir,
+      },
+    );
+    expect(dryRun.code, dryRun.stdout + dryRun.stderr).toBe(0);
+    expect(parseJson<{ dryRun: boolean }>(dryRun, 'zamu.v1.backlog.export').dryRun).toBe(true);
+    expect(clone.git(['status', '--porcelain'])).toBe('');
+
+    const run = cli.run(['backlog', 'export', '--project', project.key, '--json'], {}, { cwd: clone.dir });
+    expect(run.code, run.stdout + run.stderr).toBe(0);
+    // config.yml has task_prefix "pay", the exported ids' prefix: no warning.
+    expect(run.stderr).toBe('');
+    const result = parseJson<{ project: string; dir: string; files: { path: string; action: string }[] }>(
+      run,
+      'zamu.v1.backlog.export',
+    );
+    expect(result.project).toBe(project.key);
+    expect(result.files.filter((file) => file.action === 'removed').map((file) => file.path)).toEqual([
+      'tasks/pay-99 - Old-copy.md',
+    ]);
+
+    // The stale task file is gone; the config and the document are untouched.
+    const tree = readTree(join(clone.dir, 'backlog'));
+    expect(tree['config.yml']).toBe(config);
+    expect(tree['docs/doc-1 - Webhook-guide.md']).toBe(doc);
+    expect(tree['tasks/pay-99 - Old-copy.md']).toBeUndefined();
+    expect(clone.git(['status', '--porcelain', '-z']).split('\0')).toContain(` D ${stalePath}`);
+
+    // The folder parses with the same reader the mirror uses, and holds every visible task.
+    const parsed = parseBacklogFolder(
+      Object.entries(tree).map(([path, text]) => ({ path: `backlog/${path}`, text })),
+      'backlog',
+    );
+    const tasks = parsed.files.flatMap((file) => {
+      if (file.kind !== 'task') return [];
+      expect(file.result.ok, `${file.path}: ${JSON.stringify(file.result)}`).toBe(true);
+      return file.result.ok ? [file.result.value] : [];
+    });
+    expect(tasks.map((task) => task.id.id).sort()).toEqual(
+      ['PAY-12', 'PAY-12.1', 'PAY-12.1.2', 'PAY-20', 'PAY-21', 'PAY-22', 'PAY-3'].sort(),
+    );
+    const parent = tasks.find((task) => task.id.id === 'PAY-12');
+    expect(parent?.title).toBe('Webhook retries');
+    expect(parent?.parentId ?? null).toBeNull();
+    expect(tasks.find((task) => task.id.id === 'PAY-12.1')?.parentId).toBe('PAY-12');
+    const record = taskWorkRecord(parent as NonNullable<typeof parent>);
+    expect(record.criteria.map(({ text, state }) => ({ text, state }))).toEqual([
+      { text: 'Failed deliveries are retried', state: 'checked' },
+      { text: 'Retries back off exponentially', state: 'checked' },
+    ]);
+    expect(record.doneItems.map(({ text, state }) => ({ text, state }))).toEqual([
+      { text: 'Tests pass', state: 'checked' },
+    ]);
+    expect(record.plan).toContain('Add a retry queue.');
+    expect(record.finalSummary).toMatch(/^Retries ship behind a flag\./);
+    // The notes from the file come first, then the work notes written in Zamu.
+    expect(record.implementationNotes).toContain('Queue lives in Redis.');
+    expect(record.implementationNotes).toContain('Backoff verified on staging');
+    expect(parsed.files.filter((file) => file.kind === 'milestone').length).toBeGreaterThan(0);
+
+    // Once the export is committed, a second run finds nothing to change.
+    clone.git(['add', '--all', 'backlog']);
+    clone.git(['commit', '--quiet', '-m', 'Export from Zamu']);
+    const again = cli.run(['backlog', 'export', '--project', project.key, '--json'], {}, { cwd: clone.dir });
+    expect(again.code, again.stdout + again.stderr).toBe(0);
+    const unchanged = parseJson<{ files: { action: string }[] }>(again, 'zamu.v1.backlog.export');
+    expect(unchanged.files.every((file) => file.action === 'unchanged')).toBe(true);
+  } finally {
+    clone.remove();
+  }
 });
 
 test('delete the project through the API: its webhook URL answers 404', async () => {

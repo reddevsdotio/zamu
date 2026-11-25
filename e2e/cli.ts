@@ -12,19 +12,32 @@ export interface CliResult {
   stderr: string;
 }
 
+export interface RunOptions {
+  /**
+   * Working directory. zamu sends the git branch checked out there with every request, and `zamu backlog
+   * export` writes under its repository root. Defaults to the spec process's directory.
+   */
+  cwd?: string;
+  /** Text on stdin, for the options that read "-". */
+  input?: string;
+}
+
 /** A CLI with its own config directory, created on first use (Playwright loads spec files in several processes). */
 export function createCli() {
   let configHome: string | undefined;
   return {
-    run(args: string[], env: Record<string, string> = {}): CliResult {
+    run(args: string[], env: Record<string, string> = {}, options: RunOptions = {}): CliResult {
       configHome ??= mkdtempSync(join(tmpdir(), 'zamu-e2e-cli-'));
       const result = spawnSync(process.execPath, [cliPath, ...args], {
         encoding: 'utf8',
         timeout: 30_000,
+        cwd: options.cwd,
+        input: options.input,
         env: {
           PATH: process.env.PATH ?? '',
           HOME: configHome,
           XDG_CONFIG_HOME: configHome,
+          XDG_STATE_HOME: configHome,
           NO_COLOR: '1',
           ...env,
         },
