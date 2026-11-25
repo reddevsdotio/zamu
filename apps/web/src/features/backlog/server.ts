@@ -1,5 +1,5 @@
 // TanStack Start server functions for Backlog.md setup and the Backlog.md section of project settings
-// (M3). Settings-only data, so the screens call @zamu/core through these thin adapters: validate with
+// (M3), and the switch of a mirrored project to Zamu (M6). Settings-only data, so the screens call @zamu/core through these thin adapters: validate with
 // the contract schema, build the actor from the request, call core, return a SettingsResult (unwrap
 // it in the browser with `unwrap` from features/settings/result). Product data (tasks, the status a
 // header shows) stays on /api/v1: GET /projects/{project}/backlog is `orpc.backlog.status`.
@@ -25,8 +25,8 @@ import {
 import {
   type Actor,
   type CoreContext,
+  checkBacklogSwitch,
   createProjectFromBacklog,
-  detachBacklog,
   detectBacklog,
   detectBacklogRepository,
   getBacklogSettingsStatus,
@@ -37,6 +37,7 @@ import {
   setBacklogConnection,
   setBacklogFolder,
   startBacklog,
+  switchBacklogToZamu,
   updateBacklogMappings,
 } from '@zamu/core';
 import { getServerContext } from '../../server/context';
@@ -130,7 +131,23 @@ export const reissueBacklogWebhookSecretFn = createServerFn({ method: 'POST' })
   .validator(ReissueBacklogWebhookSecretInput)
   .handler(({ data }) => run((core, actor) => reissueBacklogWebhookSecret(core, actor, data)));
 
-/** Detaches for good after the typed key (owners and admins). -> BacklogSourceStatus */
-export const detachBacklogFn = createServerFn({ method: 'POST' })
+// ---------------------------------------------------------------------------
+// Project settings: the switch to Zamu (M6)
+// ---------------------------------------------------------------------------
+
+/**
+ * The check before the switch: the open pull or merge requests that change files in the Backlog.md
+ * folder, or `ok: false` with the reason when the host could not answer. Reads the host; writes nothing.
+ * Owners and admins. -> BacklogSwitchCheck
+ */
+export const checkBacklogSwitchFn = createServerFn({ method: 'POST' })
+  .validator(BacklogProjectInput)
+  .handler(({ data }) => run((core, actor) => checkBacklogSwitch(core, actor, data)));
+
+/**
+ * Switches a mirrored project to Zamu for good after the typed key: the mirror stops and every task
+ * becomes editable here. Owners and admins. -> BacklogSwitchResult (when, by whom, the new status)
+ */
+export const switchBacklogToZamuFn = createServerFn({ method: 'POST' })
   .validator(DetachBacklogInput)
-  .handler(({ data }) => run((core, actor) => detachBacklog(core, actor, data)));
+  .handler(({ data }) => run((core, actor) => switchBacklogToZamu(core, actor, data)));

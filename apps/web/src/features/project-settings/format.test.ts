@@ -3,7 +3,6 @@ import { CONNECTION, NOW, sourceStatus } from './fixtures';
 import {
   agoText,
   contentsText,
-  detachedBanner,
   failedBanner,
   maskSecret,
   modeText,
@@ -133,7 +132,7 @@ describe('project settings format', () => {
     expect(agoText('2026-10-23T11:59:58Z', NOW)).toBe('just now');
   });
 
-  it('explains failed, paused and detached sources', () => {
+  it('explains failed and paused sources', () => {
     expect(
       failedBanner(
         sourceStatus({ state: 'failed', lastError: 'backlog/config.yml couldn’t be read: line 12' }),
@@ -160,14 +159,6 @@ describe('project settings format', () => {
     );
     expect(pausedBanner(sourceStatus({ state: 'paused', repository: null }), NOW)).toMatch(
       /has no repository/,
-    );
-    expect(
-      detachedBanner(
-        sourceStatus({ state: 'detached', mode: 'import', detachedAt: '2026-10-23T10:00:00Z' }),
-        NOW,
-      ),
-    ).toBe(
-      'Imported once on Oct 23, 2026 by Ana Ruiz, then detached. Everything in this project is editable; the files in the repository no longer affect it.',
     );
   });
 

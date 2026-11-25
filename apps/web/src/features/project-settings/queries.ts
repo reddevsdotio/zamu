@@ -1,7 +1,7 @@
 // TanStack Query wiring for project settings. The source status and Refresh now are shared with the
 // project header (backlogStatusQuery, useBacklogStatus and useRefreshNow in features/project-header),
-// so the header button and this page read one cache. Settings-only data (webhook secret, detach, another
-// connection) goes through the server functions in features/backlog/server.ts, loaded on first use so
+// so the header button and this page read one cache. Settings-only data (webhook secret, the switch to
+// Zamu, another connection) goes through the server functions in features/backlog/server.ts, loaded on first use so
 // that jsdom tests of these screens do not pull server-only modules in.
 
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -11,6 +11,7 @@ import { client, orpc } from '~/lib/orpc';
 import { connectionsKey } from '../connections/queries';
 import { SettingsError, unwrap } from '../settings/result';
 import { announceProjectDeleted } from './DeleteProjectDialog';
+import type { SwitchCheck, SwitchResult } from './switch';
 
 export const backlogSettingsKey = (projectKey: string) => ['backlog-settings', projectKey] as const;
 
@@ -53,22 +54,48 @@ export function useInvalidateBacklog(projectKey: string) {
     ]);
 }
 
-export function useDetach(projectKey: string) {
+/** The check before the switch: open requests that change the Backlog.md folder, or why there are none. */
+export async function checkSwitch(projectKey: string): Promise<SwitchCheck> {
+  const { checkBacklogSwitchFn } = await backlogServer();
+  return unwrap(checkBacklogSwitchFn({ data: { projectKey } }));
+}
+
+/**
+ * Switches the project to Zamu after the typed key. Every task, milestone and label unlocks, and the
+ * settings nav shows Task defaults, so every shape that carries the source refetches.
+ */
+export function useSwitchToZamu(projectKey: string) {
   const queryClient = useQueryClient();
   const invalidate = useInvalidateBacklog(projectKey);
   return useMutation({
-    mutationFn: async (confirmKey: string) => {
-      const { detachBacklogFn } = await backlogServer();
-      return unwrap(detachBacklogFn({ data: { projectKey, confirmKey } }));
+    mutationFn: async (confirmKey: string): Promise<SwitchResult> => {
+      const { switchBacklogToZamuFn } = await backlogServer();
+      const { project, switchedAt, switchedBy } = await unwrap(
+        switchBacklogToZamuFn({ data: { projectKey, confirmKey } }),
+      );
+      return { project, switchedAt, switchedBy };
     },
     onSuccess: () =>
       Promise.all([
         invalidate(),
-        // Every task and milestone unlocks.
         queryClient.invalidateQueries({ queryKey: orpc.tasks.key() }),
         queryClient.invalidateQueries({ queryKey: orpc.milestones.key() }),
+        queryClient.invalidateQueries({ queryKey: orpc.labels.key() }),
         queryClient.invalidateQueries({ queryKey: connectionsKey }),
       ]),
+  });
+}
+
+/**
+ * Saves the project's default done items (the whole list each time, so the last save wins). The list
+ * of projects carries them, so it refetches afterwards.
+ */
+export function useSaveDefaultDoneItems(projectKey: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (defaultDoneItems: string[]) =>
+      client.projects.update({ project: projectKey, defaultDoneItems }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: orpc.projects.key() }),
   });
 }
 

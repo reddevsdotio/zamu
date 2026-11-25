@@ -1,16 +1,18 @@
 // Project settings (frames 115 to 127): the project header ("Payments / Settings"), the Margin settings
-// nav (Project: General, Labels, Backlog.md) and the current section in a 720px column.
+// nav (Project: General, Labels, Task defaults, Backlog.md) and the current section in a 720px column.
+// M6: a project that still mirrors Backlog.md has no Task defaults (its tasks come from the files) and
+// calls its page "Backlog.md sync"; once Zamu owns the tasks the page is "Backlog.md" (frames 031, 038).
 import { useQuery } from '@tanstack/react-query';
 import { useRouterState } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
-import { ProjectHeader, useProjectSummary } from '~/features/project-header';
+import { isMirrored, ProjectHeader, useProjectSummary } from '~/features/project-header';
 import { cn, SettingsNav, SourceStatusDot } from '~/ui';
 import { sourceDot } from './format';
 import { hasTasksQuery } from './queries';
 
-export type ProjectSettingsSection = 'general' | 'labels' | 'backlog';
+export type ProjectSettingsSection = 'general' | 'labels' | 'defaults' | 'backlog';
 
-/** /p/PAY/settings, /p/PAY/settings/labels and /p/PAY/settings/backlog. */
+/** /p/PAY/settings, /p/PAY/settings/labels, /p/PAY/settings/defaults and /p/PAY/settings/backlog. */
 export function projectSettingsHref(projectKey: string, section: ProjectSettingsSection = 'general'): string {
   const base = `/p/${encodeURIComponent(projectKey)}/settings`;
   return section === 'general' ? base : `${base}/${section}`;
@@ -21,6 +23,7 @@ export function settingsSection(pathname: string): ProjectSettingsSection {
   const path = pathname.replace(/\/+$/, '');
   if (path.endsWith('/settings/backlog')) return 'backlog';
   if (path.endsWith('/settings/labels')) return 'labels';
+  if (path.endsWith('/settings/defaults')) return 'defaults';
   return 'general';
 }
 
@@ -35,6 +38,8 @@ export function ProjectSettingsLayout({ projectKey, children }: { projectKey: st
     enabled: project !== undefined && !backlog,
   }).data;
   const showBacklog = backlog !== null || hasTasks !== true || section === 'backlog';
+  const mirrored = isMirrored(project);
+  const showDefaults = !mirrored || section === 'defaults';
 
   const item = (id: ProjectSettingsSection, label: string, trailing?: ReactNode) => ({
     id,
@@ -66,11 +71,12 @@ export function ProjectSettingsLayout({ projectKey, children }: { projectKey: st
               items: [
                 item('general', 'General'),
                 item('labels', 'Labels'),
+                ...(showDefaults ? [item('defaults', 'Task defaults')] : []),
                 ...(showBacklog
                   ? [
                       item(
                         'backlog',
-                        'Backlog.md',
+                        mirrored ? 'Backlog.md sync' : 'Backlog.md',
                         backlog ? <SourceStatusDot state={sourceDot(backlog.state)} /> : undefined,
                       ),
                     ]

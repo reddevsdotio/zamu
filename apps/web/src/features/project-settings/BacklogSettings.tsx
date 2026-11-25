@@ -1,7 +1,9 @@
 // Project settings, Backlog.md (M3 frames 2b to 2o, on the M5 settings page and Margin components):
-// not set up, mirroring, refreshing, warnings with the paged problem list, failed, paused, imported with
-// its history, the member view and loading. Owners and admins refresh (⇧R), open the webhook setup,
-// edit mappings in the setup route and detach.
+// not set up, mirroring, refreshing, warnings with the paged problem list, failed, paused, the member
+// view and loading. Owners and admins refresh (⇧R), open the webhook setup, edit mappings in the setup
+// route and switch the project to Zamu (M6 frame 031, the dialog in SwitchDialog). Once switched, or
+// imported, Zamu owns the tasks: the page says since when and by whom, and offers the export command
+// that writes the tasks back out as files (M6 frame 038).
 
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -14,7 +16,7 @@ import {
 } from '@zamu/contracts';
 import { type ReactNode, useEffect, useState } from 'react';
 import { Link } from 'react-aria-components';
-import { useBacklogStatus, useProjectSummary, useRefreshNow } from '~/features/project-header';
+import { isMirrored, useBacklogStatus, useProjectSummary, useRefreshNow } from '~/features/project-header';
 import { isAdminRole } from '~/features/settings/format';
 import { errorMessage } from '~/features/settings/result';
 import { useNow } from '~/features/tasks/clock';
@@ -23,6 +25,8 @@ import {
   Banner,
   Button,
   buttonStyles,
+  CheckGlyph,
+  CodeBlock,
   ConnectionStatusTag,
   type Fact,
   FactList,
@@ -50,10 +54,9 @@ import {
   Tabs,
   useHotkeys,
 } from '~/ui';
-import { DetachDialog } from './DetachDialog';
 import {
   contentsText,
-  detachedBanner,
+  dateText,
   failedBanner,
   isDetached,
   modeText,
@@ -69,7 +72,9 @@ import {
   webhookText,
 } from './format';
 import { SettingsPage } from './ProjectSettingsLayout';
-import { hasTasksQuery, loadProblemPage, useDetach, useSetConnection } from './queries';
+import { checkSwitch, hasTasksQuery, loadProblemPage, useSetConnection, useSwitchToZamu } from './queries';
+import { SwitchDialog } from './SwitchDialog';
+import { exportCommand } from './switch';
 import { UseConnectionDialog } from './UseConnectionDialog';
 import { WebhookDialog } from './WebhookDialog';
 
@@ -95,11 +100,13 @@ export interface BacklogSettingsProps {
  * header button and this page); the header leaves ⇧R to this page here.
  */
 export function BacklogSettings(props: BacklogSettingsProps) {
+  const project = useProjectSummary(props.projectKey);
   return (
     <SettingsPage
       title="Backlog.md"
-      description="Where this project reads its tasks from, how values map, and how it stays in step."
-      className="max-w-239"
+      description={pageDescription(project)}
+      // Once Zamu owns the tasks the page is one column of text (frame 038); the mirror needs the width.
+      className={project?.backlog && !isMirrored(project) ? undefined : 'max-w-239'}
     >
       <BacklogSettingsBody {...props} />
     </SettingsPage>
@@ -111,7 +118,7 @@ function BacklogSettingsBody({ projectKey, webhookOpen, onWebhookOpenChange }: B
   const me = useQuery(meQuery());
   const canManage = isAdminRole(me.data?.role);
   const hasSource = Boolean(project?.backlog);
-  const [detachOpen, setDetachOpen] = useState(false);
+  const [switchOpen, setSwitchOpen] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
 
   const refresh = useRefreshNow(projectKey);
@@ -120,7 +127,7 @@ function BacklogSettingsBody({ projectKey, webhookOpen, onWebhookOpenChange }: B
     ...hasTasksQuery(projectKey),
     enabled: project !== undefined && !hasSource,
   }).data;
-  const detach = useDetach(projectKey);
+  const switchToZamu = useSwitchToZamu(projectKey);
   const setConnection = useSetConnection(projectKey);
 
   const data = status.data;
@@ -168,7 +175,7 @@ function BacklogSettingsBody({ projectKey, webhookOpen, onWebhookOpenChange }: B
         onDismissError={refresh.reset}
         onRefresh={onRefresh}
         onOpenWebhook={() => onWebhookOpenChange(true)}
-        onDetach={() => setDetachOpen(true)}
+        onSwitch={() => setSwitchOpen(true)}
         onUseAnotherConnection={() => setConnectionOpen(true)}
       />
       {canManage && !isDetached(data) ? (
@@ -180,12 +187,13 @@ function BacklogSettingsBody({ projectKey, webhookOpen, onWebhookOpenChange }: B
             repository={repository}
             defaultBranch={data.defaultBranch}
           />
-          <DetachDialog
-            isOpen={detachOpen}
-            onOpenChange={setDetachOpen}
+          <SwitchDialog
+            isOpen={switchOpen}
+            onOpenChange={setSwitchOpen}
             status={data}
             projectName={project.name}
-            onDetach={(confirmKey) => detach.mutateAsync(confirmKey)}
+            onCheck={() => checkSwitch(projectKey)}
+            onSwitch={(confirmKey) => switchToZamu.mutateAsync(confirmKey)}
           />
           <UseConnectionDialog
             isOpen={connectionOpen}
@@ -197,6 +205,18 @@ function BacklogSettingsBody({ projectKey, webhookOpen, onWebhookOpenChange }: B
       ) : null}
     </>
   );
+}
+
+/** The sentence under the title: none once Zamu owns the tasks (frame 038). */
+function pageDescription(project: ProjectWithCounts | undefined): string | undefined {
+  if (!project) return undefined;
+  if (!project.backlog) {
+    return 'Where this project reads its tasks from, how values map, and how it stays in step.';
+  }
+  if (isMirrored(project)) {
+    return `${project.name} copies its tasks from the task files in a git repository. They are read-only here.`;
+  }
+  return undefined;
 }
 
 /** Message of a failed status load (an API error carries its own message). */
@@ -299,7 +319,8 @@ export interface BacklogStatusViewProps {
   onDismissError?: () => void;
   onRefresh: () => void;
   onOpenWebhook: () => void;
-  onDetach: () => void;
+  /** Opens the switch dialog. */
+  onSwitch: () => void;
   onUseAnotherConnection: () => void;
 }
 
@@ -313,15 +334,46 @@ export function BacklogStatusView({
   onDismissError,
   onRefresh,
   onOpenWebhook,
-  onDetach,
+  onSwitch,
   onUseAnotherConnection,
 }: BacklogStatusViewProps) {
   const now = useNow();
-  const detached = isDetached(status);
+  if (isDetached(status)) return <OwnedView status={status} projectName={projectName} />;
+  return (
+    <MirrorView
+      status={status}
+      canManage={canManage}
+      queued={queued}
+      canRefresh={canRefresh}
+      actionError={actionError}
+      onDismissError={onDismissError}
+      onRefresh={onRefresh}
+      onOpenWebhook={onOpenWebhook}
+      onSwitch={onSwitch}
+      onUseAnotherConnection={onUseAnotherConnection}
+      now={now}
+    />
+  );
+}
+
+/** A source that still follows the repository (frames 2d to 2i, and the switch card of M6 frame 031). */
+function MirrorView({
+  status,
+  canManage,
+  queued,
+  canRefresh,
+  actionError,
+  onDismissError,
+  onRefresh,
+  onOpenWebhook,
+  onSwitch,
+  onUseAnotherConnection,
+  now,
+}: Omit<BacklogStatusViewProps, 'projectName'> & { queued: boolean; now: number | null }) {
   const reading = status.state === 'reading' || status.state === 'setup';
   const heading = statusHeading(status, now, { queued });
-  const canAct = canManage && !detached;
-  const showProblems = !detached && status.state !== 'failed';
+  const canAct = canManage;
+  const showProblems = status.state !== 'failed';
 
   let banner: ReactNode = null;
   if (status.state === 'failed') {
@@ -352,13 +404,11 @@ export function BacklogStatusView({
         {pausedBanner(status, now)}
       </NeutralBanner>
     );
-  } else if (detached) {
-    banner = <NeutralBanner>{detachedBanner(status, now)}</NeutralBanner>;
   } else if (!canManage) {
     banner = (
       <NeutralBanner>
-        You can read this page. Owners and admins can refresh, change mappings or detach. You can still
-        comment on tasks and put them in cycles.
+        You can read this page. Owners and admins can refresh, change mappings or switch the project to Zamu.
+        You can still comment on tasks and put them in cycles.
       </NeutralBanner>
     );
   }
@@ -416,27 +466,102 @@ export function BacklogStatusView({
       ) : null}
       {showProblems ? <ProblemsSection status={status} /> : null}
       <MappingsSection status={status} canEdit={canAct} />
-      {detached ? <HistorySection status={status} projectName={projectName} /> : null}
       {canAct && status.mode === 'mirror' ? (
-        <div className="flex items-center gap-3.5 rounded-md border border-[color-mix(in_oklch,var(--danger)_35%,transparent)] p-3.5">
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <b className="font-semibold">Stop mirroring and detach</b>
-            <span className="text-sm leading-normal text-fg-2">
-              Every task and milestone becomes editable here and the mirror stops for good. Use it when you
-              move off Backlog.md.
-            </span>
+        <SettingsSection title="Switch to Zamu">
+          <div className="flex items-center gap-4 rounded-md border border-line bg-surface p-4">
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <b className="font-semibold">Make Zamu the owner of these tasks</b>
+              <span className="text-sm leading-normal text-pretty text-fg-2">
+                From then on tasks are edited here and through the CLI, and the files are no longer read. Task
+                numbers, comments and history stay as they are. This can’t be undone.
+              </span>
+            </div>
+            <Button variant="secondary" onPress={onSwitch}>
+              Switch to Zamu…
+            </Button>
           </div>
-          <Button
-            variant="destructive"
-            size="md"
-            className="border-[color-mix(in_oklch,var(--danger)_40%,transparent)]"
-            onPress={onDetach}
-          >
-            Detach…
-          </Button>
-        </div>
+        </SettingsSection>
       ) : null}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Owned by Zamu (M6 frame 038): after the switch, or after an import
+// ---------------------------------------------------------------------------
+
+export function OwnedView({ status, projectName }: { status: BacklogSourceStatus; projectName: string }) {
+  const now = useNow();
+  const repo = status.repository ? parseRepositoryUrl(status.repository) : null;
+  const who =
+    status.mode === 'import'
+      ? `Imported once by ${status.createdBy.name}.`
+      : status.detachedBy
+        ? `Switched by ${status.detachedBy.name}.`
+        : null;
+  return (
+    <>
+      <div
+        role="note"
+        className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-md bg-ok-soft px-3.5 py-3 font-medium text-ok"
+      >
+        <CheckGlyph />
+        <span>
+          Owned by Zamu
+          {status.detachedAt && now !== null ? ` since ${dateText(status.detachedAt, now)}` : null}
+        </span>
+        <span className="flex-1" />
+        <span className="text-sm font-normal text-fg-2">
+          {who ? `${who} ` : null}The task files are no longer read.
+        </span>
+      </div>
+      <SettingsSection title="Keep a copy as files">
+        <p className="m-0 max-w-160 leading-prose text-pretty text-fg-2">
+          This command writes {projectName} back out as Backlog.md task files, into the{' '}
+          <InlineCode>backlog/</InlineCode> folder of the repository you run it in. Use it to keep a copy in
+          the repository, or to leave Zamu.
+        </p>
+        <CodeBlock variant="command" copyLabel="Copy the export command">
+          {exportCommand(status.project.key)}
+        </CodeBlock>
+        <p className="m-0 text-xs leading-normal text-fg-3">
+          The copy is as fresh as the last time the command ran. Edits made to the exported files are not read
+          back.
+        </p>
+      </SettingsSection>
+      <SettingsSection title="Repository">
+        <dl className="m-0 grid grid-cols-[150px_minmax(0,1fr)] items-center gap-x-3.5 gap-y-2">
+          <dt className="text-sm text-fg-3">Still linked</dt>
+          <dd className="m-0 min-w-0 font-medium">
+            {repo ? (
+              <Link
+                href={repo.webUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={`${mono} text-fg outline-none hover:underline focus-visible:focus-ring`}
+              >
+                {repo.short}
+              </Link>
+            ) : (
+              <span className="font-normal text-fg-2">
+                {status.repository ?? 'None. Add it under General.'}
+              </span>
+            )}
+          </dd>
+        </dl>
+      </SettingsSection>
+      <HistorySection status={status} projectName={projectName} />
+    </>
+  );
+}
+
+/** A titled part of a settings page under a rule (screens.css .set-sec, .set-sec-t). */
+function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section aria-label={title} className="flex flex-col gap-3 border-t border-line-soft pt-5">
+      <h3 className="m-0 text-md font-semibold text-fg">{title}</h3>
+      {children}
+    </section>
   );
 }
 
@@ -896,7 +1021,7 @@ function historyText(entry: ProjectActivity, projectName: string): ReactNode {
   }
   return (
     <>
-      {who} detached {projectName} from Backlog.md. Every field is editable now.
+      {who} switched {projectName} to Zamu. Every field is editable now.
     </>
   );
 }
