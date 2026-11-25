@@ -109,13 +109,13 @@ body{margin:0}
 <sc-if value="{{ w.gHasNote }}" hint-placeholder-val="{{ false }}"><div class="t-n"><sc-for list="{{ w.gNote }}" as="p" hint-placeholder-count="1"><p>{{ p.t }}</p></sc-for></div></sc-if>
 <sc-if value="{{ w.gMore }}" hint-placeholder-val="{{ false }}"><div class="more-l" style="padding:0">Show the whole note</div></sc-if>
 </div>
-<sc-if value="{{ w.gActs }}" hint-placeholder-val="{{ false }}"><div class="acts"><span class="btn sm ghost">Fail</span><span class="{{ w.passCls }}">Pass<span class="kbd">G</span></span></div></sc-if>
+<sc-if value="{{ w.gActs }}" hint-placeholder-val="{{ false }}"><div class="acts" style="align-items:center"><sc-if value="{{ w.gWait }}" hint-placeholder-val="{{ false }}"><span class="muted" style="font-size:var(--fs-xs);margin-right:4px">{{ w.gWaitTxt }}</span></sc-if><span class="btn sm ghost">Fail</span><span class="{{ w.passCls }}">Pass<span class="kbd">G</span></span></div></sc-if>
 <sc-if value="{{ w.gRedo }}" hint-placeholder-val="{{ false }}"><div class="acts"><span class="btn sm ghost">Record again<span class="kbd">G</span></span></div></sc-if>
 <sc-if value="{{ w.gPop }}" hint-placeholder-val="{{ false }}">
 <div class="pop menu gate-pop">
 <div class="menu-h">Gate of W3 · Screens</div>
 <div style="padding:2px 6px 8px"><span class="seg" style="display:inline-flex"><span class="seg-i on">Passed</span><span class="seg-i">Failed</span></span></div>
-<div class="field"><span class="flabel">Note</span><span class="input focus"><span>Checks pass (2,611 tests). Walked the payout page, the admin panel and the statement in light and dark at 1440 and 1024.<span style="display:inline-block;width:1.5px;height:15px;background:var(--accent);vertical-align:-3px;margin-left:1px"></span></span></span><span class="help">The note stays with the gate. W4 unlocks as soon as this passes.</span></div>
+<div class="field"><span class="flabel">Note</span><span class="input focus"><span>All 6 tasks are done. Checks pass (2,611 tests). Walked the payout page, the admin panel and the statement in light and dark at 1440 and 1024.<span style="display:inline-block;width:1.5px;height:15px;background:var(--accent);vertical-align:-3px;margin-left:1px"></span></span></span><span class="help">The note stays with the gate. W4 unlocks as soon as this passes.</span></div>
 <div class="menu-foot"><span><span class="kbd">⌘↵</span>record</span><span><span class="kbd">Esc</span>cancel</span></div>
 </div>
 </sc-if>
@@ -182,13 +182,14 @@ class Component extends DCLogic {
       gateTxt: state === 'passed' ? 'Gate passed' : state === 'failed' ? 'Gate failed' : state === 'locked' ? (o.lockTxt || 'Locked') : 'Gate open',
       rows: o.rows || [], dropTop: !!o.dropTop, hasMore: !!o.more, moreTxt: o.more || '',
       hasGate: open && !o.noGate, gbCls: 'gatebox' + (state === 'failed' ? ' failed' : ''), gDesc: o.desc || '', gHasWho: !!o.who, gWho: o.who || '',
-      gHasNote: !!o.note, gNote: (o.note || []).map(P), gMore: !!o.noteMore, gActs: state === 'open' && open && !o.noActs, passCls: 'btn sm primary' + (o.pop ? ' hover' : ''), gRedo: state === 'failed' && open, gPop: !!o.pop }; };
+      gHasNote: !!o.note, gNote: (o.note || []).map(P), gMore: !!o.noteMore, gActs: state === 'open' && open && !o.noActs, passCls: 'btn sm primary' + (o.pop ? ' hover' : '') + (o.wait ? ' disabled' : ''), gWait: !!o.wait, gWaitTxt: o.wait || '', gRedo: state === 'failed' && open, gPop: !!o.pop }; };
     const D3 = 'All checks pass, and a walkthrough of the payout page, the admin panel and the statement in light and dark finds nothing broken.';
     let waves = [], foldPassed = false, showLoose = true, looseOpen = false, adding = false, canAdd = true;
     const w1 = mk('W1', 'Data and contracts', '3 of 3', 'p100', 'passed'), w2 = mk('W2', 'Core and API', '5 of 5', 'p100', 'passed');
     const w4l = mk('W4', 'End-to-end tests', '0 of 3', '', 'locked', { lockTxt: 'Locked until W3 passes' }), w5l = mk('W5', 'Release', '0 of 2', '', 'locked', { lockTxt: 'Locked' });
     if (s === 'waves' || s === 'waves1280' || s === 'gate') {
-      waves = [w1, w2, mk('W3', 'Screens', '4 of 6', 'p64', 'open', { open: true, cur: true, rows: W3(), desc: D3, pop: s === 'gate' }), w4l, w5l];
+      const all = s === 'gate';
+      waves = [w1, w2, mk('W3', 'Screens', all ? '6 of 6' : '4 of 6', all ? 'p100' : 'p64', 'open', { open: true, cur: true, rows: all ? W3().map((r) => ({ ...r, st: 'st done' })) : W3(), desc: D3, pop: all, wait: all ? '' : 'Pass unlocks when the 2 open tasks are done' }), w4l, w5l];
     } else if (s === 'failed') {
       waves = [w1, w2, mk('W3', 'Screens', '5 of 6', 'p80', 'failed', { open: true, cur: true, rows: W3().slice(4), more: '4 done tasks · Show', desc: D3, who: 'claude-dev for Ana, 20 min ago',
         note: ['Checks pass. The walkthrough found the retry button wrapping onto two lines on the payout page at 1024px, in both themes.', 'Logged as PAY-173 in this wave. Everything else looked right.'] }), w4l, w5l];

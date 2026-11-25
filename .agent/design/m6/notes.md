@@ -70,11 +70,11 @@ The M6 frames were approved as designed, with these calls confirmed:
 14. **Waiting tasks are dimmed on a board by default**, and "Waiting tasks" in Display options has three values: Shown, Shown dimmed, Hidden. Hidden columns say how many they hide. A task whose day has come is never dimmed or hidden.
 15. **"Check again" on Home is under Mine only**: it is a note to yourself.
 
-## Open questions for the product owner
+## Answered by the product owner (2026-11-25)
 
-1. **Merged with open criteria** (call 4): a Home group of its own, or a pill inside "Needs review"?
-2. **Waiting tasks dimmed by default** (call 14): or shown as normal?
-3. **The check-again reason is optional in the picker.** Should it be required?
+1. **Merged with open criteria is a Home group of its own**, as designed.
+2. **Waiting tasks are dimmed by default**, as designed.
+3. **The check-again reason is required.** The picker marks the field and says why (frames 095 and 098 were updated).
 
 # M8
 
@@ -95,11 +95,11 @@ The M6 frames were approved as designed, with these calls confirmed:
 8. **The milestone list shows the wave status under the milestone's name**: "Wave 3 of 5 · gate open", "Gate failed in wave 8 of 12" (with a mark), "All 4 gates passed".
 9. **Moving a task between waves works by drag and by Alt+↑ / Alt+↓**, with a hint at the bottom while it moves.
 
-## Open questions for the product owner
+## Answered by the product owner (2026-11-25)
 
-1. **Can a person pass a gate while tasks in its wave are still open?** The frames allow it (Pass is enabled with 4 of 6 done).
-2. **Does recording a failed gate reopen anything?** The frames only stop the next wave; tasks keep their status.
-3. **Folding passed waves** (call 7) starts when a milestone has more than six waves. Right threshold?
+1. **A gate can be passed only when every task in its wave is done or canceled.** Until then Pass is disabled and says what it waits for; Fail can be recorded at any time (frames 103 to 107 and 110 were updated).
+2. **A failed gate reopens no task.** It keeps the next wave locked, and the note says what to fix; the fix is logged as a new task.
+3. **Passed waves fold into one line when a milestone has more than six waves.**
 
 # For the plans
 

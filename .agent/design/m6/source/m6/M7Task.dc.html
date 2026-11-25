@@ -20,7 +20,7 @@ body{margin:0}a{color:inherit}a:hover{color:inherit}
 .act-tg{display:flex;gap:2px;margin-left:auto}
 .act-tg .tab{height:24px;font-size:var(--fs-xs);padding:0 8px}
 .props .bar{max-width:64px;min-width:36px}
-.chk-pop{right:18px;top:238px;width:262px}
+.chk-pop{right:18px;top:226px;width:262px}
 .chk-pop .field{padding:2px 6px 8px}
 .chk-pop .field .input{height:auto;min-height:36px;padding:7px 11px;white-space:normal;line-height:1.4}
 </style>
@@ -133,7 +133,8 @@ body{margin:0}a{color:inherit}a:hover{color:inherit}
 <div class="cal-top"><span>December 2026</span><span class="spacer"></span><span class="muted">‹</span><span class="muted">›</span></div>
 <div class="cal"><sc-for list="{{ calH }}" as="d" hint-placeholder-count="7"><span class="cal-h">{{ d.t }}</span></sc-for><sc-for list="{{ cal }}" as="d" hint-placeholder-count="35"><span class="{{ d.cls }}">{{ d.t }}</span></sc-for></div>
 <div class="menu-sep"></div>
-<div class="field"><span class="flabel">Why wait</span><span class="input focus"><span>The bank issues the new certificate on Dec 1<span style="display:inline-block;width:1.5px;height:15px;background:var(--accent);vertical-align:-3px;margin-left:1px"></span></span></span></div>
+<div class="field"><span class="flabel">Why wait <span style="color:var(--text-3);font-weight:400">· required</span></span><span class="input focus"><span>The bank issues the new certificate on Dec 1<span style="display:inline-block;width:1.5px;height:15px;background:var(--accent);vertical-align:-3px;margin-left:1px"></span></span></span></div>
+<div class="help" style="padding:0 6px 6px">It is what you read when the task comes back.</div>
 <div class="menu-foot"><span><span class="kbd">↵</span>set</span><span><span class="kbd">Esc</span>cancel</span><span class="spacer"></span><span class="link">Clear</span></div>
 </div>
 </sc-if>

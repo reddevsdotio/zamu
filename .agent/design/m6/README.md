@@ -1,6 +1,6 @@
 # M6 to M8 design: work record, pull requests, archiving, check-again dates, waves and gates
 
-One design pass for three releases, in the Margin direction from M5. All three are designed; M6 was reviewed and approved on 2026-11-25.
+One design pass for three releases, in the Margin direction from M5. All three are designed, reviewed and approved (2026-11-25).
 
 - **Canvas** (the M5 canvas, three new pages):
   - M6: https://claude.ai/artifact/Qf4nELj16FMAKRzSWei9z5#page-m6-M6---Work-record

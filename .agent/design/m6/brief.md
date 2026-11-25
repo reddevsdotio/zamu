@@ -110,7 +110,7 @@ Finished tasks pile up. A project can archive Done and Canceled tasks a set numb
 
 ### M7: check-again date
 
-Some tasks wait on the outside world: a vendor reply, a certificate that renews next month, a metric that needs two weeks of data. A task can hold a **check-again day** and a short reason ("Vendor promised a fix in their December release").
+Some tasks wait on the outside world: a vendor reply, a certificate that renews next month, a metric that needs two weeks of data. A task can hold a **check-again day** and a short reason ("Vendor promised a fix in their December release"). The reason is required: it is what the person reads when the task comes back.
 
 - This is different from a due date. A due date that passes is late. A check-again day that arrives only means "look again", so it must never read as overdue or use the overdue colour.
 - Until the day comes, the task shows a quiet "Waiting until Dec 3" chip, and people may want to hide waiting tasks from a board.
@@ -125,6 +125,7 @@ People plan a milestone as a document, then hand it to an agent that works throu
 - **Plan link**: a milestone can hold one link or file path to its plan. The app may not be able to open it, so show it as text with a copy button, and as a link when it is a web address.
 - **Wave**: an ordered group of tasks that can be worked on at the same time. Waves have a short name ("W1 · Data and contracts") and their tasks.
 - **Gate**: the check at the end of a wave. It has a description ("All checks pass and the walkthrough is done"), a state (Open, Passed, Failed) and a note, with who recorded the result and when ("claude-dev for Ana, 2 hours ago").
+- A gate can be passed only when every task in its wave is done or canceled. A failed result can be recorded at any time, and it reopens no task.
 - A wave is **locked** until the gate before it has passed. A person who starts a task in a locked wave gets a warning and can continue. Agents are refused by the server.
 - A failed gate stops the plan and must be the most visible thing on the page.
 - The milestone page shows the waves in order with progress, the current wave open and earlier ones collapsed. A person can add, rename, reorder and remove waves, move tasks between waves (drag, and by keyboard), set a gate's description, and record a gate result with a note.
