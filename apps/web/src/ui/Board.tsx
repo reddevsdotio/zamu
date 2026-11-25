@@ -6,7 +6,7 @@ import { cn, tv } from './cn';
 import { DueChip } from './DueChip';
 import { Kbd } from './Kbd';
 import { LabelList, type LabelListItem } from './LabelChip';
-import { BlockedMarker, SubtaskProgress, SubtaskRing } from './Markers';
+import { BlockedMarker, ProgressMark, type ProgressMarkProps, SubtaskProgress, SubtaskRing } from './Markers';
 import { type Priority, STATUS_LABELS, type TaskStatus } from './meta';
 import { CycleGlyph, type CycleGlyphState, MilestoneGlyph } from './PlanningGlyph';
 import { PriorityGlyph, showsPriorityOnCards } from './PriorityGlyph';
@@ -72,6 +72,11 @@ export interface BoardCardContentProps {
   labels?: readonly LabelListItem[] | null;
   /** Subtask progress "2/6" with its ring. Nothing when total is 0. */
   subtasks?: { done: number; total: number } | null;
+  /**
+   * Criteria progress "4/6" (M6, frame 023), after subtasks and before the due date. Spread a
+   * WorkItemProgress in. Nothing when total is 0: a task without criteria shows no marker.
+   */
+  criteria?: Pick<ProgressMarkProps, 'settled' | 'waived' | 'open' | 'total'> | null;
   /** Due date chip. `today` is YYYY-MM-DD; defaults to the browser's day. */
   due?: { dueDate: string; status: TaskStatus; today?: string } | null;
   /** The Blocked marker. */
@@ -93,7 +98,7 @@ export interface BoardCardContentProps {
 /**
  * Inside of a card (margin.css .card-t, .card-m, .card-av, .pref): the title first, then one meta line with
  * priority (Urgent and High only), the key small and muted, labels, then on the right Blocked, subtask
- * progress and the due date. The assignee avatar sits at the top right.
+ * progress, criteria progress and the due date. The assignee avatar sits at the top right.
  */
 export function BoardCardContent({
   taskKey,
@@ -102,6 +107,7 @@ export function BoardCardContent({
   priority,
   labels,
   subtasks,
+  criteria,
   due,
   blocked = false,
   milestone,
@@ -113,8 +119,9 @@ export function BoardCardContent({
 }: BoardCardContentProps) {
   const hasPriority = priority != null && showsPriorityOnCards(priority);
   const hasSubtasks = subtasks != null && subtasks.total > 0;
+  const hasCriteria = criteria != null && criteria.total > 0;
   const hasLeft = hasPriority || showKey || Boolean(labels?.length) || Boolean(milestone) || Boolean(cycle);
-  const hasRight = blocked || hasSubtasks || Boolean(due) || extra != null;
+  const hasRight = blocked || hasSubtasks || hasCriteria || Boolean(due) || extra != null;
   return (
     <>
       {assignee ? (
@@ -162,6 +169,9 @@ export function BoardCardContent({
             <span className="ml-auto flex items-center gap-1.5">
               {blocked ? <BlockedMarker /> : null}
               {hasSubtasks ? <SubtaskProgress done={subtasks.done} total={subtasks.total} /> : null}
+              {hasCriteria ? (
+                <ProgressMark {...criteria} noun={criteria.total === 1 ? 'criterion' : 'criteria'} />
+              ) : null}
               {due ? <DueChip dueDate={due.dueDate} status={due.status} today={due.today} /> : null}
               {extra}
             </span>

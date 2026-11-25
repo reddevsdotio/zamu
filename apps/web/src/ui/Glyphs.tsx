@@ -79,6 +79,25 @@ export function CloseGlyph({ className }: GlyphProps) {
   );
 }
 
+/** 6×12 grip of two dot columns: a line that can be dragged or moved with Alt+arrows (margin.css .grip). */
+export function GripGlyph({ className }: GlyphProps) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 6 12"
+      width="6"
+      height="12"
+      fill="currentColor"
+      data-glyph="grip"
+      className={cn('shrink-0 opacity-80', className)}
+    >
+      {[1.5, 4.5].map((x) =>
+        [1.5, 4.5, 7.5, 10.5].map((y) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1" />),
+      )}
+    </svg>
+  );
+}
+
 /** Small ▾ after a select's value. */
 export function CaretGlyph({ className }: GlyphProps) {
   return (

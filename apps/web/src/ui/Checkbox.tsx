@@ -9,16 +9,36 @@ import { cn, composeTw } from './cn';
 import { type FieldChromeProps, FieldDescription, FieldError, Label } from './Field';
 import { CheckGlyph } from './Glyphs';
 
-/** The 14px box on its own (margin.css .box); also used for read-only markers and multi-pick menus. */
+/**
+ * The 14px box on its own (margin.css .box); also used for read-only markers and multi-pick menus.
+ * `waived` draws a dashed outline with a short bar (m6.css .box.wv): a criterion or done item that no
+ * longer applies. Pair it with struck text and the word "Waived", never with the box alone.
+ */
 export function CheckboxBox({
   checked,
   indeterminate,
+  waived,
   className,
 }: {
   checked: boolean;
   indeterminate?: boolean;
+  waived?: boolean;
   className?: string;
 }) {
+  if (waived) {
+    return (
+      <span
+        aria-hidden
+        data-waived
+        className={cn(
+          'grid size-3.5 shrink-0 place-items-center rounded-[4px] border-[1.5px] border-dashed border-fg-3',
+          className,
+        )}
+      >
+        <span className="h-[1.5px] w-1.5 bg-fg-3" />
+      </span>
+    );
+  }
   return (
     <span
       aria-hidden

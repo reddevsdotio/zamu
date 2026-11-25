@@ -43,9 +43,11 @@ export interface CodeBlockProps {
   /**
    * `default`: band box, mono 11px (CLI hints).
    * `secret`: accent-bordered 40px box with an accent Copy button beside it (a new API key).
+   * `command`: 40px --bg-lane box, mono 12.5px cut at the end, a small outlined Copy inside on the right
+   * (m6.css .cmd: the export command on the Backlog.md settings page).
    */
-  variant?: 'default' | 'secret';
-  /** Show a Copy button. Always on for `secret`. */
+  variant?: 'default' | 'secret' | 'command';
+  /** Show a Copy button. Always on for `secret` and `command`. */
   copyable?: boolean;
   /** Accessible label for the copy button, for example "Copy API key". */
   copyLabel?: string;
@@ -67,6 +69,29 @@ export function CodeBlock({
           {children}
         </code>
         <Button variant="accent" size="lg" aria-label={copyLabel} onPress={() => copy(children)}>
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+      </div>
+    );
+  }
+  if (variant === 'command') {
+    return (
+      <div
+        className={cn(
+          'flex h-10 min-w-0 items-center gap-2.5 rounded-md bg-bg-lane pr-1.5 pl-3.5',
+          className,
+        )}
+      >
+        <code title={children} className="min-w-0 flex-1 truncate font-mono text-sm text-fg">
+          {children}
+        </code>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="bg-surface hover:bg-surface-hover pressed:bg-surface-hover"
+          aria-label={copyLabel}
+          onPress={() => copy(children)}
+        >
           {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
