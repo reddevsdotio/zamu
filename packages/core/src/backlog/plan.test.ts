@@ -211,9 +211,20 @@ describe('planRefresh on the 2025-09 markers era', () => {
     expect(parent).toMatchObject({ title: 'Webhook retries', status: 'in_review', priority: 3, rank: 2000 });
     expect(parent?.createdAt.toISOString()).toBe('2025-09-01T09:30:00.000Z');
     expect(parent?.description).toContain('Retry failed webhook deliveries with backoff.');
-    expect(parent?.description).toContain('## Acceptance criteria');
-    expect(parent?.description).toContain('- [x] #1 Failed deliveries are retried');
     expect(parent?.description).toContain('## Comments from Backlog.md');
+    // M6: the work record leaves the description, as the m6_work_record migration does.
+    expect(parent?.description).not.toContain('## Acceptance criteria');
+    expect(parent).toMatchObject({
+      criteria: [
+        { text: 'Failed deliveries are retried', state: 'checked', waivedReason: null },
+        { text: 'Retries back off exponentially', state: 'open', waivedReason: null },
+      ],
+      doneItems: [{ text: 'Tests pass', state: 'open', waivedReason: null }],
+      plan: '1. Add a retry queue.\n2. Schedule with backoff.',
+      // Sections Backlog.md does not know come last in the rendering, so they join the summary.
+      finalSummary: 'Retries ship behind a flag.\n\n## Testing\n\nRan the load test twice.',
+    });
+    expect(parent?.backlogData).toMatchObject({ implementationNotes: 'Queue lives in Redis.' });
     expect(parent?.backlogData).toMatchObject({
       kind: 'task',
       status: 'In Review',

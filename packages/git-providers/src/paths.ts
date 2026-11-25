@@ -43,3 +43,11 @@ export function splitFilePath(filePath: string): { parent: string; name: string 
 export function isRegularFileMode(mode: unknown): boolean {
   return mode !== '120000' && mode !== '160000';
 }
+
+/** True when `filePath` is `folder` itself or sits below it ('' holds every path). */
+export function isUnderFolder(filePath: string, folder: string): boolean {
+  const normalized = normalizeFolder(folder);
+  if (normalized === '') return true;
+  const file = filePath.replace(/^\/+/, '');
+  return file === normalized || file.startsWith(`${normalized}/`);
+}

@@ -27,12 +27,16 @@ export {
   type LookupFn,
   normalizeHost,
 } from './hosts';
+export { isUnderFolder } from './paths';
 export {
   type BlobRef,
   type CreateProviderOptions,
   type FetchFn,
   type FileContent,
   type GitProvider,
+  MAX_OPEN_REQUESTS,
+  type OpenRequest,
+  type OpenRequestList,
   PROVIDER_KINDS,
   type ProviderKind,
   type RepositoryInfo,

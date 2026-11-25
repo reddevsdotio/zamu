@@ -2,11 +2,13 @@
 // difference in one transaction. Runs take a Postgres advisory lock on the source, so a second
 // worker skips. Also the enqueue helper every trigger uses, and the hourly poll.
 // Steps and states: M3 plan, section 5 "Refresh".
+
+import type { WorkRecordItem } from '@zamu/backlog-md';
 import type { BacklogState, BacklogTrigger } from '@zamu/contracts';
 import { BacklogMappings, BacklogProblem } from '@zamu/contracts';
 import { type Db, type DbHandle, type DbOrTx, schema, type Tx } from '@zamu/db';
 import { GitNotFound, type GitProvider, GitRateLimited } from '@zamu/git-providers';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { DbContext, GitContext } from '../context';
 import { clockNow } from '../cycles';
@@ -32,8 +34,18 @@ import {
 } from './plan';
 import { locateFolder, type PreviousRead, readFolder, repositoryRef } from './reader';
 
-const { backlogFile, backlogSource, label, member, milestone, project, task, taskDependency, taskLabel } =
-  schema;
+const {
+  backlogFile,
+  backlogSource,
+  label,
+  member,
+  milestone,
+  project,
+  task,
+  taskDependency,
+  taskItem,
+  taskLabel,
+} = schema;
 
 /** Triggers a person or an agent asked for: queued without the debounce slot. */
 const ASKED_TRIGGERS: ReadonlySet<BacklogTrigger> = new Set(['setup', 'manual', 'cli']);
@@ -197,13 +209,13 @@ export function storedProblems(source: Pick<BacklogSourceRow, 'warnings'>): Back
   return parsed.success ? parsed.data : [];
 }
 
-/** Rows of a project and source as the planner and reader need them. */
+/** Rows of a project and source as the planner and reader need them (M6: with the work record). */
 export async function loadExisting(
   db: DbOrTx,
   source: Pick<BacklogSourceRow, 'id' | 'lastReadCommit' | 'warnings'>,
   projectRow: { id: string; nextTaskNumber: number },
 ): Promise<ExistingState> {
-  const [rows, milestones, files, labels, taskLabels, dependencies] = await Promise.all([
+  const [rows, milestones, files, labels, taskLabels, dependencies, items] = await Promise.all([
     db
       .select({
         id: task.id,
@@ -221,6 +233,8 @@ export async function loadExisting(
         hiddenAt: task.hiddenAt,
         dueDate: task.dueDate,
         parentId: task.parentId,
+        plan: task.plan,
+        finalSummary: task.finalSummary,
       })
       .from(task)
       .where(eq(task.projectId, projectRow.id)),
@@ -263,6 +277,18 @@ export async function loadExisting(
       .from(taskDependency)
       .innerJoin(task, eq(task.id, taskDependency.taskId))
       .where(eq(task.projectId, projectRow.id)),
+    db
+      .select({
+        taskId: taskItem.taskId,
+        kind: taskItem.kind,
+        text: taskItem.text,
+        state: taskItem.state,
+        waivedReason: taskItem.waivedReason,
+      })
+      .from(taskItem)
+      .innerJoin(task, eq(task.id, taskItem.taskId))
+      .where(eq(task.projectId, projectRow.id))
+      .orderBy(asc(taskItem.taskId), asc(taskItem.kind), asc(taskItem.position)),
   ]);
   const labelIds = new Map<string, string[]>();
   for (const row of taskLabels) labelIds.set(row.taskId, [...(labelIds.get(row.taskId) ?? []), row.labelId]);
@@ -270,10 +296,22 @@ export async function loadExisting(
   for (const row of dependencies) {
     blockerIds.set(row.taskId, [...(blockerIds.get(row.taskId) ?? []), row.blockerId]);
   }
+  const lists = new Map<string, { criteria: WorkRecordItem[]; doneItems: WorkRecordItem[] }>();
+  for (const item of items) {
+    const entry = lists.get(item.taskId) ?? { criteria: [], doneItems: [] };
+    (item.kind === 'criterion' ? entry.criteria : entry.doneItems).push({
+      text: item.text,
+      state: item.state,
+      waivedReason: item.waivedReason,
+    });
+    lists.set(item.taskId, entry);
+  }
   const tasks: ExistingTask[] = rows.map((row) => ({
     ...row,
     labelIds: labelIds.get(row.id) ?? [],
     blockerIds: blockerIds.get(row.id) ?? [],
+    criteria: lists.get(row.id)?.criteria ?? [],
+    doneItems: lists.get(row.id)?.doneItems ?? [],
   }));
   return {
     labels,

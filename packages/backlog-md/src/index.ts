@@ -1,4 +1,5 @@
-// Backlog.md folder parser. Pure: callers pass file contents and get typed records or error values.
+// Backlog.md folder parser and writer. Pure: callers pass file contents and get typed records or
+// error values; the writer returns file contents.
 export {
   DEFAULT_PRIORITIES,
   DEFAULT_STATUSES,
@@ -21,3 +22,33 @@ export { renderDescription } from './render';
 export { parseSections } from './sections';
 export { parseTask } from './task';
 export type * from './types';
+export {
+  applyWaivers,
+  splitRenderedDescription,
+  taskWorkRecord,
+  type WorkRecord,
+  type WorkRecordItem,
+  type WorkRecordItemState,
+} from './work-record';
+export {
+  BACKLOG_FILE_FORMAT,
+  backlogTimestamp,
+  formatImplementationNotes,
+  type MilestoneFileInput,
+  milestoneFileName,
+  type NoteEntry,
+  type TaskFileInput,
+  taskFileName,
+  titleSlug,
+  writeMilestoneFile,
+  writeTaskFile,
+} from './write';
+export {
+  emptyZamuBlock,
+  extractZamuBlock,
+  isEmptyZamuBlock,
+  parseZamuBlock,
+  renderZamuBlock,
+  ZAMU_BLOCK_END,
+  ZAMU_BLOCK_START,
+} from './zamu-block';

@@ -2,7 +2,10 @@
 // project's current rows into a diff (creates, updates with changed fields, hides, restores,
 // milestone changes, file rows, problems, counts). Pure: no database, no I/O, no clock (the caller
 // passes `now`). Preview and refresh both run it, so a preview shows what the first read writes.
-// Rules: M3 plan, section 5 "Task keys", "Field mapping" and "Refresh".
+// Rules: M3 plan, section 5 "Task keys", "Field mapping" and "Refresh". M6: the work record
+// (criteria, done items, plan, final summary, notes) comes out of the file the way the
+// m6_work_record migration takes it out of stored descriptions (taskWorkRecord), so an upgrade
+// followed by a refresh of unchanged files changes nothing.
 import {
   type BacklogConfig,
   type BacklogMilestone,
@@ -11,7 +14,8 @@ import {
   matchMilestone,
   type ParseResult,
   type ParseWarning,
-  renderDescription,
+  taskWorkRecord,
+  type WorkRecordItem,
 } from '@zamu/backlog-md';
 import {
   BacklogBlock,
@@ -34,7 +38,7 @@ import {
   type TaskStatus,
 } from '@zamu/contracts';
 import type { z } from 'zod';
-import { compareLabelNames, compareTaskKeys } from '../activity';
+import { compareLabelNames, compareTaskKeys, type StoredWorkRecordChange } from '../activity';
 import {
   backlogDueDate,
   backlogLabelNames,
@@ -43,6 +47,7 @@ import {
   labelKey,
   leastUsedLabelColor,
 } from './fields';
+import { diffItems, sameItems } from './items';
 import { emptySeenValues, MappingIndex, type SeenValues, valueKey } from './mappings';
 
 // ---------------------------------------------------------------------------
@@ -74,6 +79,14 @@ export interface ExistingTask {
   parentId: string | null;
   labelIds: string[];
   blockerIds: string[];
+  /**
+   * M6: the work record as stored (task.plan, task.final_summary, task_item rows in order). Left
+   * out by callers that build rows by hand: then empty.
+   */
+  plan?: string | null;
+  finalSummary?: string | null;
+  criteria?: WorkRecordItem[];
+  doneItems?: WorkRecordItem[];
 }
 
 /** M5: a label of the project. */
@@ -202,6 +215,11 @@ export interface TaskValues {
   parent: TaskTarget | null;
   labels: LabelTarget[];
   blockers: TaskTarget[];
+  /** M6: the work record filled from the file; the apply writes items as task_item rows. */
+  plan: string | null;
+  finalSummary: string | null;
+  criteria: WorkRecordItem[];
+  doneItems: WorkRecordItem[];
 }
 
 export interface TaskCreate extends TaskValues {
@@ -223,7 +241,9 @@ export type PlannedChange =
   | { field: 'dueDate'; from: string | null; to: string | null }
   | { field: 'blockedBy'; from: PlannedTaskRef[]; to: PlannedTaskRef[] }
   | { field: 'parent'; from: PlannedTaskRef | null; to: PlannedTaskRef | null }
-  | { field: 'backlog'; from: null; to: string[] };
+  | { field: 'backlog'; from: null; to: string[] }
+  // M6: one change per item operation, and the plan and summary text before and after.
+  | StoredWorkRecordChange;
 
 export interface TaskUpdate {
   id: string;
@@ -311,6 +331,7 @@ const REPORTED_WARNINGS = new Set<ParseWarning['code']>([
   'id_mismatch',
   'ignored_value',
   'malformed_markers',
+  'invalid_zamu_block',
 ]);
 
 function compareText(left: string, right: string): number {
@@ -415,6 +436,12 @@ interface TaskSnapshot {
   suffix: string | null;
   title: string;
   description: string | null;
+  /** M6: the work record, as the fill takes it out of the file. */
+  plan: string | null;
+  finalSummary: string | null;
+  criteria: WorkRecordItem[];
+  doneItems: WorkRecordItem[];
+  implementationNotes: string | null;
   /** Null: missing or unreadable; the task keeps (or gets) the first read's time. */
   createdAt: Date | null;
   createdDate: string | null;
@@ -452,7 +479,7 @@ function snapshotFromTask(task: BacklogTask, kind: TaskFileKind): TaskSnapshot {
   const other: Record<string, unknown> = { ...task.unknown };
   if (task.project !== null) other.project = task.project;
   if (task.onStatusChange !== null) other.onStatusChange = task.onStatusChange;
-  const description = renderDescription(task);
+  const record = taskWorkRecord(task);
   return {
     path: task.path,
     kind,
@@ -460,7 +487,12 @@ function snapshotFromTask(task: BacklogTask, kind: TaskFileKind): TaskSnapshot {
     idNumber: task.id.number,
     suffix: task.id.suffix,
     title: task.title,
-    description: description === '' ? null : description,
+    description: record.description,
+    plan: record.plan,
+    finalSummary: record.finalSummary,
+    criteria: record.criteria,
+    doneItems: record.doneItems,
+    implementationNotes: record.implementationNotes,
     createdAt: task.createdDate,
     createdDate: task.createdDate ? task.createdDate.toISOString() : null,
     updatedDate: task.updatedDate,
@@ -508,6 +540,11 @@ function snapshotFromRow(row: ExistingTask, path: string, kind: TaskFileKind): T
     suffix: parts.suffix,
     title: row.title,
     description: row.description,
+    plan: row.plan ?? null,
+    finalSummary: row.finalSummary ?? null,
+    criteria: row.criteria ?? [],
+    doneItems: row.doneItems ?? [],
+    implementationNotes: block.implementationNotes,
     createdAt: row.createdAt,
     createdDate: block.createdDate,
     updatedDate: block.updatedDate ? new Date(block.updatedDate) : null,
@@ -1143,6 +1180,7 @@ export function planRefresh(input: PlanInput): BacklogPlan {
       updatedDate: snapshot.updatedDate ? snapshot.updatedDate.toISOString() : null,
       ordinal: snapshot.ordinal,
       other: snapshot.rest.other,
+      implementationNotes: snapshot.implementationNotes,
     };
     desired.set(snapshot, {
       number: key.number,
@@ -1160,6 +1198,10 @@ export function planRefresh(input: PlanInput): BacklogPlan {
       parent: fields.parent?.task ?? null,
       labels: fields.labels.map((ref) => ref.label),
       blockers: fields.blockers.map((ref) => ref.task),
+      plan: snapshot.plan,
+      finalSummary: snapshot.finalSummary,
+      criteria: snapshot.criteria,
+      doneItems: snapshot.doneItems,
     });
   }
 
@@ -1247,6 +1289,25 @@ export function planRefresh(input: PlanInput): BacklogPlan {
       set.parent = wantParent;
       const current = row.parentId ? existingTaskById.get(row.parentId) : undefined;
       changes.push({ field: 'parent', from: current ? rowRef(current) : null, to: fields.parent });
+    }
+    // M6: the work record. Items are replaced as a list; history names each operation.
+    const rowCriteria = row.criteria ?? [];
+    if (!sameItems(rowCriteria, want.criteria)) {
+      set.criteria = want.criteria;
+      changes.push(...diffItems(rowCriteria, want.criteria, 'criterion'));
+    }
+    const rowDoneItems = row.doneItems ?? [];
+    if (!sameItems(rowDoneItems, want.doneItems)) {
+      set.doneItems = want.doneItems;
+      changes.push(...diffItems(rowDoneItems, want.doneItems, 'done'));
+    }
+    if (want.plan !== (row.plan ?? null)) {
+      set.plan = want.plan;
+      changes.push({ field: 'plan', from: row.plan ?? null, to: want.plan });
+    }
+    if (want.finalSummary !== (row.finalSummary ?? null)) {
+      set.finalSummary = want.finalSummary;
+      changes.push({ field: 'finalSummary', from: row.finalSummary ?? null, to: want.finalSummary });
     }
     if (want.createdAt.getTime() !== row.createdAt.getTime()) {
       set.createdAt = want.createdAt;

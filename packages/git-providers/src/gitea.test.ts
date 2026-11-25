@@ -103,3 +103,30 @@ describe('Gitea and Forgejo adapter', () => {
     ).rejects.toBeInstanceOf(GitUnexpected);
   });
 });
+
+describe('Gitea and Forgejo open pull requests (M6)', () => {
+  it('pages through open pull requests and keeps the ones with a file under the folder', async () => {
+    const { provider, server } = gitea('open-requests');
+    const result = await provider.listOpenRequests?.('forgejo/docs', 'docs/backlog');
+    expect(result?.requests).toEqual([
+      {
+        number: 1200,
+        title: 'Pull 1200',
+        author: 'hubot',
+        headBranch: 'branch-1200',
+        webUrl: 'https://codeberg.org/forgejo/docs/pulls/1200',
+      },
+      {
+        number: 1149,
+        title: 'Pull 1149',
+        author: 'octocat',
+        headBranch: 'branch-1149',
+        webUrl: 'https://codeberg.org/forgejo/docs/pulls/1149',
+      },
+    ]);
+    // 52 requests fit under the cap, but #1199 changes 60 files and only 50 were looked at.
+    expect(result?.truncated).toBe(true);
+    expect(result?.listUrl).toBe('https://codeberg.org/forgejo/docs/pulls');
+    expect(server.unused()).toEqual([]);
+  });
+});

@@ -1,0 +1,2775 @@
+{
+  "description": "GET /repos/{owner}/{repo}/pulls?state=open in pages of 50 (X-Total-Count) and GET /repos/{owner}/{repo}/pulls/{index}/files for each.",
+  "source": "Hand-written from the Forgejo swagger (repoListPullRequests, repoGetPullRequestFiles); shapes trimmed.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls?state=open&page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "52"
+        },
+        "json": [
+          {
+            "id": 901200,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1200",
+            "number": 1200,
+            "user": {
+              "id": 8200,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1200",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1200",
+            "head": {
+              "label": "branch-1200",
+              "ref": "branch-1200",
+              "sha": "00000000000000000000000000000000000004b0"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-20T10:00:00Z"
+          },
+          {
+            "id": 901199,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1199",
+            "number": 1199,
+            "user": {
+              "id": 8199,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1199",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1199",
+            "head": {
+              "label": "branch-1199",
+              "ref": "branch-1199",
+              "sha": "00000000000000000000000000000000000004af"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-29T10:00:00Z"
+          },
+          {
+            "id": 901198,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1198",
+            "number": 1198,
+            "user": {
+              "id": 8198,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1198",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1198",
+            "head": {
+              "label": "branch-1198",
+              "ref": "branch-1198",
+              "sha": "00000000000000000000000000000000000004ae"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-28T10:00:00Z"
+          },
+          {
+            "id": 901197,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1197",
+            "number": 1197,
+            "user": {
+              "id": 8197,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1197",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1197",
+            "head": {
+              "label": "branch-1197",
+              "ref": "branch-1197",
+              "sha": "00000000000000000000000000000000000004ad"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-27T10:00:00Z"
+          },
+          {
+            "id": 901196,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1196",
+            "number": 1196,
+            "user": {
+              "id": 8196,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1196",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1196",
+            "head": {
+              "label": "branch-1196",
+              "ref": "branch-1196",
+              "sha": "00000000000000000000000000000000000004ac"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-26T10:00:00Z"
+          },
+          {
+            "id": 901195,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1195",
+            "number": 1195,
+            "user": {
+              "id": 8195,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1195",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1195",
+            "head": {
+              "label": "branch-1195",
+              "ref": "branch-1195",
+              "sha": "00000000000000000000000000000000000004ab"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-25T10:00:00Z"
+          },
+          {
+            "id": 901194,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1194",
+            "number": 1194,
+            "user": {
+              "id": 8194,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1194",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1194",
+            "head": {
+              "label": "branch-1194",
+              "ref": "branch-1194",
+              "sha": "00000000000000000000000000000000000004aa"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-24T10:00:00Z"
+          },
+          {
+            "id": 901193,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1193",
+            "number": 1193,
+            "user": {
+              "id": 8193,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1193",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1193",
+            "head": {
+              "label": "branch-1193",
+              "ref": "branch-1193",
+              "sha": "00000000000000000000000000000000000004a9"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-23T10:00:00Z"
+          },
+          {
+            "id": 901192,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1192",
+            "number": 1192,
+            "user": {
+              "id": 8192,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1192",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1192",
+            "head": {
+              "label": "branch-1192",
+              "ref": "branch-1192",
+              "sha": "00000000000000000000000000000000000004a8"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-22T10:00:00Z"
+          },
+          {
+            "id": 901191,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1191",
+            "number": 1191,
+            "user": {
+              "id": 8191,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1191",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1191",
+            "head": {
+              "label": "branch-1191",
+              "ref": "branch-1191",
+              "sha": "00000000000000000000000000000000000004a7"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-21T10:00:00Z"
+          },
+          {
+            "id": 901190,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1190",
+            "number": 1190,
+            "user": {
+              "id": 8190,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1190",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1190",
+            "head": {
+              "label": "branch-1190",
+              "ref": "branch-1190",
+              "sha": "00000000000000000000000000000000000004a6"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-20T10:00:00Z"
+          },
+          {
+            "id": 901189,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1189",
+            "number": 1189,
+            "user": {
+              "id": 8189,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1189",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1189",
+            "head": {
+              "label": "branch-1189",
+              "ref": "branch-1189",
+              "sha": "00000000000000000000000000000000000004a5"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-29T10:00:00Z"
+          },
+          {
+            "id": 901188,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1188",
+            "number": 1188,
+            "user": {
+              "id": 8188,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1188",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1188",
+            "head": {
+              "label": "branch-1188",
+              "ref": "branch-1188",
+              "sha": "00000000000000000000000000000000000004a4"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-28T10:00:00Z"
+          },
+          {
+            "id": 901187,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1187",
+            "number": 1187,
+            "user": {
+              "id": 8187,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1187",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1187",
+            "head": {
+              "label": "branch-1187",
+              "ref": "branch-1187",
+              "sha": "00000000000000000000000000000000000004a3"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-27T10:00:00Z"
+          },
+          {
+            "id": 901186,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1186",
+            "number": 1186,
+            "user": {
+              "id": 8186,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1186",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1186",
+            "head": {
+              "label": "branch-1186",
+              "ref": "branch-1186",
+              "sha": "00000000000000000000000000000000000004a2"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-26T10:00:00Z"
+          },
+          {
+            "id": 901185,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1185",
+            "number": 1185,
+            "user": {
+              "id": 8185,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1185",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1185",
+            "head": {
+              "label": "branch-1185",
+              "ref": "branch-1185",
+              "sha": "00000000000000000000000000000000000004a1"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-25T10:00:00Z"
+          },
+          {
+            "id": 901184,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1184",
+            "number": 1184,
+            "user": {
+              "id": 8184,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1184",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1184",
+            "head": {
+              "label": "branch-1184",
+              "ref": "branch-1184",
+              "sha": "00000000000000000000000000000000000004a0"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-24T10:00:00Z"
+          },
+          {
+            "id": 901183,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1183",
+            "number": 1183,
+            "user": {
+              "id": 8183,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1183",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1183",
+            "head": {
+              "label": "branch-1183",
+              "ref": "branch-1183",
+              "sha": "000000000000000000000000000000000000049f"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-23T10:00:00Z"
+          },
+          {
+            "id": 901182,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1182",
+            "number": 1182,
+            "user": {
+              "id": 8182,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1182",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1182",
+            "head": {
+              "label": "branch-1182",
+              "ref": "branch-1182",
+              "sha": "000000000000000000000000000000000000049e"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-22T10:00:00Z"
+          },
+          {
+            "id": 901181,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1181",
+            "number": 1181,
+            "user": {
+              "id": 8181,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1181",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1181",
+            "head": {
+              "label": "branch-1181",
+              "ref": "branch-1181",
+              "sha": "000000000000000000000000000000000000049d"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-21T10:00:00Z"
+          },
+          {
+            "id": 901180,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1180",
+            "number": 1180,
+            "user": {
+              "id": 8180,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1180",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1180",
+            "head": {
+              "label": "branch-1180",
+              "ref": "branch-1180",
+              "sha": "000000000000000000000000000000000000049c"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-20T10:00:00Z"
+          },
+          {
+            "id": 901179,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1179",
+            "number": 1179,
+            "user": {
+              "id": 8179,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1179",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1179",
+            "head": {
+              "label": "branch-1179",
+              "ref": "branch-1179",
+              "sha": "000000000000000000000000000000000000049b"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-29T10:00:00Z"
+          },
+          {
+            "id": 901178,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1178",
+            "number": 1178,
+            "user": {
+              "id": 8178,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1178",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1178",
+            "head": {
+              "label": "branch-1178",
+              "ref": "branch-1178",
+              "sha": "000000000000000000000000000000000000049a"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-28T10:00:00Z"
+          },
+          {
+            "id": 901177,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1177",
+            "number": 1177,
+            "user": {
+              "id": 8177,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1177",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1177",
+            "head": {
+              "label": "branch-1177",
+              "ref": "branch-1177",
+              "sha": "0000000000000000000000000000000000000499"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-27T10:00:00Z"
+          },
+          {
+            "id": 901176,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1176",
+            "number": 1176,
+            "user": {
+              "id": 8176,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1176",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1176",
+            "head": {
+              "label": "branch-1176",
+              "ref": "branch-1176",
+              "sha": "0000000000000000000000000000000000000498"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-26T10:00:00Z"
+          },
+          {
+            "id": 901175,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1175",
+            "number": 1175,
+            "user": {
+              "id": 8175,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1175",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1175",
+            "head": {
+              "label": "branch-1175",
+              "ref": "branch-1175",
+              "sha": "0000000000000000000000000000000000000497"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-25T10:00:00Z"
+          },
+          {
+            "id": 901174,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1174",
+            "number": 1174,
+            "user": {
+              "id": 8174,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1174",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1174",
+            "head": {
+              "label": "branch-1174",
+              "ref": "branch-1174",
+              "sha": "0000000000000000000000000000000000000496"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-24T10:00:00Z"
+          },
+          {
+            "id": 901173,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1173",
+            "number": 1173,
+            "user": {
+              "id": 8173,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1173",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1173",
+            "head": {
+              "label": "branch-1173",
+              "ref": "branch-1173",
+              "sha": "0000000000000000000000000000000000000495"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-23T10:00:00Z"
+          },
+          {
+            "id": 901172,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1172",
+            "number": 1172,
+            "user": {
+              "id": 8172,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1172",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1172",
+            "head": {
+              "label": "branch-1172",
+              "ref": "branch-1172",
+              "sha": "0000000000000000000000000000000000000494"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-22T10:00:00Z"
+          },
+          {
+            "id": 901171,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1171",
+            "number": 1171,
+            "user": {
+              "id": 8171,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1171",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1171",
+            "head": {
+              "label": "branch-1171",
+              "ref": "branch-1171",
+              "sha": "0000000000000000000000000000000000000493"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-21T10:00:00Z"
+          },
+          {
+            "id": 901170,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1170",
+            "number": 1170,
+            "user": {
+              "id": 8170,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1170",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1170",
+            "head": {
+              "label": "branch-1170",
+              "ref": "branch-1170",
+              "sha": "0000000000000000000000000000000000000492"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-20T10:00:00Z"
+          },
+          {
+            "id": 901169,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1169",
+            "number": 1169,
+            "user": {
+              "id": 8169,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1169",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1169",
+            "head": {
+              "label": "branch-1169",
+              "ref": "branch-1169",
+              "sha": "0000000000000000000000000000000000000491"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-29T10:00:00Z"
+          },
+          {
+            "id": 901168,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1168",
+            "number": 1168,
+            "user": {
+              "id": 8168,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1168",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1168",
+            "head": {
+              "label": "branch-1168",
+              "ref": "branch-1168",
+              "sha": "0000000000000000000000000000000000000490"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-28T10:00:00Z"
+          },
+          {
+            "id": 901167,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1167",
+            "number": 1167,
+            "user": {
+              "id": 8167,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1167",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1167",
+            "head": {
+              "label": "branch-1167",
+              "ref": "branch-1167",
+              "sha": "000000000000000000000000000000000000048f"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-27T10:00:00Z"
+          },
+          {
+            "id": 901166,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1166",
+            "number": 1166,
+            "user": {
+              "id": 8166,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1166",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1166",
+            "head": {
+              "label": "branch-1166",
+              "ref": "branch-1166",
+              "sha": "000000000000000000000000000000000000048e"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-26T10:00:00Z"
+          },
+          {
+            "id": 901165,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1165",
+            "number": 1165,
+            "user": {
+              "id": 8165,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1165",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1165",
+            "head": {
+              "label": "branch-1165",
+              "ref": "branch-1165",
+              "sha": "000000000000000000000000000000000000048d"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-25T10:00:00Z"
+          },
+          {
+            "id": 901164,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1164",
+            "number": 1164,
+            "user": {
+              "id": 8164,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1164",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1164",
+            "head": {
+              "label": "branch-1164",
+              "ref": "branch-1164",
+              "sha": "000000000000000000000000000000000000048c"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-24T10:00:00Z"
+          },
+          {
+            "id": 901163,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1163",
+            "number": 1163,
+            "user": {
+              "id": 8163,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1163",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1163",
+            "head": {
+              "label": "branch-1163",
+              "ref": "branch-1163",
+              "sha": "000000000000000000000000000000000000048b"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-23T10:00:00Z"
+          },
+          {
+            "id": 901162,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1162",
+            "number": 1162,
+            "user": {
+              "id": 8162,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1162",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1162",
+            "head": {
+              "label": "branch-1162",
+              "ref": "branch-1162",
+              "sha": "000000000000000000000000000000000000048a"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-22T10:00:00Z"
+          },
+          {
+            "id": 901161,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1161",
+            "number": 1161,
+            "user": {
+              "id": 8161,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1161",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1161",
+            "head": {
+              "label": "branch-1161",
+              "ref": "branch-1161",
+              "sha": "0000000000000000000000000000000000000489"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-21T10:00:00Z"
+          },
+          {
+            "id": 901160,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1160",
+            "number": 1160,
+            "user": {
+              "id": 8160,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1160",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1160",
+            "head": {
+              "label": "branch-1160",
+              "ref": "branch-1160",
+              "sha": "0000000000000000000000000000000000000488"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-20T10:00:00Z"
+          },
+          {
+            "id": 901159,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1159",
+            "number": 1159,
+            "user": {
+              "id": 8159,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1159",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1159",
+            "head": {
+              "label": "branch-1159",
+              "ref": "branch-1159",
+              "sha": "0000000000000000000000000000000000000487"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-29T10:00:00Z"
+          },
+          {
+            "id": 901158,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1158",
+            "number": 1158,
+            "user": {
+              "id": 8158,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1158",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1158",
+            "head": {
+              "label": "branch-1158",
+              "ref": "branch-1158",
+              "sha": "0000000000000000000000000000000000000486"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-28T10:00:00Z"
+          },
+          {
+            "id": 901157,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1157",
+            "number": 1157,
+            "user": {
+              "id": 8157,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1157",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1157",
+            "head": {
+              "label": "branch-1157",
+              "ref": "branch-1157",
+              "sha": "0000000000000000000000000000000000000485"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-27T10:00:00Z"
+          },
+          {
+            "id": 901156,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1156",
+            "number": 1156,
+            "user": {
+              "id": 8156,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1156",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1156",
+            "head": {
+              "label": "branch-1156",
+              "ref": "branch-1156",
+              "sha": "0000000000000000000000000000000000000484"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-26T10:00:00Z"
+          },
+          {
+            "id": 901155,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1155",
+            "number": 1155,
+            "user": {
+              "id": 8155,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1155",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1155",
+            "head": {
+              "label": "branch-1155",
+              "ref": "branch-1155",
+              "sha": "0000000000000000000000000000000000000483"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-25T10:00:00Z"
+          },
+          {
+            "id": 901154,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1154",
+            "number": 1154,
+            "user": {
+              "id": 8154,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1154",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1154",
+            "head": {
+              "label": "branch-1154",
+              "ref": "branch-1154",
+              "sha": "0000000000000000000000000000000000000482"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-24T10:00:00Z"
+          },
+          {
+            "id": 901153,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1153",
+            "number": 1153,
+            "user": {
+              "id": 8153,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1153",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1153",
+            "head": {
+              "label": "branch-1153",
+              "ref": "branch-1153",
+              "sha": "0000000000000000000000000000000000000481"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-23T10:00:00Z"
+          },
+          {
+            "id": 901152,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1152",
+            "number": 1152,
+            "user": {
+              "id": 8152,
+              "login": "hubot",
+              "full_name": ""
+            },
+            "title": "Pull 1152",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1152",
+            "head": {
+              "label": "branch-1152",
+              "ref": "branch-1152",
+              "sha": "0000000000000000000000000000000000000480"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-22T10:00:00Z"
+          },
+          {
+            "id": 901151,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1151",
+            "number": 1151,
+            "user": {
+              "id": 8151,
+              "login": "ana-dev",
+              "full_name": ""
+            },
+            "title": "Pull 1151",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1151",
+            "head": {
+              "label": "branch-1151",
+              "ref": "branch-1151",
+              "sha": "000000000000000000000000000000000000047f"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-21T10:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls?state=open&page=2&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "52"
+        },
+        "json": [
+          {
+            "id": 901150,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1150",
+            "number": 1150,
+            "user": {
+              "id": 8150,
+              "login": "octocat",
+              "full_name": ""
+            },
+            "title": "Pull 1150",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1150",
+            "head": {
+              "label": "branch-1150",
+              "ref": "branch-1150",
+              "sha": "000000000000000000000000000000000000047e"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-20T10:00:00Z"
+          },
+          {
+            "id": 901149,
+            "url": "https://codeberg.org/forgejo/docs/pulls/1149",
+            "number": 1149,
+            "user": {
+              "id": 8149,
+              "login": "octocat",
+              "full_name": ""
+            },
+            "title": "Pull 1149",
+            "state": "open",
+            "html_url": "https://codeberg.org/forgejo/docs/pulls/1149",
+            "head": {
+              "label": "branch-1149",
+              "ref": "branch-1149",
+              "sha": "000000000000000000000000000000000000047d"
+            },
+            "base": {
+              "label": "next",
+              "ref": "next"
+            },
+            "created_at": "2026-11-29T10:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1200/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "docs/backlog/tasks/doc-1 - One.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/docs/backlog/tasks/doc-1 - One.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1199/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "60"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1198/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1197/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1196/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1195/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1194/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1193/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1192/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1191/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1190/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1189/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1188/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1187/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1186/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1185/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1184/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1183/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1182/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1181/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1180/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1179/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1178/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1177/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1176/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1175/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1174/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1173/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1172/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1171/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1170/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1169/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1168/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1167/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1166/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1165/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1164/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1163/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1162/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1161/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1160/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1159/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1158/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1157/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1156/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1155/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1154/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1153/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1152/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1151/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1150/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/page-0.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-0.md"
+          },
+          {
+            "filename": "content/page-1.md",
+            "status": "changed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/page-1.md"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://codeberg.org/api/v1/repos/forgejo/docs/pulls/1149/files?page=1&limit=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-total-count": "2"
+        },
+        "json": [
+          {
+            "filename": "content/a.md",
+            "status": "renamed",
+            "additions": 2,
+            "deletions": 0,
+            "changes": 2,
+            "html_url": "https://codeberg.org/forgejo/docs/src/commit/abc/content/a.md",
+            "previous_filename": "docs/backlog/b.md"
+          }
+        ]
+      }
+    }
+  ]
+}

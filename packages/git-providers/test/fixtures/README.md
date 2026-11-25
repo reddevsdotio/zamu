@@ -11,6 +11,10 @@ Where they come from:
   providers sent them.
 - Hand-written from the provider API docs where a public recording is not possible: `whoami`
   (needs a token), rate-limit answers, truncated GitHub trees, redirects, subgroup projects.
+- `*/open-requests*.json` (M6) are hand-written from each provider's pull or merge request docs, on
+  the same public repository paths: open requests, their changed files, and the pagination headers
+  that make a list incomplete. The Forgejo integration test checks the same calls against a real
+  server with a read-only token.
 - `gitea/tree-paged.json` keeps a Forgejo quirk seen on Codeberg and in
   `services/repository/files/tree.go`: `truncated` stays `true` on every page of a paged tree
   listing, the last page included.
