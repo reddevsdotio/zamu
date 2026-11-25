@@ -1,0 +1,20 @@
+# Written by the release workflow of reddevsdotio/zamu from docker/homebrew/zamu.rb.template.
+# Changes made here are overwritten by the next release.
+class Zamu < Formula
+  desc "Command-line client for Zamu, self-hosted project management for AI agents"
+  homepage "https://github.com/reddevsdotio/zamu"
+  url "@URL@"
+  sha256 "@SHA256@"
+  license "MIT"
+
+  depends_on "node"
+
+  def install
+    system "npm", "install", *std_npm_args
+    bin.install_symlink libexec.glob("bin/*")
+  end
+
+  test do
+    assert_equal version.to_s, shell_output("#{bin}/zamu --version").strip
+  end
+end

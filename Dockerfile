@@ -29,7 +29,9 @@ COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --offline --store-dir /pnpm/store
 
-RUN pnpm --filter web build && pnpm --filter @zamu/cli build
+# The version `zamu --version` prints inside the image; empty outside a release build.
+ARG ZAMU_CLI_VERSION=
+RUN pnpm --filter web build && ZAMU_CLI_VERSION=${ZAMU_CLI_VERSION} pnpm --filter @zamu/cli build
 
 # Self-contained production trees. The web server is bundled by Nitro into apps/web/.output.
 # The worker (and the migrate role, which reuses its dependencies) runs TypeScript through tsx.

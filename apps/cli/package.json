@@ -16,7 +16,8 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsdown",
-    "typecheck": "tsc --noEmit",
+    "package:npm": "node scripts/npm-package.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
     "test": "vitest run"
   },
   "dependencies": {
