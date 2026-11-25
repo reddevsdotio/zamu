@@ -265,3 +265,40 @@ export async function addTaskBlockers(db: Db, taskId: string, blockerIds: string
     .values(blockerIds.map((blockerId) => ({ taskId, blockerId })))
     .onConflictDoNothing();
 }
+
+// ---------------------------------------------------------------------------
+// M6 rows: criteria and done items. Raw inserts like the rows above; the task services check the
+// limits and number the items, these don't.
+// ---------------------------------------------------------------------------
+
+/**
+ * Inserts the items of one list of a task, numbered 1.. in order after any it has. A string is an
+ * open item; an object sets the state (waived needs waivedReason) and the source.
+ */
+export async function createTaskItemRows(
+  db: Db,
+  taskId: string,
+  kind: 'criterion' | 'done',
+  items: (
+    | string
+    | (Partial<Omit<typeof schema.taskItem.$inferInsert, 'taskId' | 'kind' | 'position'>> & { text: string })
+  )[],
+): Promise<(typeof schema.taskItem.$inferSelect)[]> {
+  if (items.length === 0) return [];
+  const [last] = await db
+    .select({ max: sql<number | null>`max(${schema.taskItem.position})` })
+    .from(schema.taskItem)
+    .where(and(eq(schema.taskItem.taskId, taskId), eq(schema.taskItem.kind, kind)));
+  const start = Number(last?.max ?? 0);
+  return db
+    .insert(schema.taskItem)
+    .values(
+      items.map((item, index) => ({
+        ...(typeof item === 'string' ? { text: item } : item),
+        taskId,
+        kind,
+        position: start + index + 1,
+      })),
+    )
+    .returning();
+}

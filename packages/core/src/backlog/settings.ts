@@ -1,5 +1,6 @@
 // Backlog.md settings of a project: mappings, folder, connection, Refresh now (web) and refresh
-// requests from the API (zamu backlog refresh), webhook info, a new webhook secret, and detach.
+// requests from the API (zamu backlog refresh), webhook info, a new webhook secret, and detach
+// (also the last step of the M6 switch to Zamu, ./switch).
 // Rules: M3 plan, section 5 "Setup, import and detach" and "Authorization (additions)".
 import {
   type BacklogRefreshResult,
@@ -19,7 +20,7 @@ import {
 } from '@zamu/contracts';
 import { schema, type Tx } from '@zamu/db';
 import { hostnameOf } from '@zamu/git-providers';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
 import { recordActivity } from '../activity';
 import { type Actor, can } from '../authz';
@@ -42,13 +43,13 @@ import { enqueueBacklogRefresh, storedProblems } from './refresh';
 import { assertMappedMembers, newWebhookCredentials } from './setup';
 import { backlogStatus, sourceForProject } from './status';
 
-const { backlogSource, gitConnection } = schema;
+const { backlogSource, gitConnection, task, taskItem } = schema;
 
 export interface BacklogSettingsContext extends DbContext, GitContext {
   jobs?: JobQueue;
 }
 
-function assertNotDetached(projectRow: ProjectRow, source: BacklogSourceRow): void {
+export function assertNotDetached(projectRow: ProjectRow, source: BacklogSourceRow): void {
   if (source.state === 'detached') {
     throw new BacklogDetached(
       `${projectRow.key} was detached from Backlog.md; it no longer reads the repository`,
@@ -267,6 +268,56 @@ export async function reissueBacklogWebhookSecret(
 }
 
 /**
+ * Detaches the locked source in `tx`: the source is detached (when and by whom), the webhook secret
+ * dropped (the URL answers 410), labels from the files become app labels, and (M6) criteria and
+ * done items become the app's, so native writes work on them. One project.backlog_detached
+ * activity row. Shared by detach and the switch to Zamu.
+ */
+export async function detachSource(
+  tx: Tx,
+  actor: Actor,
+  found: { project: ProjectRow; source: BacklogSourceRow },
+  now: Date,
+): Promise<BacklogSourceRow> {
+  const [row] = await tx
+    .update(backlogSource)
+    .set({
+      state: 'detached',
+      detachedAt: now,
+      detachedById: actor.userId,
+      webhookSecretCiphertext: null,
+      lastError: null,
+    })
+    .where(eq(backlogSource.id, found.source.id))
+    .returning();
+  if (!row) throw new Error('backlog source update returned no row');
+  // M5: labels from the files become app labels (names editable); tasks keep them.
+  await releaseBacklogLabels(tx, found.project.id);
+  // M6: items read from the files are the app's from now on.
+  await tx
+    .update(taskItem)
+    .set({ source: 'app' })
+    .where(
+      and(
+        eq(taskItem.source, 'backlog'),
+        inArray(
+          taskItem.taskId,
+          tx.select({ id: task.id }).from(task).where(eq(task.projectId, found.project.id)),
+        ),
+      ),
+    );
+  await recordActivity(tx, actor, {
+    projectId: found.project.id,
+    type: 'project.backlog_detached',
+    details: {
+      mode: found.source.mode,
+      repository: repositoryRef(found.project.repository)?.short ?? null,
+    },
+  });
+  return row;
+}
+
+/**
  * Detaches for good (owners and admins, after typing the key): the source is detached, the
  * webhook secret dropped (the URL answers 410), the project and its milestones become editable,
  * tasks keep their Backlog.md id and block, hidden tasks stay hidden. One project.backlog_detached
@@ -282,28 +333,7 @@ export async function detachBacklog(
   const { project, source } = await ctx.db.transaction(async (tx) => {
     const found = await sourceForProject(tx, actor, parsed.projectKey, 'backlog.manage', { forUpdate: true });
     assertNotDetached(found.project, found.source);
-    const [row] = await tx
-      .update(backlogSource)
-      .set({
-        state: 'detached',
-        detachedAt: now,
-        detachedById: actor.userId,
-        webhookSecretCiphertext: null,
-        lastError: null,
-      })
-      .where(eq(backlogSource.id, found.source.id))
-      .returning();
-    if (!row) throw new Error('backlog source update returned no row');
-    // M5: labels from the files become app labels (names editable); tasks keep them.
-    await releaseBacklogLabels(tx, found.project.id);
-    await recordActivity(tx, actor, {
-      projectId: found.project.id,
-      type: 'project.backlog_detached',
-      details: {
-        mode: found.source.mode,
-        repository: repositoryRef(found.project.repository)?.short ?? null,
-      },
-    });
+    const row = await detachSource(tx, actor, found, now);
     return { project: found.project, source: row };
   });
   return backlogStatus(ctx, project, source, { limit: 50 });

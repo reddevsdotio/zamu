@@ -45,6 +45,7 @@ describe('display option defaults', () => {
       priority: true,
       labels: true,
       subtasks: true,
+      criteria: false,
       due: true,
       blocked: true,
       assignee: true,
@@ -61,6 +62,8 @@ describe('display option defaults', () => {
       boardSubtasks: 'expandable',
     });
     expect(board.properties.updated).toBe(false);
+    // M6: the criteria marker is off by default on cards too.
+    expect(board.properties.criteria).toBe(false);
     expect(defaultDisplayOptions('home')).toMatchObject({ layout: 'list', groupBy: 'none' });
   });
 
@@ -85,6 +88,14 @@ describe('display option defaults', () => {
     expect(normalizeDisplayOptions('list', 'garbage')).toEqual(DEFAULT_DISPLAY_OPTIONS.list);
     expect(normalizeDisplayOptions('home', { groupBy: 'label' }).groupBy).toBe('none');
     expect(sameDisplayOptions(normalizeDisplayOptions('list', {}), defaultDisplayOptions('list'))).toBe(true);
+  });
+
+  it('keeps the criteria marker off for options saved before M6, and reads it back once on', () => {
+    const before = normalizeDisplayOptions('list', { properties: { milestone: true, subtasks: true } });
+    expect(before.properties.criteria).toBe(false);
+    const on = normalizeDisplayOptions('board', { properties: { criteria: true } });
+    expect(on.properties.criteria).toBe(true);
+    expect(sameDisplayOptions(on, defaultDisplayOptions('board'))).toBe(false);
   });
 });
 

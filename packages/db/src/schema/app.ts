@@ -1,7 +1,9 @@
 // Application tables: projects, tasks, milestones, cycles, comments and activity.
 // See section 5 "Domain model" of the M1 plan, section 5 "Domain model changes" of the M2 plan and
-// section 5 "Domain model and behaviour" of the M3 plan (Backlog.md tables live in ./backlog), and
-// section 4 "Data model" of the M5 plan (labels, due dates, blockers and subtasks).
+// section 5 "Domain model and behaviour" of the M3 plan (Backlog.md tables live in ./backlog),
+// section 4 "Data model" of the M5 plan (labels, due dates, blockers and subtasks), and the M6 work
+// record (acceptance criteria and done items in task_item, plan and final summary on task, notes as
+// comments of kind note, and the machine and branch a CLI change came from).
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -55,12 +57,33 @@ export type ActivityOrigin = (typeof ACTIVITY_ORIGINS)[number];
  */
 export const KEY_SUFFIX_SQL_PATTERN = '^[1-9][0-9]{0,4}(\\.[1-9][0-9]{0,4})*$';
 
-/** One entry of activity.changes. */
+/**
+ * One entry of activity.changes. Field changes carry from and to; M6 work-record changes
+ * (criterion.checked, doneItem.waived, ...) carry the item's number and text instead, plus their
+ * own fields (see ActivityChange in @zamu/contracts).
+ */
 export interface ActivityChange {
   field: string;
-  from: unknown;
-  to: unknown;
+  from?: unknown;
+  to?: unknown;
+  [key: string]: unknown;
 }
+
+/** M6: the two lists of a task's work record: acceptance criteria and definition-of-done items. */
+export const TASK_ITEM_KINDS = ['criterion', 'done'] as const;
+export type TaskItemKind = (typeof TASK_ITEM_KINDS)[number];
+
+/** M6: an item is open until someone checks it or waives it with a reason. */
+export const TASK_ITEM_STATES = ['open', 'checked', 'waived'] as const;
+export type TaskItemState = (typeof TASK_ITEM_STATES)[number];
+
+/** M6: app items are written in the app; backlog items come from a mirrored Backlog.md file. */
+export const TASK_ITEM_SOURCES = ['app', 'backlog'] as const;
+export type TaskItemSource = (typeof TASK_ITEM_SOURCES)[number];
+
+/** M6: a note is a work note an agent or person writes while working; it shows quietly in the timeline. */
+export const COMMENT_KINDS = ['comment', 'note'] as const;
+export type CommentKind = (typeof COMMENT_KINDS)[number];
 
 /** M5: label.color is one of the nine palette hues, --label-1 to --label-9. */
 export const LABEL_COLOR_MIN = 1;
@@ -110,6 +133,8 @@ export const project = pgTable(
     repository: text('repository'),
     /** parseRepositoryUrl(repository).key: host/path in lowercase. Unique per workspace. */
     repositoryKey: text('repository_key'),
+    /** M6: done items every new task of the project starts with, in order. Owners and admins edit them. */
+    defaultDoneItems: jsonb('default_done_items').$type<string[]>().default([]).notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -120,6 +145,7 @@ export const project = pgTable(
     check('project_key_check', sql`${table.key} ~ '^[A-Z][A-Z0-9]{1,5}$'`),
     check('project_next_task_number_check', sql`${table.nextTaskNumber} >= 1`),
     check('project_next_cycle_number_check', sql`${table.nextCycleNumber} >= 1`),
+    check('project_default_done_items_check', sql`jsonb_typeof(${table.defaultDoneItems}) = 'array'`),
   ],
 );
 
@@ -250,6 +276,13 @@ export const task = pgTable(
      * no parent itself). Deleting the parent turns its subtasks into top-level tasks.
      */
     parentId: uuid('parent_id').references((): AnyPgColumn => task.id, { onDelete: 'set null' }),
+    /**
+     * M6: the implementation plan, Markdown; null when none. Who wrote it and when comes from the
+     * latest activity change of the field.
+     */
+    plan: text('plan'),
+    /** M6: the final summary, Markdown; null when none. Author and time come from activity, like plan. */
+    finalSummary: text('final_summary'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -358,6 +391,50 @@ export const taskDependency = pgTable(
   ],
 );
 
+/**
+ * M6: one acceptance criterion (kind criterion) or definition-of-done item (kind done) of a task.
+ * An item's number is its position, counted from 1 per task and kind, as in Backlog.md; core
+ * renumbers after removes and moves. The unique constraint on (task_id, kind, position) is
+ * DEFERRABLE INITIALLY DEFERRED (set by hand in the m6_work_record migration: Drizzle has no
+ * builder for it), so a renumbering inside one transaction may pass through duplicates. Mirrored
+ * tasks get backlog items from their file; core refuses app writes to them.
+ */
+export const taskItem = pgTable(
+  'task_item',
+  {
+    id: id(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => task.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: TASK_ITEM_KINDS }).notNull(),
+    /** 1-based, contiguous per task and kind. */
+    position: integer('position').notNull(),
+    /** One line. Core limits it to 500 characters on writes; file items are stored as read. */
+    text: text('text').notNull(),
+    state: text('state', { enum: TASK_ITEM_STATES }).default('open').notNull(),
+    /** Required while waived, null otherwise. */
+    waivedReason: text('waived_reason'),
+    /** Who waived it; null when not waived (or when a waiver came in without a member). */
+    waivedById: uuid('waived_by_id').references(() => user.id, { onDelete: 'restrict' }),
+    source: text('source', { enum: TASK_ITEM_SOURCES }).default('app').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    // Also the index for reading a task's lists in order.
+    unique('task_item_taskId_kind_position_unique').on(table.taskId, table.kind, table.position),
+    check('task_item_kind_check', sql`${table.kind} in ('criterion', 'done')`),
+    check('task_item_state_check', sql`${table.state} in ('open', 'checked', 'waived')`),
+    check('task_item_source_check', sql`${table.source} in ('app', 'backlog')`),
+    check('task_item_position_check', sql`${table.position} >= 1`),
+    check('task_item_text_check', sql`${table.text} <> '' and ${table.text} !~ '[\\r\\n]'`),
+    check(
+      'task_item_waived_check',
+      sql`(${table.state} = 'waived') = (${table.waivedReason} is not null) and (${table.state} = 'waived' or ${table.waivedById} is null)`,
+    ),
+  ],
+);
+
 export const activity = pgTable(
   'activity',
   {
@@ -383,6 +460,10 @@ export const activity = pgTable(
     origin: text('origin', { enum: ACTIVITY_ORIGINS }).default('app').notNull(),
     /** M3: the commit hash a Backlog.md refresh read; null for app rows. */
     originRef: text('origin_ref'),
+    /** M6: the machine the change came from (the CLI's x-zamu-machine header); null otherwise. */
+    machine: text('machine'),
+    /** M6: the git branch the CLI ran on (x-zamu-branch); null otherwise. */
+    branch: text('branch'),
     createdAt: createdAt(),
   },
   (table) => [
@@ -435,6 +516,12 @@ export const comment = pgTable(
     onBehalfOfId: uuid('on_behalf_of_id').references(() => user.id, { onDelete: 'restrict' }),
     /** Markdown, mentions as [@Name](mention:<userId>). Null once deleted. */
     body: text('body'),
+    /** M6: comment, or note (a work note). Notes notify only the people they mention. */
+    kind: text('kind', { enum: COMMENT_KINDS }).default('comment').notNull(),
+    /** M6: the machine the CLI ran on (x-zamu-machine); null otherwise. */
+    machine: text('machine'),
+    /** M6: the git branch the CLI ran on (x-zamu-branch); null otherwise. */
+    branch: text('branch'),
     createdAt: createdAt(),
     editedAt: timestamp('edited_at', { withTimezone: true }),
     /** Soft delete: body becomes null and the timeline shows a placeholder. */
@@ -445,6 +532,7 @@ export const comment = pgTable(
     // 0.6.0: the dashboard agents strip (an agent's newest comment).
     index('comment_authorId_createdAt_idx').on(table.authorId, table.createdAt),
     check('comment_body_check', sql`(${table.body} is null) = (${table.deletedAt} is not null)`),
+    check('comment_kind_check', sql`${table.kind} in ('comment', 'note')`),
   ],
 );
 

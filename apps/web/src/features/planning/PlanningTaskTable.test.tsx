@@ -12,7 +12,7 @@ import userEvent from '@testing-library/user-event';
 import type { TaskListItem } from '@zamu/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { closePeek, isPeekOpen } from '~/features/peek/store';
-import { defaultDisplayOptions, readTaskNavigation } from '~/features/views';
+import { type DisplayOptions, defaultDisplayOptions, readTaskNavigation } from '~/features/views';
 import { newQueryClient } from '~/features/views/testing';
 import { UIProvider } from '~/ui';
 import { PlanningTaskTable, planningGroupBy, visibleKeys } from './PlanningTaskTable';
@@ -64,7 +64,10 @@ const TASKS = [
   task(4, { status: 'done' }),
 ];
 
-function renderTable() {
+function renderTable(
+  tasks: readonly TaskListItem[] = TASKS,
+  display: DisplayOptions = defaultDisplayOptions('list'),
+) {
   const root = createRootRoute({
     component: () => (
       <UIProvider>
@@ -79,8 +82,8 @@ function renderTable() {
       <PlanningTaskTable
         aria-label="Tasks in Cycle 12"
         projectKey="PAY"
-        tasks={TASKS}
-        display={defaultDisplayOptions('list')}
+        tasks={tasks}
+        display={display}
         from="Cycle 12"
         hide="cycle"
       />
@@ -93,12 +96,12 @@ function renderTable() {
   });
   const history = createMemoryHistory({ initialEntries: ['/p/PAY/cycles/12?status=todo'] });
   const router = createRouter({ routeTree: root.addChildren([cycle, taskPage]), history });
-  render(
+  const { unmount } = render(
     <QueryClientProvider client={newQueryClient()}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
-  return router;
+  return Object.assign(router, { unmount });
 }
 
 const row = (key: string) => document.querySelector(`li[data-key="${key}"]`) as HTMLElement | null;
@@ -122,6 +125,39 @@ describe('PlanningTaskTable', () => {
 
     await userEvent.setup().click(screen.getByRole('button', { name: /Done/ }));
     expect(row('PAY-4')).not.toBeNull();
+  });
+
+  it('draws the criteria marker after subtasks and before the due date once Criteria is on', async () => {
+    const progress = { settled: 3, open: 2, waived: 1, total: 5 };
+    const tasks = [
+      task(1, {
+        title: 'Retry payouts',
+        dueDate: '2099-11-07',
+        subtaskProgress: { done: 1, total: 4 },
+        criteriaProgress: progress,
+      }),
+      task(2, { title: 'No criteria', criteriaProgress: { settled: 0, open: 0, waived: 0, total: 0 } }),
+    ];
+    const name = '2 of 5 criteria checked, 1 waived';
+    const defaults = defaultDisplayOptions('list');
+    const { unmount } = renderTable(tasks);
+    await screen.findByRole('region', { name: 'Tasks in Cycle 12' });
+    expect(row('PAY-1')).not.toBeNull();
+    expect(screen.queryByRole('img', { name })).toBeNull();
+    unmount();
+
+    renderTable(tasks, { ...defaults, properties: { ...defaults.properties, criteria: true } });
+    await screen.findByRole('region', { name: 'Tasks in Cycle 12' });
+    const first = row('PAY-1') as HTMLElement;
+    const mark = within(first).getByRole('img', { name });
+    expect(mark).toHaveTextContent('2/5');
+    const subtasks = within(first).getByRole('img', { name: '1 of 4 subtasks done' });
+    const due = within(first).getByText(/Nov 7/);
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(subtasks, mark)).toBe(true);
+    expect(follows(mark, due)).toBe(true);
+    expect(within(row('PAY-2') as HTMLElement).queryByRole('img', { name: /criteria/ })).toBeNull();
   });
 
   it('moves with J / K, peeks with Space, opens with Enter and remembers the list', async () => {

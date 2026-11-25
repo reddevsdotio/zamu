@@ -274,7 +274,7 @@ describe('comment box', () => {
     const user = userEvent.setup();
     renderApp('/p/PAY/PAY-1');
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(1));
-    expect(screen.getByRole('button', { name: 'Leave a comment' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Leave a comment or a note' })).toBeInTheDocument();
 
     await user.keyboard('m');
     await waitFor(() => expect(composer()).toHaveFocus());
@@ -300,7 +300,7 @@ describe('comment box', () => {
       }),
     );
     // Sent: the box closes again.
-    await screen.findByRole('button', { name: 'Leave a comment' });
+    await screen.findByRole('button', { name: 'Leave a comment or a note' });
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(2));
     const sent = comment('Ana Ruiz')[1] as HTMLElement;
     expect(sent.querySelector('[data-mention]')).toHaveTextContent('@claude-dev');
@@ -310,7 +310,7 @@ describe('comment box', () => {
     const user = userEvent.setup();
     renderApp('/p/PAY/PAY-1');
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(1));
-    await user.click(screen.getByRole('button', { name: 'Leave a comment' }));
+    await user.click(screen.getByRole('button', { name: 'Leave a comment or a note' }));
     await waitFor(() => expect(composer()).toHaveFocus());
     await user.keyboard('@');
     const picker = await screen.findByRole('listbox', { name: 'Mention' });
@@ -351,7 +351,7 @@ describe('comment box', () => {
     fake().control.failComments = false;
     fake().control.holdComments = null;
     await user.click(screen.getByRole('button', { name: /Try again/ }));
-    await screen.findByRole('button', { name: 'Leave a comment' });
+    await screen.findByRole('button', { name: 'Leave a comment or a note' });
     expect(fake().calls.comments.filter((call) => call.op === 'create')).toHaveLength(2);
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(2));
   });
@@ -367,7 +367,7 @@ describe('comment box', () => {
     const preview = await screen.findByRole('tabpanel');
     expect(within(preview).getByText('bold').tagName).toBe('STRONG');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    await user.click(await screen.findByRole('button', { name: 'Leave a comment' }));
+    await user.click(await screen.findByRole('button', { name: 'Leave a comment or a note' }));
     await waitFor(() => expect(composer()).toHaveValue(''));
   });
 });

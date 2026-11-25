@@ -6,6 +6,7 @@ import {
   type Comment,
   CYCLE_STATE_LABELS,
   type CycleState,
+  type EntrySource,
   type Me,
   MILESTONE_STATUS_LABELS,
   type MilestoneStatus,
@@ -15,6 +16,8 @@ import {
   type TaskStatus,
   type TimelineItem,
   type UserRef,
+  type WorkItem,
+  type WorkTextMeta,
 } from '@zamu/contracts';
 
 export interface Style {
@@ -272,7 +275,66 @@ export function changeSentence(change: ActivityChange): string {
           : `made it a subtask of ${change.to.key}`;
       }
       return change.from ? `took it out of ${change.from.key}` : 'made it a top-level task';
+    case 'criterion.added':
+    case 'criterion.edited':
+    case 'criterion.moved':
+    case 'criterion.removed':
+    case 'criterion.checked':
+    case 'criterion.unchecked':
+    case 'criterion.waived':
+    case 'criterion.unwaived':
+    case 'doneItem.added':
+    case 'doneItem.edited':
+    case 'doneItem.moved':
+    case 'doneItem.removed':
+    case 'doneItem.checked':
+    case 'doneItem.unchecked':
+    case 'doneItem.waived':
+    case 'doneItem.unwaived':
+      return itemSentence(change);
+    case 'plan':
+      return textChange('the plan', change);
+    case 'finalSummary':
+      return textChange('the final summary', change);
   }
+}
+
+type ItemChange = Extract<ActivityChange, { field: `criterion.${string}` | `doneItem.${string}` }>;
+
+/**
+ * A criterion or done item change: "checked criterion 2 "Refunds post a ledger entry"". The text
+ * keeps the line readable after the list was reordered.
+ */
+function itemSentence(change: ItemChange): string {
+  const [list, operation] = change.field.split('.') as [string, string];
+  const noun = list === 'criterion' ? 'criterion' : 'done item';
+  const text = `"${change.text}"`;
+  if (change.field === 'criterion.moved' || change.field === 'doneItem.moved') {
+    return `moved ${noun} ${text} from ${change.from} to ${change.to}`;
+  }
+  const item = `${noun} ${'number' in change ? change.number : ''} ${text}`;
+  switch (operation) {
+    case 'added':
+      return `added ${item}`;
+    case 'edited':
+      return `reworded ${item}${'from' in change && typeof change.from === 'string' ? ` (was "${change.from}")` : ''}`;
+    case 'removed':
+      return `removed ${item}`;
+    case 'checked':
+      return `checked ${item}`;
+    case 'unchecked':
+      return `unchecked ${item}`;
+    case 'waived':
+      return `waived ${item}${'reason' in change ? `: ${change.reason}` : ''}`;
+    default:
+      return `took back the waiver on ${item}`;
+  }
+}
+
+/** "wrote the plan", "edited the final summary", "cleared the plan". */
+function textChange(noun: string, change: { from: string | null; to: string | null }): string {
+  if (!change.to) return `cleared ${noun}`;
+  return change.from ? `edited ${noun}` : `wrote ${noun}`;
 }
 
 /** "claude-dev for Ana Ruiz moved it from Todo to In progress". */
@@ -344,38 +406,95 @@ export function commentAuthor(comment: Pick<Comment, 'author' | 'onBehalfOf'>): 
 
 const COMMENT_INDENT = '    ';
 
+/** "laptop · feat/payout-retries": where the CLI sent a change from (M6). Empty when unknown. */
+export function sourceLabel(source: EntrySource | null | undefined): string {
+  return [source?.machine, source?.branch].filter(Boolean).join(' · ');
+}
+
+/** Markdown indented under a heading line; blank lines stay blank. */
+export function indentBody(text: string, indent = COMMENT_INDENT): string {
+  return text
+    .replace(/\s+$/, '')
+    .split('\n')
+    .map((line) => (line.trim() ? `${indent}${line}` : ''))
+    .join('\n');
+}
+
 /**
  * A comment as a block: a heading line with time, author and id, then the body indented. Deleted
- * comments keep their place as one line.
+ * comments keep their place as one line. A work note (M6) reads "added a note" and names the
+ * machine and branch it came from.
  */
 export function commentBlock(comment: Comment, style: Style): string {
   const time = style.dim(formatTime(comment.createdAt));
+  const note = comment.kind === 'note';
   if (comment.body === null) {
-    return `${time}  ${style.dim(`Comment deleted by ${commentAuthor(comment)}`)}`;
+    return `${time}  ${style.dim(`${note ? 'Note' : 'Comment'} deleted by ${commentAuthor(comment)}`)}`;
   }
   const edited = comment.editedAt ? ' (edited)' : '';
-  const head = `${time}  ${style.bold(commentAuthor(comment))} commented${edited}  ${style.dim(comment.id)}`;
-  const body = plainMentions(comment.body)
-    .replace(/\s+$/, '')
-    .split('\n')
-    .map((line) => (line.trim() ? `${COMMENT_INDENT}${line}` : ''))
-    .join('\n');
-  return `${head}\n${body}`;
+  const verb = note ? 'added a note' : 'commented';
+  const tail = style.dim([comment.id, sourceLabel(comment.source)].filter(Boolean).join('  '));
+  const head = `${time}  ${style.bold(commentAuthor(comment))} ${verb}${edited}  ${tail}`;
+  return `${head}\n${indentBody(plainMentions(comment.body))}`;
 }
 
-/** Activity as one line each, comments as indented blocks set off by blank lines, oldest first. */
+/** An activity entry on one line, with its machine and branch when the CLI sent them. */
+function activityLine(activity: Activity, style: Style): string {
+  const source = sourceLabel(activity.source);
+  return `${style.dim(formatTime(activity.createdAt))}  ${activitySentence(activity)}${source ? `  ${style.dim(source)}` : ''}`;
+}
+
+/**
+ * Activity as one line each, comments and notes as indented blocks set off by blank lines, oldest
+ * first.
+ */
 export function timelineText(items: TimelineItem[], style: Style): string {
   const lines: string[] = [];
   let afterBlock = false;
   for (const item of items) {
-    const isBlock = item.kind === 'comment' && item.body !== null;
+    const isBlock = item.kind !== 'activity' && item.body !== null;
     if (lines.length && (isBlock || afterBlock)) lines.push('');
-    lines.push(
-      item.kind === 'comment'
-        ? commentBlock(item, style)
-        : `${style.dim(formatTime(item.createdAt))}  ${activitySentence(item)}`,
-    );
+    lines.push(item.kind === 'activity' ? activityLine(item, style) : commentBlock(item, style));
     afterBlock = isBlock;
   }
   return lines.length ? `${lines.join('\n')}\n` : '';
+}
+
+// ---------------------------------------------------------------------------
+// Work record (M6)
+// ---------------------------------------------------------------------------
+
+/** "[x]" checked, "[ ]" open, "[~]" waived: the word "waived" follows, so it never rests on the mark alone. */
+const ITEM_MARKS: Record<WorkItem['state'], string> = { open: '[ ]', checked: '[x]', waived: '[~]' };
+
+/** "4 of 6 settled (1 waived)", from the items themselves. */
+export function itemProgress(items: readonly WorkItem[]): string {
+  const settled = items.filter((item) => item.state !== 'open').length;
+  const waived = items.filter((item) => item.state === 'waived').length;
+  return `${settled} of ${items.length} settled${waived ? ` (${waived} waived)` : ''}`;
+}
+
+/**
+ * One list as numbered lines: "  [x] 1  Refunds post a ledger entry", then for a waived item
+ * "waived: <reason>" and who waived it.
+ */
+export function itemLines(items: readonly WorkItem[], style: Style): string {
+  const width = String(items.length).length;
+  return items
+    .map((item) => {
+      const number = String(item.number).padStart(width);
+      const line = `  ${ITEM_MARKS[item.state]} ${number}  ${item.text}`;
+      if (item.state !== 'waived') return item.state === 'checked' ? style.dim(line) : line;
+      const by = item.waivedBy ? ` (${item.waivedBy.name})` : '';
+      return `${style.dim(line)}\n  ${' '.repeat(width + 6)}${style.warn('waived')}: ${item.waivedReason ?? ''}${by}`;
+    })
+    .join('\n');
+}
+
+/** "by claude-dev for Ana Ruiz, 2026-11-03 14:02": who last wrote the plan or the summary. */
+export function workTextByline(meta: WorkTextMeta | null | undefined): string {
+  if (!meta) return '';
+  const author = meta.author?.name ?? (meta.origin === 'backlog' ? 'Backlog.md' : 'someone');
+  const who = meta.onBehalfOf ? `${author} for ${meta.onBehalfOf.name}` : author;
+  return `by ${who}, ${formatTime(meta.at)}`;
 }

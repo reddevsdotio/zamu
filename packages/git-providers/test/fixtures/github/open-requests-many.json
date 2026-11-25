@@ -1,0 +1,126 @@
+{
+  "description": "More open pull requests than one page (a Link rel=next), and a pull request whose files run past one page with none under the folder on it.",
+  "source": "Hand-written from the GitHub REST docs (pagination with Link headers); shapes trimmed.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/MrLesk/Backlog.md/pulls?state=open&sort=created&direction=desc&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "link": "<https://api.github.com/repos/MrLesk/Backlog.md/pulls?state=open&sort=created&direction=desc&per_page=100&page=2>; rel=\"next\", <https://api.github.com/repos/MrLesk/Backlog.md/pulls?state=open&sort=created&direction=desc&per_page=100&page=2>; rel=\"last\""
+        },
+        "json": [
+          {
+            "url": "https://api.github.com/repos/MrLesk/Backlog.md/pulls/530",
+            "id": 2400000530,
+            "html_url": "https://github.com/MrLesk/Backlog.md/pull/530",
+            "number": 530,
+            "state": "open",
+            "title": "Big refactor",
+            "user": {
+              "login": "octocat",
+              "id": 1530,
+              "type": "User"
+            },
+            "head": {
+              "label": "octocat:refactor/all",
+              "ref": "refactor/all",
+              "sha": "0000000000000000000000000000000000000212"
+            },
+            "base": {
+              "label": "MrLesk:main",
+              "ref": "main"
+            },
+            "draft": false,
+            "created_at": "2026-11-20T10:00:00Z"
+          },
+          {
+            "url": "https://api.github.com/repos/MrLesk/Backlog.md/pulls/529",
+            "id": 2400000529,
+            "html_url": "https://github.com/MrLesk/Backlog.md/pull/529",
+            "number": 529,
+            "state": "open",
+            "title": "Touch a task",
+            "user": {
+              "login": "hubot",
+              "id": 1529,
+              "type": "User"
+            },
+            "head": {
+              "label": "hubot:task/back-3",
+              "ref": "task/back-3",
+              "sha": "0000000000000000000000000000000000000211"
+            },
+            "base": {
+              "label": "MrLesk:main",
+              "ref": "main"
+            },
+            "draft": false,
+            "created_at": "2026-11-29T10:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/MrLesk/Backlog.md/pulls/530/files?per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "link": "<https://api.github.com/repos/MrLesk/Backlog.md/pulls/530/files?per_page=100&page=2>; rel=\"next\""
+        },
+        "json": [
+          {
+            "sha": "0000000000000000000000000487b5ebe8d97b03",
+            "filename": "src/file-0.ts",
+            "status": "modified",
+            "additions": 3,
+            "deletions": 1,
+            "changes": 4
+          },
+          {
+            "sha": "0000000000000000000000000d1ce7d28f055a64",
+            "filename": "src/file-1.ts",
+            "status": "modified",
+            "additions": 3,
+            "deletions": 1,
+            "changes": 4
+          },
+          {
+            "sha": "0000000000000000000000000da273fd2f0136ca",
+            "filename": "src/file-2.ts",
+            "status": "modified",
+            "additions": 3,
+            "deletions": 1,
+            "changes": 4
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/MrLesk/Backlog.md/pulls/529/files?per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "json": [
+          {
+            "sha": "0000000000000000000000000bf7e51c2118f9f9",
+            "filename": "backlog/tasks/back-3 - Three.md",
+            "status": "modified",
+            "additions": 3,
+            "deletions": 1,
+            "changes": 4
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,10 +1,11 @@
 // Backlog.md mirror errors at a terminal: the server's problem names the file and a Backlog.md
 // command; zamu adds what it can look up (the task's key, the default branch, the project's cycle)
 // so the message says where to make the change and what still works here. With --json the problem
-// is printed as the server sent it.
+// is printed as the server sent it. The same hook prints an OPEN_ITEMS refusal (M6) with the flags
+// that settle each open item.
 import { isMirroredProblemCode, ProjectList, Task } from '@zamu/contracts';
 import type { CommandContext } from './context';
-import { type CliError, type MirroredContext, mirroredLines } from './errors';
+import { type CliError, type MirroredContext, mirroredLines, openItemsLines } from './errors';
 
 /** Upper-cased project key of a task reference: PAY for PAY-786.1. */
 export function refPrefix(key: string): string {
@@ -16,7 +17,16 @@ export function refPrefix(key: string): string {
  * leave their part out: the error itself is what matters.
  */
 export async function describeFailure(context: CommandContext, failure: CliError): Promise<void> {
-  if (context.json || !isMirroredProblemCode(failure.problem.code)) return;
+  if (context.json) return;
+  if (failure.problem.code === 'OPEN_ITEMS') {
+    const key = context.target?.task?.key.trim().toUpperCase();
+    failure.lines = openItemsLines(failure.problem, {
+      ...(key ? { taskKey: key } : {}),
+      ...(context.target?.status ? { status: context.target.status } : {}),
+    });
+    return;
+  }
+  if (!isMirroredProblemCode(failure.problem.code)) return;
   const extra: MirroredContext = {};
   let projectKey = context.target?.project;
   try {

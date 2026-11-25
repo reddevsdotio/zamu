@@ -26,7 +26,8 @@ export type ParseWarningCode =
   | 'ignored_value'
   | 'malformed_markers'
   | 'unreadable_raw_config'
-  | 'unreadable_legacy_milestones';
+  | 'unreadable_legacy_milestones'
+  | 'invalid_zamu_block';
 
 export interface ParseWarning {
   code: ParseWarningCode;
@@ -159,6 +160,8 @@ export interface BacklogTask {
   /** Frontmatter keys this parser does not read, as YAML read them. */
   unknown: Record<string, unknown>;
   sections: TaskSections;
+  /** M6: the Zamu block at the end of the file (taken out of the sections), or null when none. */
+  zamu: ZamuBlock | null;
 }
 
 export interface BacklogMilestone {
@@ -174,4 +177,25 @@ export interface BacklogMilestone {
   /** True for legacy `milestones:` entries in config.yml. */
   legacy: boolean;
   unknown: Record<string, unknown>;
+}
+
+/** Which list a waiver belongs to: acceptance criteria or definition of done. */
+export type ZamuItemKind = 'criterion' | 'done';
+
+/**
+ * A waived item: its number and text when it was written, and why it was waived. The file keeps the
+ * item itself unchecked, so plain Backlog.md readers see it as not done.
+ */
+export interface ZamuWaiver {
+  kind: ZamuItemKind;
+  number: number;
+  /** The item's text when the block was written; null when the block leaves it out. */
+  text: string | null;
+  reason: string;
+}
+
+export interface ZamuBlock {
+  waived: ZamuWaiver[];
+  /** Keys this reader does not know (later releases add some), kept as YAML read them. */
+  other: Record<string, unknown>;
 }

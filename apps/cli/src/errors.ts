@@ -1,7 +1,8 @@
 // Every failure the CLI reports becomes a CliError: a Problem (printed as zamu.v1.error with --json)
 // plus the process exit code. Scripts and agents branch on the exit code, so it is part of the
 // stable interface:
-//   0 ok, 1 usage, 2 auth, 3 not found, 4 forbidden, 5 server, 6 Backlog.md conflict.
+//   0 ok, 1 usage (OPEN_ITEMS included), 2 auth, 3 not found, 4 forbidden, 5 server,
+//   6 Backlog.md conflict, 7 queued while the server was unreachable (queue.ts).
 import { ORPCError } from '@orpc/client';
 import {
   isMirroredProblemCode,
@@ -157,6 +158,49 @@ export function mirroredLines(body: Problem, context: MirroredContext = {}): str
   return lines;
 }
 
+/** What OPEN_ITEMS needs from the command to print the flags that settle each item. */
+export interface OpenItemsContext {
+  /** The task as the command named it (PAY-142). */
+  taskKey?: string;
+  /** The status the command asked for (in_review), to repeat the move. */
+  status?: string;
+}
+
+/**
+ * Human text of an OPEN_ITEMS refusal: each open item with the flags that check or waive it, then
+ * the move to run again once they are settled.
+ *
+ *   zamu: PAY-142 has open items, so it can't move to In review yet (open_items).
+ *     criterion 3  Refunds post a ledger entry
+ *       check: --check-ac 3   waive: --waive-ac 3 --reason "..."
+ *     Check only what is proven and waive the rest with a reason. One command can settle them and move it:
+ *       zamu tasks update PAY-142 <flags above> --status in_review
+ */
+export function openItemsLines(body: Problem, context: OpenItemsContext = {}): string[] {
+  const detail = (body.detail ?? body.title).trim().replace(/\.$/, '');
+  const lines = [`zamu: ${detail} (${body.code.toLowerCase()}).`];
+  const items = body.openItems ?? [];
+  const width = Math.max(
+    0,
+    ...items.map((item) => `${item.kind === 'criterion' ? 'criterion' : 'done item'} ${item.number}`.length),
+  );
+  for (const item of items) {
+    const flag = item.kind === 'criterion' ? 'ac' : 'dod';
+    const label = `${item.kind === 'criterion' ? 'criterion' : 'done item'} ${item.number}`;
+    lines.push(`  ${label.padEnd(width)}  ${item.text}`);
+    lines.push(
+      `  ${' '.repeat(width)}  check: --check-${flag} ${item.number}   waive: --waive-${flag} ${item.number} --reason "..."`,
+    );
+  }
+  const key = context.taskKey ?? 'KEY';
+  const status = context.status ? ` --status ${context.status}` : '';
+  lines.push(
+    '  Check only what is proven and waive the rest with a reason. One command can settle them and move it:',
+  );
+  lines.push(`    zamu tasks update ${key} <flags above>${status}`);
+  return lines;
+}
+
 function errorChain(error: unknown): string {
   const parts: string[] = [];
   let current: unknown = error;
@@ -194,6 +238,11 @@ export function toCliError(error: unknown, url?: string): CliError {
     const task = code === 'TASK_CHANGED' && data?.task ? (data.task as Problem['task']) : undefined;
     // DEPENDENCY_LOOP names both ends of the refused link (M5).
     const loop = code === 'DEPENDENCY_LOOP' && data?.loop ? (data.loop as Problem['loop']) : undefined;
+    // OPEN_ITEMS lists what is still open (M6).
+    const openItems =
+      code === 'OPEN_ITEMS' && Array.isArray(data?.openItems)
+        ? (data.openItems as NonNullable<Problem['openItems']>)
+        : undefined;
     const body: Problem = {
       ...problem(code, error.message || undefined, {
         ...(requestId ? { requestId } : {}),
@@ -202,6 +251,7 @@ export function toCliError(error: unknown, url?: string): CliError {
         ...mirroredExtensions(data),
       }),
       ...(loop ? { loop } : {}),
+      ...(openItems ? { openItems } : {}),
       status: status >= 400 && status <= 599 ? status : 500,
     };
     if (BACKLOG_CONFLICT_CODES.has(code)) {

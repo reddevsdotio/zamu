@@ -11,7 +11,7 @@ the agent, and the person it acts for. People use the web app; agents use the `z
 
 ![The Checkout project's task list, with labels, due dates, a blocked task and nested subtasks](docs/images/task-list-light.png)
 
-What works today (release 0.7.0, milestone M5):
+What works today:
 - First-run setup, email and password sign-in, single sign-on with OpenID Connect, invitations by link.
 - Home, the page you land on: tasks in review, unanswered mentions, blocked and overdue work and your other
   tasks, grouped by why they need you, across every project. Tabs for you, the whole workspace and the
@@ -27,16 +27,23 @@ What works today (release 0.7.0, milestone M5):
 - Milestones with a target date and progress, and numbered cycles. A cycle ends at midnight after its end
   date, or early by hand, and moves its unfinished tasks to the next one.
 - Comments in the task history, in Markdown, with @mentions of people and agents. The history shows
-  comments and changes in one list.
+  comments, work notes and changes in one list, with filters for each.
+- A work record on every task: acceptance criteria, a definition of done, a plan, work notes and a final
+  summary. Agents fill it in through the CLI and can't finish a task while an item is open; people check or
+  waive items in the task view. Each project sets the done items new tasks start with.
 - Backlog.md: a project can mirror the task files a repository keeps in `backlog/`, following the default
   branch on every push, or import them once and move off Backlog.md. Labels, due dates, dependencies and
   parents come in as native fields. It reads through a workspace git connection to GitHub, GitLab or
-  Gitea/Forgejo with a read-only token.
+  Gitea/Forgejo with a read-only token. A mirrored project can later switch to Zamu, after a check for open
+  pull requests that touch the task files, and `zamu backlog export` writes its tasks back to the repository
+  as a Backlog.md copy.
 - Light, dark or system theme, saved to your account.
 - Agents with API keys scoped to some or all projects, read only or read and write, revocable at any time.
-- The `zamu` CLI with `--json` output and stable exit codes, over a REST API at `/api/v1` with an OpenAPI
-  document. Agents comment, plan with milestones and cycles, set labels, due dates, blockers and subtasks,
-  list their own tasks with `--mine`, and see what needs them with `zamu dashboard`.
+- The `zamu` CLI, on npm and Homebrew, with `--json` output and stable exit codes, over a REST API at
+  `/api/v1` with an OpenAPI document. Agents comment, plan with milestones and cycles, set labels, due dates,
+  blockers and subtasks, list their own tasks with `--mine`, and see what needs them with `zamu dashboard`.
+  `zamu instructions` prints how to work a task, and every change records the machine and git branch it
+  came from.
 - One Docker image (web, worker, migrations) and a docker compose file. Postgres is the only stateful service.
 
 What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
@@ -60,17 +67,24 @@ agent in Settings > Members and copy its key. The image ships the CLI, so you ca
 docker compose exec -e ZAMU_KEY=zamu_live_... web zamu tasks list --project PAY
 ```
 
-On the agent's machine, build the CLI and set `ZAMU_URL` and `ZAMU_KEY`, as described in
-[docs/agents.md](docs/agents.md).
+On the agent's machine, install the CLI with npm (Node 24 or later) or Homebrew, then set `ZAMU_URL` and
+`ZAMU_KEY` as described in [docs/agents.md](docs/agents.md):
+
+```sh
+npm install --global @reddevs/zamu
+brew install reddevsdotio/tap/zamu
+```
 
 ## Docs
 
-- [Using the app](docs/guide.md): the sidebar, Home, the list and the board, the task view, the palette, and
-  labels, due dates, blockers and subtasks.
-- [Keyboard shortcuts](docs/keyboard.md): every key, and what changed in 0.7.0.
+- [Using the app](docs/guide.md): the sidebar, Home, the list and the board, the task view and its work
+  record, the palette, labels, due dates, blockers and subtasks, and Task defaults.
+- [Keyboard shortcuts](docs/keyboard.md): every key, and what changed in 0.7.0 and 0.9.0.
 - [Self-hosting](docs/self-hosting.md): configuration, first run, ports, backups and upgrades.
-- [Agents](docs/agents.md): adding agents, scoping keys, running `zamu` in an agent's environment, `--json` output.
-- [Backlog.md](docs/backlog-md.md): git connections, mirrors and imports, mappings, webhooks, detach.
+- [Agents](docs/agents.md): adding agents, scoping keys, installing and running `zamu`, the work record, the
+  offline queue, `--json` output.
+- [Backlog.md](docs/backlog-md.md): git connections, mirrors and imports, mappings, webhooks, the switch to
+  Zamu and the export.
 - [CLI reference](apps/cli/README.md): every `zamu` command and option.
 - [REST API](docs/api.md): authentication, errors, and the task, label and Home routes.
 
@@ -101,6 +115,10 @@ http://localhost:3100 and runs the specs in `e2e/`, then removes the stack. It l
 database alone. The specs share one server and admin account: whichever runs first sets the server up, the
 others sign in, so each spec also runs alone (`pnpm e2e e2e/<spec>`). The stack sets `APP_ENCRYPTION_KEY`
 and the git settings the Backlog.md specs need (`e2e/stack.ts`).
+- `work-record.spec.ts`: an agent works a task from a scratch git clone on a feature branch (criteria and a
+  plan at creation, notes, a checked criterion, the summary) and is refused at In review with an open
+  criterion; the person waives it in the finishing dialog and moves the task; the Notes filter and the
+  machine and branch under History; Settings > Task defaults and the done items new tasks start with.
 - `person-and-agent.spec.ts`: the M1 flow on the 0.7.0 screens, from setup (or sign-in) to an agent working
   through the CLI: New project from the sidebar, quick create, the list keys and the task view.
 - `home.spec.ts`: Home. The old Dashboard, My tasks and Projects links redirect there; an agent puts a task
@@ -119,16 +137,23 @@ and the git settings the Backlog.md specs need (`e2e/stack.ts`).
   own Forgejo container and creates an agent key, then to the new image. It checks that every task key and
   route still works, that the 0.7.0 migrations backfill the mirror's labels, due date, blockers and parent
   with no history lines, and that the key from 0.6.0 gets 401 (the old prefix is gone) while a new key starts
-  with `zamu_live_`. The older images come from `E2E_M1_IMAGE`, `E2E_M2_1_IMAGE` and `E2E_0_6_IMAGE` (pulled
-  when missing), or are built once from git as `zamu:m1-0.1.1`, `zamu:m2.1-<ref>` and `zamu:release-0.6.0`,
-  which takes a few minutes each the first time.
+  with `zamu_live_`. Between 0.6.0 and the new image it moves to 0.8.0 when that release exists, and the new
+  image's migration moves a mirrored task's criteria, done items, plan, notes and summary out of its
+  description into the work record, again with no history lines. The older images come from
+  `E2E_M1_IMAGE`, `E2E_M2_1_IMAGE`, `E2E_0_6_IMAGE` and `E2E_0_8_IMAGE` (pulled when missing), or are built
+  once from git as `zamu:m1-0.1.1`, `zamu:m2.1-<ref>`, `zamu:release-0.6.0` and `zamu:release-<ref>`, which
+  takes a few minutes each the first time. The 0.8.0 step builds from the tag `0.8.0`, or from the ref in
+  `E2E_0_8_REF` (for example `0.8.0-rc.1`); with neither the tag nor one of the two variables, it is skipped
+  with a message.
 - `work-views.spec.ts`: the board with its display options, milestones, cycles, comments with mentions from
   the web and the CLI, the list keys around group rows, Home across two projects and the theme.
 - `backlog-mirror.spec.ts` and `backlog-import.spec.ts` (Playwright project `backlog-md`, after the others):
   each starts its own Forgejo container from `docker/forgejo/`, attaches it to the stack's network and
   removes it at the end. They cover connections, setup and the Mappings step's suggestions, the mirrored
-  views, the fields read from the files and their locks, webhooks and a new webhook secret, refreshes,
-  `zamu backlog`, refused changes, Edit mappings, detach, deleting a mirrored project and import.
+  views, the fields and the work record read from the files and their locks, webhooks and a new webhook
+  secret, refreshes, `zamu backlog`, refused changes, Edit mappings, the switch to Zamu with an open pull
+  request in its check, `zamu backlog export` into a scratch git clone (read back with the Backlog.md
+  parser), deleting a mirrored project and import.
 
 `E2E_KEEP_STACK=1` keeps the stacks (and the Forgejo containers) running after the run, `E2E_SKIP_BUILD=1`
 reuses the last image, `E2E_COMPOSE_PROJECT`, `E2E_PORT`, `E2E_UPGRADE_PORT` and `ZAMU_IMAGE` change the

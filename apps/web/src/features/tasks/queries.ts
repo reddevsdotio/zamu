@@ -38,6 +38,7 @@ import {
   shiftCounts,
   shiftedCounts,
 } from '~/features/board/board-cache';
+import { progressOf as workProgressOf } from '~/features/work-record/ops';
 import { client, orpc } from '~/lib/orpc';
 import { retryOnce, withTimeout } from './errors';
 
@@ -515,12 +516,22 @@ export function toListItem(task: CachedTask): TaskListItem {
     subtasks: _s,
     blockedBy: _b,
     blocks: _r,
+    criteria,
+    doneItems,
+    plan: _plan,
+    planMeta: _planMeta,
+    finalSummary,
+    finalSummaryMeta: _summaryMeta,
     ...item
   } = task;
   return {
     ...item,
     ...(backlog !== undefined ? { backlogId: backlog?.id ?? null } : {}),
     ...(parent !== undefined ? { parentKey: parent?.key ?? null } : {}),
+    // M6: rows carry counts, not the lists.
+    ...(criteria !== undefined ? { criteriaProgress: workProgressOf(criteria) } : {}),
+    ...(doneItems !== undefined ? { doneProgress: workProgressOf(doneItems) } : {}),
+    ...(finalSummary !== undefined ? { hasFinalSummary: Boolean(finalSummary) } : {}),
   };
 }
 
@@ -637,7 +648,8 @@ function invalidateAfter(queryClient: QueryClient, keys: readonly string[], patc
   if (touchesLabels(patch)) void queryClient.invalidateQueries({ queryKey: orpc.labels.key() });
 }
 
-async function cancelTaskQueries(queryClient: QueryClient) {
+/** Stops task reads in flight, so they don't overwrite an optimistic edit. */
+export async function cancelTaskQueries(queryClient: QueryClient) {
   await Promise.all([
     queryClient.cancelQueries({ queryKey: orpc.tasks.get.key() }),
     queryClient.cancelQueries({ queryKey: orpc.tasks.list.key() }),

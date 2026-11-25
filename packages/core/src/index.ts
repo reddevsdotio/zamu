@@ -6,6 +6,7 @@ export * from './authz';
 export * from './backlog';
 export * from './comments';
 export * from './context';
+export * from './criteria';
 export * from './cycles';
 export * from './dashboard';
 export * from './errors';

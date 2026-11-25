@@ -188,3 +188,71 @@ describe('GitHub adapter', () => {
     expect(server.calls).toHaveLength(0);
   });
 });
+
+describe('GitHub open pull requests (M6)', () => {
+  it('lists open pull requests with a changed file under the folder, renames included', async () => {
+    const { provider, server } = github('open-requests');
+    await expect(provider.listOpenRequests?.('MrLesk/Backlog.md', 'backlog/')).resolves.toEqual({
+      requests: [
+        {
+          number: 412,
+          title: 'Mark BACK-12 done',
+          author: 'octocat',
+          headBranch: 'task/back-12',
+          webUrl: 'https://github.com/MrLesk/Backlog.md/pull/412',
+        },
+        {
+          number: 410,
+          title: 'Move an old task out',
+          author: 'ana-dev',
+          headBranch: 'chore/archive',
+          webUrl: 'https://github.com/MrLesk/Backlog.md/pull/410',
+        },
+        {
+          number: 409,
+          title: 'Ghost author',
+          author: null,
+          headBranch: 'ghost/branch',
+          webUrl: 'https://github.com/MrLesk/Backlog.md/pull/409',
+        },
+      ],
+      truncated: false,
+      listUrl: 'https://github.com/MrLesk/Backlog.md/pulls',
+    });
+    // One list call and one file page per pull request; `backlog-notes.md` is not under backlog/.
+    expect(server.calls).toHaveLength(5);
+    expect(server.unused()).toEqual([]);
+  });
+
+  it('says the list may be cut when more pull requests are open or a file list runs past a page', async () => {
+    const { provider } = github('open-requests-many');
+    const result = await provider.listOpenRequests?.('MrLesk/Backlog.md', 'backlog');
+    expect(result?.requests.map((request) => request.number)).toEqual([529]);
+    expect(result?.truncated).toBe(true);
+  });
+
+  it('a token without pull request access is refused with a typed error', async () => {
+    const server = replay({
+      description: 'A fine-grained token without the Pull requests permission.',
+      source: 'Hand-written from the GitHub REST docs.',
+      exchanges: [
+        {
+          request: {
+            url: 'https://api.github.com/repos/MrLesk/Backlog.md/pulls?state=open&sort=created&direction=desc&per_page=100',
+          },
+          response: { status: 403, json: { message: 'Resource not accessible by personal access token' } },
+        },
+      ],
+    });
+    const provider = createProvider({
+      provider: 'github',
+      host: 'github.com',
+      token: FIXTURE_TOKEN,
+      fetch: server.fetch,
+    });
+    await expect(provider.listOpenRequests?.('MrLesk/Backlog.md', 'backlog')).rejects.toMatchObject({
+      name: 'GitUnauthorized',
+      code: 'forbidden',
+    });
+  });
+});

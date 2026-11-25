@@ -2,11 +2,14 @@
 // stack starts on M1 (release 0.1.1) and gets data through the M1 app, moves to M2.1 (0.3.0: the M2 and M2.1
 // migrations run against the M1 data, which shows on the board in its M1 order, and gets M2 and M2.1 data),
 // then to 0.6.0 (the M3 and M4 migrations: every task key survives, a Backlog.md mirror reads labels, a due
-// date, a dependency and a parent into its Backlog.md block, and an agent gets a pm_live_ API key), then to
-// the image globalSetup built: the M5 migrations run, the backfill turns the mirror's block into native
-// labels, due date, blockers and parent with no activity rows, the next refresh changes nothing, and every
-// task key and route still works. The rename to Zamu dropped the pm_live_ prefix with no fallback, so the
-// 0.6.0 API key gets 401 and a new key starts with zamu_live_.
+// date, a dependency and a parent into its Backlog.md block, and a task's acceptance criteria, definition of
+// done, plan, notes and summary into its description, and an agent gets a pm_live_ API key), then to 0.8.0 when
+// that release exists (the rename: the mirror keeps working and the sections stay in the description), then
+// to the image globalSetup built: the M5 migrations run (on 0.8.0 when that step ran), the backfill turns the
+// mirror's block into native labels, due date, blockers and parent with no activity rows, the M6 migration
+// moves the sections out of the description into the work record, again with no activity rows, the next
+// refresh changes nothing, and every task key and route still works. The rename to Zamu dropped the pm_live_
+// prefix with no fallback, so the 0.6.0 API key gets 401 and a new key starts with zamu_live_.
 //
 // Older images, each used when it is already local:
 //   M1    E2E_M1_IMAGE (pulled if it is not local, for example from a private registry after
@@ -17,6 +20,9 @@
 //         merge commit (E2E_M2_1_REF overrides).
 //   0.6.0 E2E_0_6_IMAGE (pulled likewise, for example <registry>/<image>:0.6.0), else
 //         zamu:release-0.6.0, built once from the git tag 0.6.0.
+//   0.8.0 E2E_0_8_IMAGE (pulled likewise), else zamu:release-<ref>, built once from E2E_0_8_REF or the git
+//         tag 0.8.0. Without the image variable and with no such ref, the 0.8.0 step is skipped with a
+//         message and the next step upgrades from 0.6.0.
 // Builds use git archive, so the checkout is untouched. The mirror reads from a Forgejo container (e2e/forgejo.ts)
 // attached to the upgrade stack's network. E2E_SKIP_UPGRADE=1 skips this spec.
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -45,6 +51,17 @@ const m2_1Image = process.env.E2E_M2_1_IMAGE ?? `zamu:m2.1-${m2_1Ref}`;
 /** The release before M5: the backlog sweep. */
 const RELEASE_0_6_TAG = '0.6.0';
 const release0_6Image = process.env.E2E_0_6_IMAGE ?? `zamu:release-${RELEASE_0_6_TAG}`;
+/** The rename to Zamu, the release before M6. E2E_0_8_REF picks another ref, such as a release candidate. */
+const RELEASE_0_8_TAG = '0.8.0';
+const release0_8Ref = process.env.E2E_0_8_REF ?? RELEASE_0_8_TAG;
+const release0_8Image = process.env.E2E_0_8_IMAGE ?? `zamu:release-${release0_8Ref}`;
+/** Why the 0.8.0 step can't run here, or null when it can. */
+const release0_8Missing =
+  process.env.E2E_0_8_IMAGE || gitRefExists(release0_8Ref)
+    ? null
+    : `The git ref ${release0_8Ref} does not exist, so the 0.8.0 step is skipped and the next step upgrades ` +
+      'straight from 0.6.0. Tag the release, or set E2E_0_8_IMAGE (an image) or E2E_0_8_REF (a git ref such ' +
+      'as 0.8.0-rc.1) to run it.';
 const upgradePort = process.env.E2E_UPGRADE_PORT ?? '3101';
 /** API key prefix up to 0.7.0. The current build no longer accepts it. */
 const OLD_API_KEY_PREFIX = 'pm_live_';
@@ -67,17 +84,33 @@ interface TaskRef {
   title: string;
   status: string;
 }
+interface WorkItem {
+  number: number;
+  text: string;
+  state: string;
+  locked: boolean;
+}
 interface MirroredTask extends TaskRef {
   locked: string[];
+  description?: string | null;
   backlog: {
     id: string;
-    data: { labels: string[]; dueDate?: string | null; dependencies: unknown[] };
+    data: {
+      labels: string[];
+      dueDate?: string | null;
+      dependencies: unknown[];
+      implementationNotes?: string | null;
+    };
   } | null;
   labels?: { name: string; source: string }[];
   dueDate?: string | null;
   parent?: TaskRef | null;
   blockedBy?: (TaskRef | null)[];
   blocked?: boolean;
+  criteria?: WorkItem[];
+  doneItems?: WorkItem[];
+  plan?: string | null;
+  finalSummary?: string | null;
 }
 interface SourceStatus {
   state: string;
@@ -142,8 +175,55 @@ dependencies:
   - INF-1
 ---
 `,
+  // Up to 0.8.0 the mirror writes these sections into the description; the M6 migration moves them out.
+  'backlog/tasks/inf-3 - Rotate-the-cluster-certificates.md': `---
+id: INF-3
+title: Rotate the cluster certificates
+status: In Progress
+assignee: []
+created_date: '2026-10-03 09:00'
+labels: []
+dependencies: []
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Certificates rotate before they expire.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 New certificates are issued
+- [ ] #2 Old certificates are revoked
+<!-- AC:END -->
+
+## Definition of Done
+<!-- DOD:BEGIN -->
+- [ ] #1 Runbook updated
+<!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Issue the new certificates.
+2. Revoke the old ones.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Issued through the internal CA.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Rotation is scripted.
+<!-- SECTION:FINAL_SUMMARY:END -->
+`,
 };
-const infraKeys = ['INF-1', 'INF-1.1', 'INF-2'];
+const infraKeys = ['INF-1', 'INF-1.1', 'INF-2', 'INF-3'];
 
 test.describe.configure({ mode: 'serial' });
 test.skip(process.env.E2E_SKIP_UPGRADE === '1', 'E2E_SKIP_UPGRADE=1');
@@ -232,6 +312,8 @@ test.beforeAll(async ({ browser }) => {
   ensureImage(m1Image, Boolean(process.env.E2E_M1_IMAGE), M1_TAG);
   ensureImage(m2_1Image, Boolean(process.env.E2E_M2_1_IMAGE), m2_1Ref);
   ensureImage(release0_6Image, Boolean(process.env.E2E_0_6_IMAGE), RELEASE_0_6_TAG);
+  if (release0_8Missing) console.log(`[e2e] ${release0_8Missing}`);
+  else ensureImage(release0_8Image, Boolean(process.env.E2E_0_8_IMAGE), release0_8Ref);
   stack.compose(['down', '-v', '--remove-orphans'], { quiet: true });
   console.log(`[e2e] starting ${stack.project} on ${m1Image} at ${upgradeURL}`);
   await startStack();
@@ -456,7 +538,7 @@ test('0.6.0: the M3 and M4 migrations keep every key; a Backlog.md mirror reads 
   await expect(page.getByText('backlog/').first()).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('button', { name: 'Preview' }).click();
-  await expect(page.getByRole('heading', { name: `Mirror 3 tasks into ${infra.name}?` })).toBeVisible({
+  await expect(page.getByRole('heading', { name: `Mirror 4 tasks into ${infra.name}?` })).toBeVisible({
     timeout: 20_000,
   });
   await page.getByRole('button', { name: 'Start mirroring' }).click();
@@ -469,11 +551,37 @@ test('0.6.0: the M3 and M4 migrations keep every key; a Backlog.md mirror reads 
   expect(parent).not.toHaveProperty('labels');
   const runbook = await api<MirroredTask>(page.request, 'GET', '/tasks/INF-2');
   expect(runbook.backlog?.data.dependencies).toHaveLength(1);
+  // The sections of INF-3 sit in its description, under ## headings.
+  const certs = await api<MirroredTask>(page.request, 'GET', '/tasks/INF-3');
+  expect(certs.description).toContain('## Acceptance criteria');
+  expect(certs.description).toContain('- [ ] #2 Old certificates are revoked');
+  expect(certs.description).toContain('## Final summary');
   for (const key of infraKeys) timelineBefore[key] = await timelineLength(key);
 
   // An agent key with the 0.6.0 prefix, which works on 0.6.0. The current build refuses it.
   oldApiKey = await addAgent(page, 'upgrade-agent-0-6', ['OPS'], OLD_API_KEY_PREFIX);
   expect(await meStatusWithKey(oldApiKey)).toBe(200);
+});
+
+test('0.8.0: the rename keeps the mirror, and the sections stay in the description', async () => {
+  test.skip(release0_8Missing !== null, release0_8Missing ?? '');
+  test.setTimeout(6 * 60_000);
+  await switchTo(release0_8Image);
+  await signInAsAdmin(page);
+
+  // The rename dropped the pm_live_ prefix.
+  expect(await meStatusWithKey(oldApiKey)).toBe(401);
+  // The M5 migrations ran here: the mirror's labels are native, with no history lines.
+  const parent = await api<MirroredTask>(page.request, 'GET', '/tasks/INF-1');
+  expect(parent.labels?.map((label) => label.name).sort()).toEqual(['k8s', 'ops']);
+  const certs = await api<MirroredTask>(page.request, 'GET', '/tasks/INF-3');
+  expect(certs.description).toContain('## Acceptance criteria');
+  expect(certs).not.toHaveProperty('criteria');
+  for (const key of infraKeys) expect(await timelineLength(key), key).toBe(timelineBefore[key]);
+
+  // The first refresh on 0.8.0 reads the same files and changes nothing.
+  await refreshMirror();
+  for (const key of infraKeys) expect(await timelineLength(key), key).toBe(timelineBefore[key]);
 });
 
 test('this build: the M5 migrations backfill the mirror, and every key and route still works', async () => {
@@ -493,6 +601,7 @@ test('this build: the M5 migrations backfill the mirror, and every key and route
   // Native tasks have the new fields, empty.
   const ops = await api<MirroredTask>(page.request, 'GET', '/tasks/OPS-1');
   expect(ops).toMatchObject({ labels: [], dueDate: null, parent: null, blockedBy: [], blocked: false });
+  expect(ops).toMatchObject({ criteria: [], doneItems: [], plan: null, finalSummary: null });
   const opsList = await api<{ items: TaskRef[] }>(page.request, 'GET', '/tasks?project=OPS&limit=100');
   expect(opsList.items.map((task) => task.key).sort()).toEqual(
     [...m2_1Tasks.map((t) => t.key), 'OPS-7'].sort(),
@@ -523,13 +632,30 @@ test('this build: the M5 migrations backfill the mirror, and every key and route
     { name: 'k8s', source: 'backlog', usageCount: 1 },
     { name: 'ops', source: 'backlog', usageCount: 2 },
   ]);
-  // The backfill wrote no activity rows.
+  // The M6 migration moved INF-3's sections out of the description into the work record, read-only.
+  const certs = await api<MirroredTask>(page.request, 'GET', '/tasks/INF-3');
+  expect(certs.description?.trim()).toBe('Certificates rotate before they expire.');
+  expect(certs.criteria?.map(({ number, text, state, locked }) => ({ number, text, state, locked }))).toEqual(
+    [
+      { number: 1, text: 'New certificates are issued', state: 'checked', locked: true },
+      { number: 2, text: 'Old certificates are revoked', state: 'open', locked: true },
+    ],
+  );
+  expect(certs.doneItems?.map(({ text, state }) => ({ text, state }))).toEqual([
+    { text: 'Runbook updated', state: 'open' },
+  ]);
+  expect(certs.plan?.trim()).toBe('1. Issue the new certificates.\n2. Revoke the old ones.');
+  expect(certs.finalSummary?.trim()).toBe('Rotation is scripted.');
+  expect(certs.backlog?.data.implementationNotes?.trim()).toBe('Issued through the internal CA.');
+
+  // The backfills wrote no activity rows.
   for (const key of infraKeys) expect(await timelineLength(key), key).toBe(timelineBefore[key]);
 
   // The first refresh after the upgrade reads the same files and changes nothing.
   await refreshMirror();
   for (const key of infraKeys) expect(await timelineLength(key), key).toBe(timelineBefore[key]);
   expect((await api<MirroredTask>(page.request, 'GET', '/tasks/INF-1')).labels).toHaveLength(2);
+  expect((await api<MirroredTask>(page.request, 'GET', '/tasks/INF-3')).criteria).toHaveLength(2);
 
   // Later pushes keep the native fields in step with the files.
   const file = 'backlog/tasks/inf-2 - Update-the-runbook.md';
@@ -560,6 +686,7 @@ test('this build: the M5 migrations backfill the mirror, and every key and route
     ['/p/OPS/cycles', 'Cycle 1'],
     ['/p/INF', 'Move to the new cluster'],
     ['/p/INF/INF-2', 'Update the runbook'],
+    ['/p/INF/INF-3', 'Old certificates are revoked'],
     ['/p/INF/settings/labels', 'k8s'],
     ['/settings/connections', 'Forgejo · e2e upgrade'],
   ];

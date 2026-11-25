@@ -1,9 +1,11 @@
 // Applies a refresh plan (./plan) in the caller's transaction: milestone, label and task rows, the
 // tasks' labels, parents and blockers (M5), the project's next task number, backlog_file rows,
 // activity from the Backlog.md actor (origin backlog, origin_ref = commit) and the source state.
+// M6: the work record too (plan and final summary columns, task_item rows).
 // Rows are written directly with Drizzle; services' owned-field locks do not apply to the refresh
 // itself.
-import type { BacklogMode, BacklogTrigger } from '@zamu/contracts';
+import type { WorkRecordItem } from '@zamu/backlog-md';
+import type { BacklogMode, BacklogTrigger, WorkItemKind } from '@zamu/contracts';
 import { schema, type Tx } from '@zamu/db';
 import { and, eq, inArray, notInArray, type SQL, sql } from 'drizzle-orm';
 import {
@@ -28,7 +30,8 @@ import type {
   TaskValues,
 } from './plan';
 
-const { backlogFile, backlogSource, label, milestone, project, task, taskDependency, taskLabel } = schema;
+const { backlogFile, backlogSource, label, milestone, project, task, taskDependency, taskItem, taskLabel } =
+  schema;
 
 export type BacklogSourceRow = typeof backlogSource.$inferSelect;
 export type ProjectRow = typeof project.$inferSelect;
@@ -199,7 +202,15 @@ export async function applyPlan(tx: Tx, input: ApplyInput): Promise<ApplyResult>
   // Tasks -------------------------------------------------------------------------------------------
   // Rows first; parents, labels and blockers once every row exists.
   const taskColumns = (values: Partial<TaskValues>) => {
-    const { milestone: target, labels: _labels, blockers: _blockers, parent: _parent, ...rest } = values;
+    const {
+      milestone: target,
+      labels: _labels,
+      blockers: _blockers,
+      parent: _parent,
+      criteria: _criteria,
+      doneItems: _doneItems,
+      ...rest
+    } = values;
     return { ...rest, ...(target !== undefined ? { milestoneId: milestoneId(target) } : {}) };
   };
   // Number changes go through temporary numbers so two moves never collide on the unique key.
@@ -252,6 +263,8 @@ export async function applyPlan(tx: Tx, input: ApplyInput): Promise<ApplyResult>
           backlogData: values.backlogData as Record<string, unknown>,
           rank: values.rank,
           dueDate: values.dueDate,
+          plan: values.plan,
+          finalSummary: values.finalSummary,
         })),
       )
       .returning({ id: task.id, backlogId: task.backlogId });
@@ -306,6 +319,43 @@ export async function applyPlan(tx: Tx, input: ApplyInput): Promise<ApplyResult>
   for (const batch of chunks(blockerRows)) {
     await tx.insert(taskDependency).values(batch).onConflictDoNothing();
   }
+
+  // Criteria and done items (M6) -------------------------------------------------------------------
+  // A changed list replaces the task's rows of that kind. Items keep source backlog while the
+  // project mirrors; an import detaches below, so its items are the app's from the start.
+  const itemSource = source.mode === 'mirror' ? ('backlog' as const) : ('app' as const);
+  const itemRows: (typeof taskItem.$inferInsert)[] = [];
+  const replaced: { taskId: string; kind: WorkItemKind }[] = [];
+  const addItems = (taskId: string, kind: WorkItemKind, items: WorkRecordItem[]) => {
+    for (const [index, item] of items.entries()) {
+      itemRows.push({
+        taskId,
+        kind,
+        position: index + 1,
+        text: item.text,
+        state: item.state,
+        waivedReason: item.state === 'waived' ? (item.waivedReason ?? '') : null,
+        source: itemSource,
+      });
+    }
+  };
+  for (const { taskId, values, created } of relations) {
+    for (const [kind, items] of [
+      ['criterion', values.criteria],
+      ['done', values.doneItems],
+    ] as const) {
+      if (items === undefined) continue;
+      if (!created) replaced.push({ taskId, kind });
+      addItems(taskId, kind, items);
+    }
+  }
+  for (const kind of ['criterion', 'done'] as const) {
+    const ids = replaced.filter((entry) => entry.kind === kind).map((entry) => entry.taskId);
+    for (const batch of chunks(ids)) {
+      await tx.delete(taskItem).where(and(inArray(taskItem.taskId, batch), eq(taskItem.kind, kind)));
+    }
+  }
+  for (const batch of chunks(itemRows)) await tx.insert(taskItem).values(batch);
 
   // Activity --------------------------------------------------------------------------------------------
   const origin = {

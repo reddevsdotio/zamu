@@ -1,0 +1,63 @@
+{
+  "description": "A second page of open merge requests (x-next-page) and a merge request with more diffs than one page.",
+  "source": "Hand-written from the GitLab REST docs (offset pagination headers); shapes trimmed.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/merge_requests?state=opened&order_by=created_at&sort=desc&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-page": "1",
+          "x-per-page": "100",
+          "x-next-page": "2"
+        },
+        "json": [
+          {
+            "id": 300000091,
+            "iid": 91,
+            "project_id": 34675721,
+            "title": "Huge change",
+            "state": "opened",
+            "created_at": "2026-11-21T10:00:00.000Z",
+            "target_branch": "main",
+            "source_branch": "huge",
+            "author": {
+              "id": 5091,
+              "username": "octocat",
+              "name": "Octocat"
+            },
+            "draft": false,
+            "web_url": "https://gitlab.com/gitlab-org/cli/-/merge_requests/91"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/merge_requests/91/diffs?page=1&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-next-page": "2"
+        },
+        "json": [
+          {
+            "old_path": "src/a.go",
+            "new_path": "src/a.go",
+            "a_mode": "100644",
+            "b_mode": "100644",
+            "new_file": false,
+            "renamed_file": false,
+            "deleted_file": false,
+            "diff": "@@ -1 +1 @@\n-a\n+b\n"
+          }
+        ]
+      }
+    }
+  ]
+}

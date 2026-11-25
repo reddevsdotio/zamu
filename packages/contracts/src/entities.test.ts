@@ -365,7 +365,9 @@ describe('round trip', () => {
     const first = items[1];
     if (first?.kind !== 'comment') throw new Error('expected a comment');
     expect(first.mentions[0]?.name).toBe('Ana Ruiz');
-    expect(TimelineItem.safeParse({ ...commentFixture, kind: 'note' }).success).toBe(false);
+    // M6: a note is a comment of kind note.
+    expect(TimelineItem.safeParse({ ...commentFixture, kind: 'note' }).success).toBe(true);
+    expect(TimelineItem.safeParse({ ...commentFixture, kind: 'reply' }).success).toBe(false);
     expect(TimelineItem.safeParse({ ...activityFixture, kind: 'comment' }).success).toBe(false);
   });
 
@@ -885,6 +887,7 @@ describe('M3 entities', () => {
       updatedDate: null,
       ordinal: null,
       other: {},
+      implementationNotes: null,
     });
     const stored = BacklogBlock.parse({
       kind: 'draft',

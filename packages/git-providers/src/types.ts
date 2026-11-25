@@ -37,6 +37,34 @@ export interface FileContent {
   blobSha: string;
 }
 
+/** Most open pull or merge requests listOpenRequests looks at. */
+export const MAX_OPEN_REQUESTS = 100;
+
+/** An open pull request (GitHub, Gitea/Forgejo) or merge request (GitLab). */
+export interface OpenRequest {
+  /** The number people use: #12 on GitHub and Forgejo, !12 on GitLab (its iid). */
+  number: number;
+  title: string;
+  /** Login of who opened it; null when the host does not say (a deleted account). */
+  author: string | null;
+  /** The branch it would merge. */
+  headBranch: string;
+  /** Its page in a browser. */
+  webUrl: string;
+}
+
+export interface OpenRequestList {
+  /** Requests with a changed file under the folder, newest first. */
+  requests: OpenRequest[];
+  /**
+   * True when the list may be incomplete: more than MAX_OPEN_REQUESTS requests were open, or a
+   * request changes more files than one page holds and none on that page was under the folder.
+   */
+  truncated: boolean;
+  /** The host's page of open requests, for "see them all". */
+  listUrl: string;
+}
+
 /** Header bag as received by a server route. Names are matched case-insensitively. */
 export type WebhookHeaders = Headers | Record<string, string | string[] | undefined>;
 
@@ -92,6 +120,14 @@ export interface GitProvider {
   readBlobs?(path: string, commit: string, files: readonly BlobRef[]): Promise<Map<string, string>>;
   /** One file at `ref` (commit or branch), or null when there is no file at that path. */
   readFile(path: string, ref: string, filePath: string): Promise<FileContent | null>;
+  /**
+   * M6: open pull or merge requests that change a file under `folder` ('' is the whole
+   * repository), renamed-away files included. Looks at the newest MAX_OPEN_REQUESTS requests and
+   * one page of changed files for each (100 on GitHub and GitLab, 50 on Gitea/Forgejo). Read-only:
+   * GitHub fine-grained tokens need "Pull requests: Read-only", GitLab read_api, Gitea/Forgejo
+   * read:repository. Optional so test doubles can leave it out; the three adapters implement it.
+   */
+  listOpenRequests?(path: string, folder: string): Promise<OpenRequestList>;
   /** Link to a file on the branch in the provider's web UI, for "Open file". */
   fileUrl(path: string, branch: string, filePath: string): string;
   /** Checks a webhook delivery against the source's secret. Same as the standalone verifyWebhook. */

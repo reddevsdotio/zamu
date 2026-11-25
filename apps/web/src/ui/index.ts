@@ -46,7 +46,13 @@ export {
   type CheckboxGroupProps,
   type CheckboxProps,
 } from './Checkbox';
-export { CheckMark } from './Checklist';
+export {
+  Checklist,
+  type ChecklistHandle,
+  type ChecklistItem,
+  type ChecklistProps,
+  CheckMark,
+} from './Checklist';
 export { Chip, type ChipProps } from './Chip';
 export { CodeBlock, type CodeBlockProps, copyText, InlineCode, useCopy } from './CodeBlock';
 export { ColorSwatches, type ColorSwatchesProps } from './ColorSwatches';
@@ -104,7 +110,15 @@ export {
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { type Fact, FactList, type FactListProps } from './FactList';
 export { FieldDescription, FieldError, inputBase, Label } from './Field';
-export { CaretGlyph, CheckGlyph, CloseGlyph, FiltersGlyph, LockGlyph, PlusGlyph } from './Glyphs';
+export {
+  CaretGlyph,
+  CheckGlyph,
+  CloseGlyph,
+  FiltersGlyph,
+  GripGlyph,
+  LockGlyph,
+  PlusGlyph,
+} from './Glyphs';
 export { Kbd, type KbdProps, KeyHint, type KeyHintProps } from './Kbd';
 export {
   LABEL_HUE_NAMES,
@@ -153,6 +167,9 @@ export {
   BlockedMarker,
   type BlockedMarkerProps,
   BlockedNotice,
+  ProgressBox,
+  ProgressMark,
+  type ProgressMarkProps,
   SubtaskProgress,
   type SubtaskProgressProps,
   SubtaskRing,
@@ -295,3 +312,15 @@ export {
   type UseHotkeysOptions,
   useHotkeys,
 } from './useHotkeys';
+export { WaivePanel, type WaivePanelProps, WaivePopover, type WaivePopoverProps } from './WaivePopover';
+export {
+  ClippedText,
+  type ClippedTextProps,
+  NoteItem,
+  type NoteItemProps,
+  SourceTag,
+  type SourceTagProps,
+  SummaryBlock,
+  type SummaryBlockProps,
+  type WorkAuthor,
+} from './WorkRecord';

@@ -1,12 +1,31 @@
 // GitHub and GitHub Enterprise Server, REST API version 2022-11-28 (supported on github.com until
 // March 2028 and the version GHES releases understand).
 // Docs: https://docs.github.com/en/rest/git/trees, /git/blobs, /branches/branches, /repos/repos,
-// /users/users.
+// /users/users, /pulls/pulls (list pull requests, list pull request files).
 
+import { GitUnexpected } from './errors';
 import { type FetchTree, listTreeByWalk, rawEntry, readFileByWalk } from './git-trees';
-import { asArray, asRecord, decodeBase64, encodeSegments, type HttpClient, stringField } from './http';
+import {
+  asArray,
+  asRecord,
+  decodeBase64,
+  encodeSegments,
+  type HttpClient,
+  nextLink,
+  stringField,
+} from './http';
+import { changedPaths, loginOf, requestsUnderFolder } from './open-requests';
 import { repoSegments } from './paths';
-import type { FileContent, GitProvider, RepositoryInfo, TreeEntry, Whoami } from './types';
+import {
+  type FileContent,
+  type GitProvider,
+  MAX_OPEN_REQUESTS,
+  type OpenRequest,
+  type OpenRequestList,
+  type RepositoryInfo,
+  type TreeEntry,
+  type Whoami,
+} from './types';
 import { verifyWebhook } from './webhooks';
 
 export const GITHUB_API_VERSION = '2022-11-28';
@@ -82,6 +101,49 @@ export class GitHubProvider implements GitProvider {
 
   readFile(path: string, ref: string, filePath: string): Promise<FileContent | null> {
     return readFileByWalk(this.fetchTree(path), (sha) => this.readBlob(path, sha), ref, filePath);
+  }
+
+  async listOpenRequests(path: string, folder: string): Promise<OpenRequestList> {
+    // One page of the newest open pull requests (100 is GitHub's page limit).
+    const { data, response } = await this.http.getJson(
+      this.http.url(`${this.repo(path)}/pulls`, {
+        state: 'open',
+        sort: 'created',
+        direction: 'desc',
+        per_page: MAX_OPEN_REQUESTS,
+      }),
+    );
+    const requests = asArray(data, 'pull request list').map((value): OpenRequest => {
+      const pull = asRecord(value, 'pull request');
+      const number = pull.number;
+      if (typeof number !== 'number')
+        throw new GitUnexpected('The provider sent a pull request without a number.');
+      return {
+        number,
+        title: typeof pull.title === 'string' ? pull.title : '',
+        author: loginOf(pull.user, 'login'),
+        headBranch: stringField(asRecord(pull.head, 'pull request head'), 'ref', 'a pull request head'),
+        webUrl: stringField(pull, 'html_url', 'a pull request'),
+      };
+    });
+    return requestsUnderFolder(
+      {
+        requests,
+        more: nextLink(response.headers.get('link')) !== null,
+        listUrl: `${this.webBaseUrl}/${repoSegments(path, false).join('/')}/pulls`,
+      },
+      folder,
+      async (request) => {
+        const files = await this.http.getJson(
+          this.http.url(`${this.repo(path)}/pulls/${request.number}/files`, { per_page: 100 }),
+        );
+        const entries = asArray(files.data, 'pull request file list');
+        return {
+          paths: changedPaths(entries, ['filename', 'previous_filename']),
+          more: nextLink(files.response.headers.get('link')) !== null,
+        };
+      },
+    );
   }
 
   fileUrl(path: string, branch: string, filePath: string): string {

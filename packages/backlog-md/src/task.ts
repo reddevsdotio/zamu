@@ -5,6 +5,7 @@ import { baseName, canonicalTaskRef, idFromFileName, parseBacklogId, titleFromFi
 import { parseSections } from './sections';
 import type { BacklogConfig, BacklogTask, ParseResult } from './types';
 import { atLine } from './yaml';
+import { extractZamuBlock } from './zamu-block';
 
 const KNOWN_KEYS: ReadonlySet<string> = new Set([
   'id',
@@ -136,6 +137,8 @@ export function parseTask(
   const priority = fields.text('priority')?.toLowerCase().replace(/\s+/g, ' ') ?? null;
   const parent = fields.text('parent_task_id');
 
+  // M6: the Zamu block is data, not a section: it never reaches the description.
+  const { body, block } = extractZamuBlock(read.file.body, fields.warnings);
   const task: BacklogTask = {
     path,
     id,
@@ -160,7 +163,8 @@ export function parseTask(
     ordinal: fields.number('ordinal'),
     onStatusChange: fields.text('onStatusChange'),
     unknown: fields.unknown(KNOWN_KEYS),
-    sections: parseSections(read.file.body, fields.warnings),
+    sections: parseSections(body, fields.warnings),
+    zamu: block,
   };
   return { ok: true, value: task, warnings: fields.warnings };
 }

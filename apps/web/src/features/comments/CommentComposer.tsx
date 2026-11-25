@@ -2,16 +2,17 @@ import type { Member } from '@zamu/contracts';
 import { useRef, useState } from 'react';
 import { Button as AriaButton } from 'react-aria-components';
 import { describeError, isClientError } from '~/features/tasks/errors';
-import { cn, Kbd, useHotkeys } from '~/ui';
+import { cn, Kbd, Switch, useHotkeys } from '~/ui';
 import { CommentBox, type CommentBoxHandle } from './CommentBox';
 import { useCreateComment } from './queries';
 
-// The comment box at the end of a task's history (frames 051, 054, 058). Closed it reads "Leave a
-// comment" with the M hint; M or a click opens it with Write / Preview, @ mentions, Cancel and
-// Comment ⌘↵. A failed send keeps the text. Unsent text survives switching tasks for the session, and
-// a task with a draft opens with the box open.
+// The comment box at the end of a task's history (frames 051, 054, 058; M6 004, 013, 014). Closed it reads
+// "Leave a comment or a note" with the N and M hints; N opens it as a note, M as a comment, a click as a
+// comment. Open, it has Write / Preview, @ mentions, the Note switch, Cancel and Comment (or Add note)
+// ⌘↵. A failed send keeps the text. Unsent text survives switching tasks for the session, and a task
+// with a draft opens with the box open. Mirrored tasks take comments only: notes are the file's.
 
-const drafts = new Map<string, string>();
+const drafts = new Map<string, { text: string; note: boolean }>();
 
 /** Forgets every unsent draft (tests, sign-out). */
 export function clearCommentDrafts() {
@@ -27,8 +28,10 @@ export interface CommentComposerProps {
   onSent?: (commentId: string) => void;
   /** Overrides "Leave a comment" (mirrored and hidden tasks). */
   placeholder?: string | undefined;
-  /** M opens the box (default true; off while another screen owns M). */
+  /** M (and N) open the box (default true; off while another screen owns them). */
   hotkey?: boolean;
+  /** M6: offer work notes (the Note switch and N). Off for mirrored tasks. */
+  notes?: boolean;
   className?: string;
 }
 
@@ -36,31 +39,44 @@ export function CommentComposer({
   taskKey,
   members,
   onSent,
-  placeholder = 'Leave a comment',
+  placeholder,
   hotkey = true,
+  notes = false,
   className,
 }: CommentComposerProps) {
-  const [value, setValueState] = useState(() => drafts.get(taskKey) ?? '');
-  const [isOpen, setOpen] = useState(() => drafts.has(taskKey));
+  const saved = drafts.get(taskKey);
+  const [value, setValueState] = useState(() => saved?.text ?? '');
+  const [isNote, setNoteState] = useState(() => (notes && saved?.note) ?? false);
+  const [isOpen, setOpen] = useState(() => saved != null);
   const box = useRef<CommentBoxHandle>(null);
   const create = useCreateComment(taskKey);
+  const closedLabel = placeholder ?? (notes ? 'Leave a comment or a note' : 'Leave a comment');
 
+  const remember = (text: string, note: boolean) => {
+    if (text) drafts.set(taskKey, { text, note });
+    else drafts.delete(taskKey);
+  };
   const setValue = (next: string) => {
     setValueState(next);
-    if (next) drafts.set(taskKey, next);
-    else drafts.delete(taskKey);
+    remember(next, isNote);
     if (create.isError) create.reset();
   };
+  const setNote = (next: boolean) => {
+    setNoteState(next);
+    remember(value, next);
+  };
 
-  const open = () => {
+  const open = (note: boolean) => {
+    setNote(notes && note);
     if (isOpen) box.current?.focus();
     else setOpen(true);
   };
 
-  useHotkeys({ m: hotkey ? open : null });
+  useHotkeys({ m: hotkey ? () => open(false) : null, n: hotkey && notes ? () => open(true) : null });
 
   const close = () => {
     setValue('');
+    setNoteState(false);
     create.reset();
     setOpen(false);
   };
@@ -69,27 +85,43 @@ export function CommentComposer({
     if (create.isPending) return;
     const body = value.trim();
     if (!body) return;
-    create.mutate(body, {
-      onSuccess: (comment) => {
-        setValue('');
-        create.reset();
-        setOpen(false);
-        onSent?.(comment.id);
+    create.mutate(
+      { body, kind: isNote ? 'note' : 'comment' },
+      {
+        onSuccess: (comment) => {
+          setValue('');
+          setNoteState(false);
+          create.reset();
+          setOpen(false);
+          onSent?.(comment.id);
+        },
       },
-    });
+    );
   };
 
   if (!isOpen) {
     return (
       <AriaButton
-        onPress={open}
-        aria-keyshortcuts="m"
+        onPress={() => open(false)}
+        aria-label={closedLabel}
+        aria-keyshortcuts={notes ? 'm n' : 'm'}
         className={cn(
           'flex w-full cursor-text items-center gap-2 rounded-md border border-line px-3.25 py-2.75 text-left text-md text-fg-3 outline-none hover:border-fg-3 focus-visible:focus-ring',
           className,
         )}
       >
-        <span className="min-w-0 flex-1 truncate">{placeholder}</span>
+        <span className="min-w-0 flex-1 truncate">{closedLabel}</span>
+        {notes ? (
+          <>
+            <span aria-hidden className="text-xs">
+              note
+            </span>
+            <Kbd aria-hidden>N</Kbd>
+            <span aria-hidden className="text-xs">
+              comment
+            </span>
+          </>
+        ) : null}
         <Kbd aria-hidden>M</Kbd>
       </AriaButton>
     );
@@ -104,7 +136,7 @@ export function CommentComposer({
   return (
     <CommentBox
       handleRef={box}
-      label="Comment"
+      label={isNote ? 'Note' : 'Comment'}
       value={value}
       onChange={setValue}
       onSubmit={submit}
@@ -115,11 +147,22 @@ export function CommentComposer({
         else (document.activeElement as HTMLElement | null)?.blur();
       }}
       members={members}
-      submitLabel="Comment"
-      placeholder={placeholder}
+      submitLabel={isNote ? 'Add note' : 'Comment'}
+      placeholder={placeholder ?? (isNote ? 'Write a note' : 'Leave a comment')}
       isSending={create.isPending}
       error={error}
       autoFocus
+      tone={isNote ? 'note' : 'comment'}
+      {...(notes
+        ? {
+            footerStart: (
+              <Switch isSelected={isNote} onChange={setNote} className="shrink-0 font-medium">
+                Note
+              </Switch>
+            ),
+            hint: isNote ? 'A note tells nobody unless it mentions them.' : 'Markdown · @ to mention',
+          }
+        : {})}
       className={className}
     />
   );

@@ -344,6 +344,11 @@ class DemoRepository implements GitProvider {
     return tree;
   }
 
+  /** The demo repository has no pull requests, so a switch finds nothing that would be lost. */
+  async listOpenRequests(path: string, _folder: string) {
+    return { requests: [], truncated: false, listUrl: `${this.webBaseUrl}/${path}/-/merge_requests` };
+  }
+
   async whoami() {
     return { login: 'demo-bot', repoCount: 1 };
   }

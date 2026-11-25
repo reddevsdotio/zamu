@@ -13,6 +13,7 @@ import {
   deleteMilestone,
   deleteProject,
   endCycle,
+  exportBacklog,
   getBacklogStatus,
   getCycle,
   getDashboard,
@@ -130,6 +131,9 @@ export const router = api.router({
     ),
     refresh: api.backlog.refresh.handler(({ context, input }) =>
       requestBacklogRefresh(context.core, context.actor, input),
+    ),
+    export: api.backlog.export.handler(({ context, input }) =>
+      exportBacklog(context.core, context.actor, input),
     ),
   },
   dashboard: {

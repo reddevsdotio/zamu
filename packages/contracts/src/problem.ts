@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Task } from './entities';
+import { Task, WorkItemKind } from './entities';
 
 /**
  * Error codes shared by core, the API, the web app and the CLI. They match oRPC's common error
@@ -43,6 +43,12 @@ export const PROBLEM_CODES = [
   'SUBTASK_DEPTH',
   /** A blocker, parent, label or bulk milestone and cycle across projects (422). */
   'NOT_SAME_PROJECT',
+  // M6: the work record.
+  /**
+   * An agent moved a task to In review or Done while a criterion or done item is open (409). The
+   * body lists them in `openItems`; people are never refused.
+   */
+  'OPEN_ITEMS',
 ] as const;
 export const ProblemCode = z.enum(PROBLEM_CODES);
 export type ProblemCode = z.infer<typeof ProblemCode>;
@@ -67,6 +73,7 @@ export const PROBLEM_STATUS: Record<ProblemCode, number> = {
   DEPENDENCY_LOOP: 409,
   SUBTASK_DEPTH: 409,
   NOT_SAME_PROJECT: 422,
+  OPEN_ITEMS: 409,
 };
 
 export const PROBLEM_TITLES: Record<ProblemCode, string> = {
@@ -89,6 +96,7 @@ export const PROBLEM_TITLES: Record<ProblemCode, string> = {
   DEPENDENCY_LOOP: 'Blockers would loop',
   SUBTASK_DEPTH: 'Subtasks go one level deep',
   NOT_SAME_PROJECT: 'Tasks are in different projects',
+  OPEN_ITEMS: 'Task has open items',
 };
 
 /** The codes of the Backlog.md mirror rules, for clients that treat them alike. */
@@ -133,6 +141,17 @@ export const ProblemLoop = z.object({
 });
 export type ProblemLoop = z.infer<typeof ProblemLoop>;
 
+/**
+ * M6, OPEN_ITEMS only: one criterion or done item still open, with its number (what --check-ac N,
+ * --check-dod N and --waive-ac N take) and its text.
+ */
+export const OpenItem = z.object({
+  kind: WorkItemKind,
+  number: z.number().int().positive(),
+  text: z.string(),
+});
+export type OpenItem = z.infer<typeof OpenItem>;
+
 /** Extra data carried by contract errors (the `data` of an ORPCError). */
 export const ProblemData = z.object({
   requestId: z.string().optional(),
@@ -141,6 +160,8 @@ export const ProblemData = z.object({
   task: Task.optional(),
   /** DEPENDENCY_LOOP only: the ends of the loop. */
   loop: ProblemLoop.optional(),
+  /** OPEN_ITEMS only: the open items, criteria first, each list by number. */
+  openItems: z.array(OpenItem).optional(),
   ...MirroredProblemExtensions.shape,
 });
 export type ProblemData = z.infer<typeof ProblemData>;
@@ -148,8 +169,8 @@ export type ProblemData = z.infer<typeof ProblemData>;
 /**
  * Error body of every /api/v1 response with a 4xx or 5xx status, after RFC 9457 (problem details)
  * with these extensions: `code`, `requestId`, `issues`, `task` for TASK_CHANGED, `field`, `file`,
- * `backlogId`, `hint` for the *_MIRRORED codes (M3), and `loop` for DEPENDENCY_LOOP (M5). The CLI
- * prints it under `zamu.v1.error`.
+ * `backlogId`, `hint` for the *_MIRRORED codes (M3), `loop` for DEPENDENCY_LOOP (M5), and
+ * `openItems` for OPEN_ITEMS (M6). The CLI prints it under `zamu.v1.error`.
  */
 export const Problem = z.object({
   type: z.string().default('about:blank'),
@@ -164,6 +185,8 @@ export const Problem = z.object({
   task: Task.optional(),
   /** DEPENDENCY_LOOP only: the two task keys, so clients can phrase the refusal. */
   loop: ProblemLoop.optional(),
+  /** OPEN_ITEMS only: what is still open, so clients can list it with the flags that settle it. */
+  openItems: z.array(OpenItem).optional(),
   ...MirroredProblemExtensions.shape,
 });
 export type Problem = z.output<typeof Problem>;
@@ -177,6 +200,7 @@ export function problem(
     issues?: ProblemIssue[];
     instance?: string;
     task?: Problem['task'];
+    openItems?: OpenItem[];
   } & MirroredProblemExtensions = {},
 ): Problem {
   return {

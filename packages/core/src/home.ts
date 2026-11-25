@@ -19,7 +19,7 @@
 // Query budget per getHome: readableProjects (plus one label lookup with the label filter), one
 // ranked query for the tab's groups (each group's uncapped total and first HOME_GROUP_ITEM_LIMIT
 // items), a fixed set of batch lookups for the rows (users, milestones, cycles, labels, blockers,
-// blocks, subtask progress, mirrors), one count query per other tab, the deadlines query and, on
+// blocks, subtask progress, criteria and done-item counts, mirrors), one count query per other tab, the deadlines query and, on
 // Agents, the cards, today's counts and recent actions. No query runs per row.
 //
 // Plans: candidates come from index-backed branches (task assignee, project and status, project
@@ -62,6 +62,7 @@ import type { z } from 'zod';
 import { type ActivityRow, toActivities } from './activity';
 import { type Actor, authorize } from './authz';
 import type { DbContext } from './context';
+import { progressFor, workItemProgressOf } from './criteria';
 import {
   addCalendarDays,
   type ClockContext,
@@ -384,7 +385,8 @@ async function rankedRows(db: Db, params: Params, tab: HomeTab): Promise<Row[]> 
         t.number, t.key_suffix as "keySuffix", t.title, t.status, t.priority, t.assignee_id as "assigneeId",
         t.milestone_id as "milestoneId", t.cycle_id as "cycleId", t.cycle_added_at as "cycleAddedAt",
         t.rank, t.backlog_id as "backlogId", t.due_date::text as "dueDate", t.created_at as "createdAt",
-        t.updated_at as "updatedAt", p.id as "projectId", p.key as "projectKey", p.name as "projectName",
+        t.updated_at as "updatedAt", t.final_summary is not null as "hasFinalSummary",
+        p.id as "projectId", p.key as "projectKey", p.name as "projectName",
         pt.number as "parentNumber", pt.key_suffix as "parentKeySuffix",
         rv.actor_id as "reviewActorId", rv.on_behalf_of_id as "reviewOnBehalfOfId",
         case
@@ -499,6 +501,8 @@ interface Details {
   /** Open, visible tasks waiting on each task. */
   blocks: Map<string, number>;
   subtasks: Map<string, { done: number; total: number }>;
+  /** M6: criteria and done-item counts per task, from one grouped query (workItemProgressOf). */
+  workItems: Awaited<ReturnType<typeof workItemProgressOf>>;
   mirrored: Set<string>;
 }
 
@@ -507,7 +511,7 @@ async function loadDetails(db: Db, rows: Row[], today: string): Promise<Details>
   const milestoneIds = [...new Set(rows.map((row) => str(row.milestoneId)).filter((id) => id !== null))];
   const cycleIds = [...new Set(rows.map((row) => str(row.cycleId)).filter((id) => id !== null))];
   const none = Promise.resolve([] as Row[]);
-  const [milestones, cycles, labels, blockers, blocks, subtasks, mirrored] = await Promise.all([
+  const [milestones, cycles, labels, blockers, blocks, subtasks, workItems, mirrored] = await Promise.all([
     milestoneIds.length === 0
       ? none
       : db.execute<Row>(
@@ -565,6 +569,7 @@ async function loadDetails(db: Db, rows: Row[], today: string): Promise<Details>
             group by s.parent_id`,
           'objects',
         ),
+    workItemProgressOf(db, taskIds),
     mirroredProjectIds(
       db,
       rows.map((row) => String(row.projectId)),
@@ -646,6 +651,7 @@ async function loadDetails(db: Db, rows: Row[], today: string): Promise<Details>
     subtasks: new Map(
       subtasks.map((row) => [String(row.taskId), { done: Number(row.done), total: Number(row.total) }]),
     ),
+    workItems,
     mirrored,
   };
 }
@@ -656,6 +662,7 @@ function listItemOf(row: Row, details: Details): z.input<typeof TaskListItem> {
   const milestoneId = str(row.milestoneId);
   const cycleId = str(row.cycleId);
   const parentNumber = row.parentNumber;
+  const workItems = progressFor(details.workItems, taskId);
   return {
     id: taskId,
     key: taskKeyOf(row),
@@ -681,6 +688,9 @@ function listItemOf(row: Row, details: Details): z.input<typeof TaskListItem> {
       parentNumber === null || parentNumber === undefined
         ? null
         : formatTaskKey(projectKey, Number(parentNumber), str(row.parentKeySuffix)),
+    criteriaProgress: workItems.criteria,
+    doneProgress: workItems.done,
+    hasFinalSummary: Boolean(row.hasFinalSummary),
     createdAt: timestamp(row.createdAt),
     updatedAt: timestamp(row.updatedAt),
   } as z.input<typeof TaskListItem>;

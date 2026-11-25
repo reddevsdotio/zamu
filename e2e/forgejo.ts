@@ -63,10 +63,25 @@ export interface Forgejo {
   api<T = unknown>(method: string, path: string, body?: unknown): Promise<T>;
   /** Creates a public repository on main with the given files in one commit. */
   createRepository(repo: string, files: Record<string, string>): Promise<void>;
-  /** Writes, replaces or deletes files in one commit on main (null deletes). Returns the commit hash. */
-  commit(repo: string, message: string, changes: Record<string, string | null>): Promise<string>;
-  /** Head commit of main. */
-  head(repo: string): Promise<string>;
+  /**
+   * Writes, replaces or deletes files in one commit on `branch` (main by default; null deletes). Returns the
+   * commit hash.
+   */
+  commit(
+    repo: string,
+    message: string,
+    changes: Record<string, string | null>,
+    branch?: string,
+  ): Promise<string>;
+  /** Head commit of a branch, main by default. */
+  head(repo: string, branch?: string): Promise<string>;
+  /**
+   * Opens a pull request into main from a new branch that holds `changes` in one commit. Returns its number.
+   */
+  openPullRequest(
+    repo: string,
+    request: { branch: string; title: string; changes: Record<string, string | null> },
+  ): Promise<number>;
   /** Detaches Forgejo from the stack network, then removes the container and its data. */
   stop(): void;
 }
@@ -172,8 +187,44 @@ export async function startForgejo(name: string, network: string, alias: string)
   };
 
   const encodePath = (path: string) => path.split('/').map(encodeURIComponent).join('/');
-  const head = async (repo: string) =>
-    (await api<{ commit: { id: string } }>('GET', `/repos/${user}/${repo}/branches/main`)).commit.id;
+  const head = async (repo: string, branch = 'main') =>
+    (await api<{ commit: { id: string } }>('GET', `/repos/${user}/${repo}/branches/${encodePath(branch)}`))
+      .commit.id;
+
+  const commit = async (
+    repo: string,
+    message: string,
+    changes: Record<string, string | null>,
+    branch = 'main',
+  ): Promise<string> => {
+    const files = [];
+    for (const [path, content] of Object.entries(changes)) {
+      let sha: string | null = null;
+      try {
+        sha = (
+          await api<{ sha: string }>(
+            'GET',
+            `/repos/${user}/${repo}/contents/${encodePath(path)}?ref=${encodeURIComponent(branch)}`,
+          )
+        ).sha;
+      } catch {
+        sha = null;
+      }
+      if (content === null) {
+        if (!sha) throw new Error(`${path} does not exist in ${repo}`);
+        files.push({ operation: 'delete', path, sha });
+      } else {
+        files.push({
+          operation: sha ? 'update' : 'create',
+          path,
+          content: Buffer.from(content).toString('base64'),
+          ...(sha ? { sha } : {}),
+        });
+      }
+    }
+    await api('POST', `/repos/${user}/${repo}/contents`, { branch, message, files });
+    return head(repo, branch);
+  };
 
   return {
     user,
@@ -199,31 +250,19 @@ export async function startForgejo(name: string, network: string, alias: string)
         })),
       });
     },
-    async commit(repo, message, changes) {
-      const files = [];
-      for (const [path, content] of Object.entries(changes)) {
-        let sha: string | null = null;
-        try {
-          sha = (
-            await api<{ sha: string }>('GET', `/repos/${user}/${repo}/contents/${encodePath(path)}?ref=main`)
-          ).sha;
-        } catch {
-          sha = null;
-        }
-        if (content === null) {
-          if (!sha) throw new Error(`${path} does not exist in ${repo}`);
-          files.push({ operation: 'delete', path, sha });
-        } else {
-          files.push({
-            operation: sha ? 'update' : 'create',
-            path,
-            content: Buffer.from(content).toString('base64'),
-            ...(sha ? { sha } : {}),
-          });
-        }
-      }
-      await api('POST', `/repos/${user}/${repo}/contents`, { branch: 'main', message, files });
-      return head(repo);
+    commit,
+    async openPullRequest(repo, { branch, title, changes }) {
+      await api('POST', `/repos/${user}/${repo}/branches`, {
+        new_branch_name: branch,
+        old_branch_name: 'main',
+      });
+      await commit(repo, title, changes, branch);
+      const pull = await api<{ number: number }>('POST', `/repos/${user}/${repo}/pulls`, {
+        title,
+        head: branch,
+        base: 'main',
+      });
+      return pull.number;
     },
     stop,
   };

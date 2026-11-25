@@ -1,6 +1,7 @@
 // GitLab (gitlab.com and self-managed), REST API v4.
 // Docs: https://docs.gitlab.com/api/repositories/ (tree with keyset pagination, raw blobs),
-// /api/branches/, /api/projects/, /api/rest/ (URL-encoded namespaced paths, Link headers).
+// /api/branches/, /api/projects/, /api/rest/ (URL-encoded namespaced paths, Link headers),
+// /api/merge_requests/ (list merge requests, list merge request diffs).
 //
 // Blob contents come in batches of BATCH_SIZE through GraphQL (repository.blobs): one REST call per
 // file would exceed gitlab.com's 100 requests a minute on the free plan for a few hundred tasks.
@@ -19,8 +20,19 @@ import {
   nextLink,
   stringField,
 } from './http';
+import { changedPaths, loginOf, requestsUnderFolder } from './open-requests';
 import { isRegularFileMode, normalizeFolder, repoSegments, splitFilePath } from './paths';
-import type { BlobRef, FileContent, GitProvider, RepositoryInfo, TreeEntry, Whoami } from './types';
+import {
+  type BlobRef,
+  type FileContent,
+  type GitProvider,
+  MAX_OPEN_REQUESTS,
+  type OpenRequest,
+  type OpenRequestList,
+  type RepositoryInfo,
+  type TreeEntry,
+  type Whoami,
+} from './types';
 import { verifyWebhook } from './webhooks';
 
 const PAGE_SIZE = 100;
@@ -219,6 +231,55 @@ export class GitLabProvider implements GitProvider {
     const entry = siblings?.find((candidate) => candidate.name === name);
     if (entry?.type !== 'blob' || !isRegularFileMode(entry.mode)) return null;
     return { content: await this.readBlob(path, entry.id), blobSha: entry.id };
+  }
+
+  async listOpenRequests(path: string, folder: string): Promise<OpenRequestList> {
+    // One page of the newest open merge requests (100 is GitLab's page limit), then one page of
+    // diffs per request: on gitlab.com free plans that stays near the 100 requests a minute.
+    const { data, response } = await this.http.getJson(
+      this.http.url(`${this.project(path)}/merge_requests`, {
+        state: 'opened',
+        order_by: 'created_at',
+        sort: 'desc',
+        per_page: MAX_OPEN_REQUESTS,
+      }),
+    );
+    const requests = asArray(data, 'merge request list').map((value): OpenRequest => {
+      const request = asRecord(value, 'merge request');
+      const iid = request.iid;
+      if (typeof iid !== 'number')
+        throw new GitUnexpected('The provider sent a merge request without an iid.');
+      return {
+        number: iid,
+        title: typeof request.title === 'string' ? request.title : '',
+        author: loginOf(request.author, 'username'),
+        headBranch: stringField(request, 'source_branch', 'a merge request'),
+        webUrl: stringField(request, 'web_url', 'a merge request'),
+      };
+    });
+    const nextPage = response.headers.get('x-next-page');
+    return requestsUnderFolder(
+      {
+        requests,
+        more: Boolean(nextPage) || nextLink(response.headers.get('link')) !== null,
+        listUrl: `${this.webBaseUrl}/${repoSegments(path, true).join('/')}/-/merge_requests`,
+      },
+      folder,
+      async (request) => {
+        const diffs = await this.http.getJson(
+          this.http.url(`${this.project(path)}/merge_requests/${request.number}/diffs`, {
+            page: 1,
+            per_page: 100,
+          }),
+        );
+        const entries = asArray(diffs.data, 'merge request diff list');
+        const next = diffs.response.headers.get('x-next-page');
+        return {
+          paths: changedPaths(entries, ['new_path', 'old_path']),
+          more: Boolean(next) || nextLink(diffs.response.headers.get('link')) !== null,
+        };
+      },
+    );
   }
 
   fileUrl(path: string, branch: string, filePath: string): string {

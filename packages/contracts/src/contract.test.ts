@@ -14,7 +14,7 @@ function procedures(router: unknown, path: string[] = []): [string, AnyContractP
 const all = procedures(contract);
 
 describe('contract', () => {
-  it('exposes exactly the M1 to M5 routes under /api/v1', () => {
+  it('exposes exactly the M1 to M6 routes under /api/v1', () => {
     const routes = Object.fromEntries(
       all.map(([name, procedure]) => {
         const { method, path } = procedure['~orpc'].route;
@@ -55,6 +55,7 @@ describe('contract', () => {
       'labels.delete': 'DELETE /api/v1/projects/{project}/labels/{id}',
       'backlog.status': 'GET /api/v1/projects/{project}/backlog',
       'backlog.refresh': 'POST /api/v1/projects/{project}/backlog/refresh',
+      'backlog.export': 'GET /api/v1/projects/{project}/backlog/export',
       'dashboard.get': 'GET /api/v1/dashboard',
       'dashboard.counts': 'GET /api/v1/dashboard/counts',
       'home.get': 'GET /api/v1/home',

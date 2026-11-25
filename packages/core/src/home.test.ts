@@ -29,7 +29,7 @@ import {
 } from './testing/fixtures';
 
 const HOUR = 3_600_000;
-const { activity, label, member, task, taskDependency, taskLabel } = schema;
+const { activity, label, member, task, taskDependency, taskItem, taskLabel } = schema;
 
 let ctx: TestContext;
 
@@ -530,6 +530,94 @@ describe('filters and readable projects', () => {
     const assigned = group(result, 'assigned');
     expect(assigned.total).toBe(HOME_GROUP_ITEM_LIMIT + 2);
     expect(assigned.items).toHaveLength(HOME_GROUP_ITEM_LIMIT);
+  });
+});
+
+describe('work record on rows', () => {
+  let world: World;
+  let p: ProjectRow;
+  const t: Record<string, TaskRow> = {};
+
+  /** Criteria or done items on `row`, numbered from 1 in the order given. */
+  async function items(
+    row: TaskRow,
+    kind: 'criterion' | 'done',
+    states: ('open' | 'checked' | 'waived')[],
+  ): Promise<void> {
+    await ctx.db.insert(taskItem).values(
+      states.map((state, index) => ({
+        taskId: row.id,
+        kind,
+        position: index + 1,
+        text: `${kind} ${index + 1}`,
+        state,
+        waivedReason: state === 'waived' ? 'Replaced by a replay' : null,
+        waivedById: state === 'waived' ? world.owner.id : null,
+      })),
+    );
+  }
+
+  /** getHome with every db.select and db.execute call counted. */
+  async function countedHome(actor: Actor, tab: HomeTab): Promise<{ result: Home; queries: number }> {
+    let queries = 0;
+    const db = new Proxy(ctx.db, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if ((property === 'select' || property === 'execute') && typeof value === 'function') {
+          return (...args: unknown[]) => {
+            queries += 1;
+            return value.apply(target, args);
+          };
+        }
+        return value;
+      },
+    });
+    const result = await getHome({ ...clock(), db }, actor, { tab });
+    return { result, queries };
+  }
+
+  beforeAll(async () => {
+    world = await createWorld(ctx.db);
+    p = await newProject(world);
+    t.full = await rawTask(world, p, {
+      status: 'in_review',
+      assigneeId: world.agent.id,
+      finalSummary: 'Retries back off and stop on 4xx answers.',
+    });
+    await items(t.full, 'criterion', ['checked', 'checked', 'checked', 'checked', 'waived', 'open']);
+    await items(t.full, 'done', ['checked', 'checked']);
+    t.bare = await rawTask(world, p, { status: 'in_review', assigneeId: world.agent.id });
+  });
+
+  const k = (name: string) => keyOf(p, t[name] as TaskRow);
+
+  it('fills criteria and done-item counts and the summary flag on Needs review rows', async () => {
+    const result = await home(world.memberActor, 'everyone');
+    const full = itemOf(result, k('full'));
+    expect(full?.group).toBe('review');
+    expect(full?.item.task).toMatchObject({
+      criteriaProgress: { settled: 5, open: 1, waived: 1, total: 6 },
+      doneProgress: { settled: 2, open: 0, waived: 0, total: 2 },
+      hasFinalSummary: true,
+    });
+    const bare = itemOf(result, k('bare'));
+    expect(bare?.item.task).toMatchObject({
+      criteriaProgress: { settled: 0, open: 0, waived: 0, total: 0 },
+      doneProgress: { settled: 0, open: 0, waived: 0, total: 0 },
+      hasFinalSummary: false,
+    });
+  });
+
+  it('reads the counts in one query per page, not one per row', async () => {
+    const before = await countedHome(world.memberActor, 'everyone');
+    for (let i = 0; i < 3; i++) {
+      const row = await rawTask(world, p, { status: 'in_review', assigneeId: world.agent.id });
+      await items(row, 'criterion', ['open', 'checked']);
+    }
+    const after = await countedHome(world.memberActor, 'everyone');
+    expect(group(after.result, 'review').items.length).toBe(group(before.result, 'review').items.length + 3);
+    expect(before.queries).toBeGreaterThan(5);
+    expect(after.queries).toBe(before.queries);
   });
 });
 

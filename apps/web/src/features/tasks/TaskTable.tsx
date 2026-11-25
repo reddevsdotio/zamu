@@ -15,6 +15,7 @@ import {
   useState,
 } from 'react';
 import { type DisplayOptions, showsProperty } from '~/features/views/display-options';
+import { workItemNoun } from '~/features/views/work-progress';
 import {
   Avatar,
   BlockedMarker,
@@ -30,6 +31,7 @@ import {
   NoneGlyph,
   PlusGlyph,
   PriorityGlyph,
+  ProgressMark,
   Skeleton,
   SkeletonRow,
   STATUS_LABELS,
@@ -43,12 +45,13 @@ import type { ListGroupRow, ListRow, ListTaskRow } from './groups';
 // The task list of a project (frames 011–019): one-line rows under group headers, virtualized.
 //
 //   ▾ ◐ In progress  13                                                                        +
-//   ▮▮ HBR-164  ◐ Savings goals                         • frontend  • mobile  ◔ 2/7       2m
+//   ▮▮ HBR-164  ◐ Savings goals                    • frontend  • mobile  ◔ 2/7  ☐ 4/6       2m
 //        HBR-164.2 │─ ● English copy and analytics contract                       [cd]    1h
 //
 // Rows are 38px, group rows 46px (6px of air above the 40px header). Which properties a row shows
 // comes from the display options (showsProperty: priority only for Urgent and High, the avatar only
-// when the task is someone else's). The screen owns focus and selection; this draws them:
+// when the task is someone else's). The criteria marker (M6, off by default) sits after subtasks and
+// before the due date, from the counts the list already carries. The screen owns focus and selection; this draws them:
 //   cursor     the row keys act on (accent-soft; a quieter tint while several tasks are selected)
 //   selected   multi-selected rows (accent-soft, with their checkbox ticked)
 //   checkboxes every row shows its checkbox while anything is selected (frame 014)
@@ -657,6 +660,12 @@ export function TaskRowContent({
           {task.labels?.length && shows('labels') ? <LabelList labels={task.labels} max={3} /> : null}
           {task.subtaskProgress && task.subtaskProgress.total > 0 && shows('subtasks') ? (
             <SubtaskProgress done={task.subtaskProgress.done} total={task.subtaskProgress.total} />
+          ) : null}
+          {task.criteriaProgress && task.criteriaProgress.total > 0 && shows('criteria') ? (
+            <ProgressMark
+              {...task.criteriaProgress}
+              noun={workItemNoun('criteria', task.criteriaProgress.total)}
+            />
           ) : null}
           {task.dueDate && shows('due') && now != null ? (
             <DueChip dueDate={task.dueDate} status={task.status} today={today} />

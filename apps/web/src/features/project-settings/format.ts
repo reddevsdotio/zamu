@@ -1,12 +1,6 @@
 // Display text for the Backlog.md section of project settings (frames 2b to 2o). Pure functions of
 // the source status and the current time, so every state can be tested without rendering.
-import type {
-  BacklogProblem,
-  BacklogSourceStatus,
-  BacklogState,
-  BacklogTrigger,
-  GitConnectionRef,
-} from '@zamu/contracts';
+import type { BacklogProblem, BacklogSourceStatus, BacklogState, BacklogTrigger } from '@zamu/contracts';
 import type { SourceDotState } from '~/ui';
 
 const MINUTE = 60_000;
@@ -247,17 +241,6 @@ export function failedBanner(status: BacklogSourceStatus, now: number | null): s
   return `${reason}${kept} Fix the file and push, or refresh once it's fixed.`;
 }
 
-/** Banner of a detached source (frame 2j). */
-export function detachedBanner(status: BacklogSourceStatus, now: number | null): string {
-  const when = status.detachedAt && now !== null ? ` on ${dateText(status.detachedAt, now, true)}` : '';
-  const tail = 'Everything in this project is editable; the files in the repository no longer affect it.';
-  if (status.mode === 'import') {
-    return `Imported once${when} by ${status.createdBy.name}, then detached. ${tail}`;
-  }
-  const by = status.detachedBy ? ` by ${status.detachedBy.name}` : '';
-  return `Mirrored from Backlog.md, then detached${when}${by}. ${tail}`;
-}
-
 /** Subject and text of one problem row. */
 export function problemRow(problem: BacklogProblem): {
   severity: 'error' | 'warning';
@@ -274,12 +257,6 @@ export function problemRow(problem: BacklogProblem): {
       ? `not mapped, shown as ${problem.fallback}. Map it in Edit mappings.`
       : problem.message;
   return { severity: 'warning', file: `${problem.field} “${problem.value}” · ${tasks}`, text };
-}
-
-/** Provider name in the detach dialog's last bullet ("Remove the webhook in GitLab"). */
-export function providerName(connection: Pick<GitConnectionRef, 'provider'> | null): string {
-  if (!connection) return 'the repository';
-  return { github: 'GitHub', gitlab: 'GitLab', gitea: 'Gitea / Forgejo' }[connection.provider];
 }
 
 /** "whsec_9Lq2……Tz4": enough to tell secrets apart, never the whole value. */

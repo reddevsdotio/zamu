@@ -1,5 +1,5 @@
 // M5 plan risk "List performance": listTasks on a project with 5,000 tasks that carry labels,
-// blockers, subtasks and due dates. Prints the median time of each listing and fails when one
+// blockers, subtasks and due dates (M6: and criteria and done items, counted per row). Prints the median time of each listing and fails when one
 // takes longer than a generous bound (the list fields are read for the page, not per row).
 import { schema } from '@zamu/db';
 import { sql } from 'drizzle-orm';
@@ -33,7 +33,7 @@ describe('listTasks on 5,000 tasks', () => {
     key = randomProjectKey();
     await createProject(ctx, world.ownerActor, { name: 'Big', key });
     const project = await projectRow(ctx.db, world.workspaceId, key);
-    const { task, label, taskLabel, taskDependency } = schema;
+    const { task, label, taskLabel, taskDependency, taskItem } = schema;
     await ctx.db.execute(sql`
       insert into ${task} (project_id, number, title, status, priority, created_by_id, assignee_id, due_date, rank)
       select ${project.id}, n, 'Task ' || n,
@@ -67,7 +67,17 @@ describe('listTasks on 5,000 tasks', () => {
       update ${task} t set parent_id = p.id from ${task} p
       where t.project_id = ${project.id} and p.project_id = t.project_id
         and t.number % 5 = 1 and p.number = t.number - 1`);
-    await ctx.db.execute(sql`analyze ${task}, ${taskLabel}, ${taskDependency}, ${label}`);
+    // M6: 0 to 5 criteria and 0 to 2 done items per task, in every state.
+    await ctx.db.execute(sql`
+      insert into ${taskItem} (task_id, kind, position, text, state, waived_reason)
+      select t.id, k.kind, p, k.kind || ' ' || p,
+        (array['open','checked','waived'])[1 + (t.number + p) % 3],
+        case when (t.number + p) % 3 = 2 then 'Covered elsewhere' end
+      from ${task} t
+      cross join (values ('criterion', 6), ('done', 3)) as k(kind, n)
+      cross join lateral generate_series(1, t.number % k.n) as p
+      where t.project_id = ${project.id}`);
+    await ctx.db.execute(sql`analyze ${task}, ${taskLabel}, ${taskDependency}, ${label}, ${taskItem}`);
     const rows = await ctx.db.execute<{ id: string }>(
       sql`select id from ${label} where project_id = ${project.id} order by name limit 2`,
     );
@@ -111,6 +121,8 @@ describe('listTasks on 5,000 tasks', () => {
     expect(first.items.some((item) => item.blocked)).toBe(true);
     expect(first.items.some((item) => (item.subtaskProgress?.total ?? 0) > 0)).toBe(true);
     expect(first.items.some((item) => item.parentKey)).toBe(true);
+    expect(first.items.some((item) => (item.criteriaProgress?.waived ?? 0) > 0)).toBe(true);
+    expect(first.items.some((item) => (item.doneProgress?.total ?? 0) > 0)).toBe(true);
     cases.push([
       'sort=due, page 2',
       { project: key, sort: 'due', limit: 200, cursor: first.nextCursor ?? undefined },

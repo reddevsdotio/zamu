@@ -1,4 +1,5 @@
-// The keyboard shortcut list (?), from .agent/design/m5/shortcuts.md. On Windows and Linux ⌘ reads Ctrl.
+// The keyboard shortcut list (?), from .agent/design/m5/shortcuts.md and the M6 additions in
+// .agent/design/m6/shortcuts.md. On Windows and Linux ⌘ reads Ctrl.
 
 export interface ShortcutRow {
   /** Chips in order. */
@@ -73,7 +74,35 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ['J', 'K'], join: 'or', action: 'Next or previous task in the list you came from' },
       { keys: ['Esc'], action: 'Back to the list or board' },
       { keys: ['E'], action: 'Edit the title' },
-      { keys: ['D'], action: 'Edit the description' },
+      { keys: ['D'], action: 'Edit the description, or show it under a summary' },
+      { keys: ['⇧A'], action: 'Add a criterion' },
+      { keys: ['⇧X'], action: 'Move focus to the first open criterion' },
+      { keys: ['N'], action: 'Write a note' },
+    ],
+  },
+  {
+    id: 'work-record',
+    title: 'Criteria and done items',
+    rows: [
+      { keys: ['↑', '↓'], join: 'or', action: 'Previous or next line' },
+      { keys: ['X'], action: 'Check or uncheck the focused line' },
+      { keys: ['W'], action: 'Waive the focused line, or remove its waiver' },
+      { keys: ['E'], action: 'Reword the focused line' },
+      { keys: ['⌥↑', '⌥↓'], join: 'or', action: 'Move the line up or down' },
+      { keys: ['⌫'], action: 'Remove the line, with Undo' },
+      { keys: ['↵'], action: 'Add the line and keep the field open' },
+      { keys: ['Esc'], action: 'Leave the list' },
+    ],
+  },
+  {
+    id: 'finishing',
+    title: 'Finishing with open items',
+    rows: [
+      { keys: ['↑', '↓'], join: 'or', action: 'Move between the open items' },
+      { keys: ['X'], action: 'Check the focused item' },
+      { keys: ['W'], action: 'Waive the focused item' },
+      { keys: ['⌘↵'], action: 'Move the task anyway' },
+      { keys: ['Esc'], action: 'Cancel: the status stays as it was' },
     ],
   },
   {

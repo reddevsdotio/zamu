@@ -232,3 +232,38 @@ describe('GitLab adapter', () => {
     await expect(provider.getRepository('app')).rejects.toBeInstanceOf(GitNotFound);
   });
 });
+
+describe('GitLab open merge requests (M6)', () => {
+  it('lists open merge requests with a diff under the folder, old paths included', async () => {
+    const { provider, server } = gitlab('open-requests');
+    await expect(provider.listOpenRequests?.('gitlab-org/cli', 'backlog')).resolves.toEqual({
+      requests: [
+        {
+          number: 77,
+          title: 'Close BACK-4',
+          author: 'ana-dev',
+          headBranch: 'task/back-4',
+          webUrl: 'https://gitlab.com/gitlab-org/cli/-/merge_requests/77',
+        },
+        {
+          number: 75,
+          title: 'Rename a task file away',
+          author: 'octocat',
+          headBranch: 'chore/rename',
+          webUrl: 'https://gitlab.com/gitlab-org/cli/-/merge_requests/75',
+        },
+      ],
+      truncated: false,
+      listUrl: 'https://gitlab.com/gitlab-org/cli/-/merge_requests',
+    });
+    expect(server.unused()).toEqual([]);
+  });
+
+  it('says the list may be cut on a second page of requests or of diffs', async () => {
+    const { provider } = gitlab('open-requests-many');
+    await expect(provider.listOpenRequests?.('gitlab-org/cli', 'backlog')).resolves.toMatchObject({
+      requests: [],
+      truncated: true,
+    });
+  });
+});

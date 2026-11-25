@@ -1,5 +1,17 @@
 import { z } from 'zod';
-import { ApiKeyScope, BacklogMappings, DashboardScope, HomeTab, MAX_COMMENT_LENGTH } from './entities';
+import {
+  ApiKeyScope,
+  BacklogMappings,
+  CommentKind,
+  DashboardScope,
+  HomeTab,
+  MAX_COMMENT_LENGTH,
+  MAX_WORK_ITEM_LENGTH,
+  MAX_WORK_ITEMS,
+  MAX_WORK_TEXT_LENGTH,
+  TimelineFilter,
+  WorkItemNumber,
+} from './entities';
 import {
   AuthId,
   BacklogMode,
@@ -186,6 +198,109 @@ const TaskKeyList = z
   .transform((keys) => [...new Set(keys)]);
 
 // ---------------------------------------------------------------------------
+// Work record (M6)
+// ---------------------------------------------------------------------------
+
+/** One line of text, trimmed, 1 to MAX_WORK_ITEM_LENGTH characters. */
+function oneLine(required: string) {
+  return z
+    .string()
+    .trim()
+    .min(1, required)
+    .max(MAX_WORK_ITEM_LENGTH, `Keep it to ${MAX_WORK_ITEM_LENGTH} characters or fewer`)
+    .refine((value) => !/[\r\n]/.test(value), 'Keep it on one line');
+}
+
+/** A criterion or done item as typed: one line, trimmed, 1 to 500 characters. */
+export const WorkItemText = oneLine('Write the item first');
+
+/** Why an item is waived: one line, trimmed, 1 to 500 characters. */
+export const WaiveReason = oneLine('Give a reason');
+
+/** A new list of items (create, project defaults): at most MAX_WORK_ITEMS. */
+export const WorkItemTexts = z
+  .array(WorkItemText)
+  .max(MAX_WORK_ITEMS, `Use ${MAX_WORK_ITEMS} items or fewer`);
+
+/** The plan or the final summary: Markdown, not trimmed (like descriptions), up to 50,000 characters. */
+export const WorkText = z
+  .string()
+  .max(MAX_WORK_TEXT_LENGTH, `Keep it under ${MAX_WORK_TEXT_LENGTH.toLocaleString('en-US')} characters`);
+
+/** Item numbers of one operation, de-duplicated. */
+const WorkItemNumbers = z
+  .array(WorkItemNumber)
+  .max(MAX_WORK_ITEMS, `Use ${MAX_WORK_ITEMS} items or fewer`)
+  .transform((numbers) => [...new Set(numbers)]);
+
+export const WorkItemWaive = z.object({ number: WorkItemNumber, reason: WaiveReason });
+export type WorkItemWaive = z.output<typeof WorkItemWaive>;
+
+export const WorkItemEdit = z.object({ number: WorkItemNumber, text: WorkItemText });
+export type WorkItemEdit = z.output<typeof WorkItemEdit>;
+
+export const WorkItemMove = z.object({ from: WorkItemNumber, to: WorkItemNumber });
+export type WorkItemMove = z.output<typeof WorkItemMove>;
+
+/** The item operations of one list on PATCH /tasks/{key}, named after the list (Criteria, DoneItems). */
+const ITEM_OPERATION_NAMES = [
+  'add',
+  'check',
+  'uncheck',
+  'waive',
+  'unwaive',
+  'edit',
+  'move',
+  'remove',
+] as const;
+export const CRITERIA_OPERATION_FIELDS = ITEM_OPERATION_NAMES.map((name) => `${name}Criteria` as const);
+export const DONE_ITEM_OPERATION_FIELDS = ITEM_OPERATION_NAMES.map((name) => `${name}DoneItems` as const);
+
+const itemOperationShape = {
+  add: WorkItemTexts.optional(),
+  check: WorkItemNumbers.optional(),
+  uncheck: WorkItemNumbers.optional(),
+  waive: z.array(WorkItemWaive).max(MAX_WORK_ITEMS).optional(),
+  unwaive: WorkItemNumbers.optional(),
+  edit: z.array(WorkItemEdit).max(MAX_WORK_ITEMS).optional(),
+  move: z.array(WorkItemMove).max(MAX_WORK_ITEMS).optional(),
+  remove: WorkItemNumbers.optional(),
+};
+
+type ItemOperations = {
+  [K in keyof typeof itemOperationShape]?: z.output<(typeof itemOperationShape)[K]>;
+};
+
+/** Refuses one request that both sets and clears the same item, or edits one item twice. */
+function checkItemOperations(list: string, ops: ItemOperations, ctx: z.RefinementCtx) {
+  const field = (name: string) => `${name}${list}`;
+  const clash = (left: number[] | undefined, right: number[] | undefined, path: string, message: string) => {
+    const other = new Set(right ?? []);
+    for (const number of left ?? []) {
+      if (other.has(number))
+        ctx.addIssue({ code: 'custom', path: [path], message: `${message} (${number})` });
+    }
+  };
+  const waived = ops.waive?.map((waive) => waive.number);
+  clash(ops.check, ops.uncheck, field('uncheck'), 'Check or uncheck an item, not both');
+  clash(ops.check, waived, field('waive'), 'Check or waive an item, not both');
+  clash(waived, ops.unwaive, field('unwaive'), 'Waive or unwaive an item, not both');
+  const seen = new Set<number>();
+  for (const number of waived ?? []) {
+    if (seen.has(number))
+      ctx.addIssue({ code: 'custom', path: [field('waive')], message: `Waive item ${number} once` });
+    seen.add(number);
+  }
+  seen.clear();
+  for (const edit of ops.edit ?? []) {
+    if (seen.has(edit.number)) {
+      ctx.addIssue({ code: 'custom', path: [field('edit')], message: `Edit item ${edit.number} once` });
+    }
+    seen.add(edit.number);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Projects
 // ---------------------------------------------------------------------------
 
@@ -210,10 +325,28 @@ export const UpdateProjectInput = z
     usesCycles: z.boolean().optional(),
     /** null or '' unlinks the repository. */
     repository: ProjectRepository.nullable().optional(),
+    /**
+     * M6: replaces the done items new tasks start with ([] clears them). Owners and admins only;
+     * existing tasks keep theirs.
+     */
+    defaultDoneItems: WorkItemTexts.optional(),
   })
-  .refine(requireOneOf(['key', 'name', 'description', 'usesMilestones', 'usesCycles', 'repository']), {
-    message: 'Change at least one of key, name, description, usesMilestones, usesCycles or repository',
-  });
+  .refine(
+    requireOneOf([
+      'key',
+      'name',
+      'description',
+      'usesMilestones',
+      'usesCycles',
+      'repository',
+      'defaultDoneItems',
+    ]),
+    {
+      message:
+        'Change at least one of key, name, description, usesMilestones, usesCycles, repository or ' +
+        'defaultDoneItems',
+    },
+  );
 export type UpdateProjectInput = z.output<typeof UpdateProjectInput>;
 
 /**
@@ -291,8 +424,11 @@ export type GetTaskInput = z.output<typeof GetTaskInput>;
 export const ListTaskActivityInput = GetTaskInput;
 export type ListTaskActivityInput = GetTaskInput;
 
-export const ListTaskTimelineInput = GetTaskInput;
-export type ListTaskTimelineInput = GetTaskInput;
+/** M6: `show` narrows the items (omitted: all); the counts always cover every filter. */
+export const ListTaskTimelineInput = GetTaskInput.extend({
+  show: TimelineFilter.optional(),
+});
+export type ListTaskTimelineInput = z.output<typeof ListTaskTimelineInput>;
 
 export const CreateTaskInput = z.object({
   project: ProjectKeyInput,
@@ -317,6 +453,14 @@ export const CreateTaskInput = z.object({
   parent: TaskKeyInput.nullable().optional(),
   /** M5: tasks of the same project the new task waits on. */
   blockedBy: TaskKeyList.optional(),
+  /** M6: acceptance criteria, numbered 1.. in this order. */
+  criteria: WorkItemTexts.optional(),
+  /** M6: done items, after the project's default ones (unless skipDefaultDoneItems). */
+  doneItems: WorkItemTexts.optional(),
+  /** M6: true leaves the project's default done items out. Omitted: false. */
+  skipDefaultDoneItems: z.boolean().optional(),
+  /** M6: the implementation plan, Markdown. */
+  plan: WorkText.optional(),
 });
 export type CreateTaskInput = z.output<typeof CreateTaskInput>;
 
@@ -354,6 +498,33 @@ export const UpdateTaskInput = z
     addBlockers: TaskKeyList.optional(),
     /** M5: blockers to drop; keys that aren't blockers are ignored. */
     removeBlockers: TaskKeyList.optional(),
+    // M6: item operations, one set per list. Numbers refer to the list as it was before the
+    // request. Per list, core applies edits, checks, unchecks, waives and unwaives, then removes,
+    // then moves in order (each on the list as it stands then), then adds at the end. Checking or
+    // unwaiving a waived item clears its waiver. More than MAX_WORK_ITEMS items, or a number the
+    // list doesn't have, fails as a validation problem. Mirrored tasks: TASK_MIRRORED.
+    /** M6: new criteria, added at the end in this order. */
+    addCriteria: itemOperationShape.add,
+    checkCriteria: itemOperationShape.check,
+    uncheckCriteria: itemOperationShape.uncheck,
+    /** M6: each waiver needs a reason. */
+    waiveCriteria: itemOperationShape.waive,
+    unwaiveCriteria: itemOperationShape.unwaive,
+    editCriteria: itemOperationShape.edit,
+    moveCriteria: itemOperationShape.move,
+    removeCriteria: itemOperationShape.remove,
+    addDoneItems: itemOperationShape.add,
+    checkDoneItems: itemOperationShape.check,
+    uncheckDoneItems: itemOperationShape.uncheck,
+    waiveDoneItems: itemOperationShape.waive,
+    unwaiveDoneItems: itemOperationShape.unwaive,
+    editDoneItems: itemOperationShape.edit,
+    moveDoneItems: itemOperationShape.move,
+    removeDoneItems: itemOperationShape.remove,
+    /** M6: the implementation plan, Markdown; null clears it. */
+    plan: WorkText.nullable().optional(),
+    /** M6: the final summary, Markdown; null clears it. */
+    finalSummary: WorkText.nullable().optional(),
     /**
      * The updatedAt the caller last saw. When the stored task is newer, the update fails with
      * TASK_CHANGED (409) and the current task. Compared at millisecond precision.
@@ -362,6 +533,12 @@ export const UpdateTaskInput = z
       .datetime({ offset: true })
       .transform((value) => new Date(value).toISOString())
       .optional(),
+    /**
+     * M6: the status the caller last saw (the CLI's offline queue sends it with a queued status
+     * change). When the stored status differs, the update fails with TASK_CHANGED (409) and the
+     * current task, and nothing is written. A precondition, not a change.
+     */
+    ifStatus: TaskStatus.optional(),
   })
   .refine(
     requireOneOf([
@@ -380,16 +557,50 @@ export const UpdateTaskInput = z
       'parent',
       'addBlockers',
       'removeBlockers',
+      ...CRITERIA_OPERATION_FIELDS,
+      ...DONE_ITEM_OPERATION_FIELDS,
+      'plan',
+      'finalSummary',
     ]),
     {
       message:
         'Change at least one of title, description, status, priority, assignee, milestone, cycle, ' +
-        'position, labels, dueDate, parent or blockers',
+        'position, labels, dueDate, parent, blockers, criteria, done items, plan or finalSummary',
     },
   )
   .refine((value) => value.labels === undefined || (!value.addLabels && !value.removeLabels), {
     path: ['labels'],
     message: 'Send labels alone, or addLabels and removeLabels',
+  })
+  .superRefine((value, ctx) => {
+    checkItemOperations(
+      'Criteria',
+      {
+        add: value.addCriteria,
+        check: value.checkCriteria,
+        uncheck: value.uncheckCriteria,
+        waive: value.waiveCriteria,
+        unwaive: value.unwaiveCriteria,
+        edit: value.editCriteria,
+        move: value.moveCriteria,
+        remove: value.removeCriteria,
+      },
+      ctx,
+    );
+    checkItemOperations(
+      'DoneItems',
+      {
+        add: value.addDoneItems,
+        check: value.checkDoneItems,
+        uncheck: value.uncheckDoneItems,
+        waive: value.waiveDoneItems,
+        unwaive: value.unwaiveDoneItems,
+        edit: value.editDoneItems,
+        move: value.moveDoneItems,
+        remove: value.removeDoneItems,
+      },
+      ctx,
+    );
   });
 export type UpdateTaskInput = z.output<typeof UpdateTaskInput>;
 
@@ -546,6 +757,8 @@ export const CreateCommentInput = z.object({
   key: TaskRefInput,
   project: TaskRefProject,
   body: CommentBody,
+  /** M6: note writes a work note. Omitted: comment. */
+  kind: CommentKind.optional(),
 });
 export type CreateCommentInput = z.output<typeof CreateCommentInput>;
 
@@ -901,6 +1114,12 @@ export const RefreshBacklogInput = z.object({
   project: ProjectKeyInput,
 });
 export type RefreshBacklogInput = z.output<typeof RefreshBacklogInput>;
+
+/** M6: GET /projects/{project}/backlog/export. Native and switched projects only. */
+export const ExportBacklogInput = z.object({
+  project: ProjectKeyInput,
+});
+export type ExportBacklogInput = z.output<typeof ExportBacklogInput>;
 
 // ---------------------------------------------------------------------------
 // Backlog.md (M3): setup and settings server functions

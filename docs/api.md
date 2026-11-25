@@ -1,7 +1,7 @@
 # REST API
 
 The web app, the `zamu` CLI and your scripts use the same REST API at `/api/v1`. The server publishes the full
-OpenAPI document at `GET /api/v1/openapi.json`; this page is an overview, with the routes 0.7.0 added.
+OpenAPI document at `GET /api/v1/openapi.json`; this page is an overview, with what 0.7.0 and 0.9.0 added.
 
 ## Requests
 
@@ -14,6 +14,11 @@ curl -H "Authorization: Bearer $ZAMU_KEY" https://projects.example.com/api/v1/ta
 
 A key only reaches the projects in its scope, and a read-only key cannot write. The web app signs its
 requests with the session cookie instead.
+
+Two optional headers say where a request comes from: `x-zamu-machine` (a machine name) and `x-zamu-branch`
+(a git branch). `zamu` sends both. The server trims them, keeps up to 100 characters, ignores values with
+control characters, and stores them on the history entries and notes the request writes, which return them
+as `source: { machine, branch }`.
 
 Bodies are JSON. Query parameters that take several values repeat the name:
 `?status=todo&status=in_progress`. Task keys and project keys ignore case, and a task key also accepts the
@@ -44,8 +49,8 @@ Quote `requestId` when you report a problem.
 | `POST /tasks`               | Create a task.                                                    |
 | `PATCH /tasks/{key}`        | Change a task. Send only the fields to change.                    |
 | `POST /tasks/bulk`          | Change up to 100 tasks at once (0.7.0).                           |
-| `GET /tasks/{key}/timeline` | Activity and comments, oldest first.                              |
-| `GET /tasks/{key}/comments` | Comments. `POST` adds one.                                        |
+| `GET /tasks/{key}/timeline` | Activity, comments and notes, oldest first.                       |
+| `GET /tasks/{key}/comments` | Comments and notes. `POST` adds one.                              |
 
 ### Fields added in 0.7.0
 
@@ -78,6 +83,80 @@ The rules:
 | `SUBTASK_DEPTH`    | 409    | The parent is a subtask, or the task already has subtasks: one level only.                                        |
 | `NOT_SAME_PROJECT` | 422    | A parent or blocker from another project.                                                                         |
 | `TASK_MIRRORED`    | 409    | The field comes from Backlog.md. `field` names it: `labels`, `dueDate`, `blockedBy`, `parent`, and the M3 fields. |
+
+### The work record (0.9.0)
+
+A task now has:
+- `criteria` and `doneItems`: `[{ number, text, state, waivedReason, waivedBy, locked }]`. `number` counts
+  from 1 in list order. `state` is `open`, `checked` or `waived`; a waived item has its `waivedReason` and
+  `waivedBy` (null when the waiver came from a Backlog.md file). `locked` is true on tasks mirrored from
+  Backlog.md.
+- `plan` and `finalSummary`: Markdown or null. `planMeta` and `finalSummaryMeta` are
+  `{ author, onBehalfOf, origin, at }`: who last wrote it and when, from the history.
+
+List rows carry `criteriaProgress` and `doneProgress`, each `{ settled, open, waived, total }` (settled counts
+checked and waived items), and `hasFinalSummary`.
+
+`POST /tasks` takes `criteria` and `doneItems` (lists of texts), `plan`, and `skipDefaultDoneItems`. A new task
+starts with the project's default done items, then the `doneItems` you send; a default you send again is not
+added twice. `skipDefaultDoneItems: true` leaves the defaults out.
+
+`PATCH /tasks/{key}` takes eight operations per list, named after it (`Criteria` or `DoneItems`):
+
+| Field                              | Value                                                   |
+| ---------------------------------- | ------------------------------------------------------- |
+| `addCriteria`, `addDoneItems`      | Texts, added at the end in order.                       |
+| `checkCriteria`, `uncheckCriteria` | Item numbers. Checking a waived item clears its waiver. |
+| `waiveCriteria`                    | `[{ number, reason }]`. The reason is required.         |
+| `unwaiveCriteria`                  | Item numbers. The item is open again.                   |
+| `editCriteria`                     | `[{ number, text }]`.                                   |
+| `moveCriteria`                     | `[{ from, to }]`.                                       |
+| `removeCriteria`                   | Item numbers. The items after them move up.             |
+
+The same eight exist for done items (`checkDoneItems`, `waiveDoneItems` and so on). Numbers refer to the
+list as it was before the request. One request applies the edits, checks, unchecks, waives and unwaives
+first, then the removals, then the moves, then the additions, and writes one history line per operation with
+the item's number and text. `plan` and `finalSummary` set the text; null or `""` clears it. Items are one
+line, up to 500 characters, at most 50 per list; the plan and the summary take up to 50,000 characters.
+
+`ifStatus` is a precondition: when the task's stored status differs, the server answers `409 TASK_CHANGED`
+with the current task and writes nothing. The CLI's offline queue sends it with a queued status change.
+
+`POST /tasks/{key}/comments` takes `kind`: `comment` (the default) or `note`. Notes are work notes: they show
+under the Notes filter and notify only the people they mention. `GET /tasks/{key}/timeline` takes `show`
+(`all`, `comments`, `notes` or `history`) to narrow the items, and always returns `counts` with the size of
+each of the four.
+
+`PATCH /projects/{project}` takes `defaultDoneItems`, the list every new task starts with (owners and admins
+only). Tasks that exist keep their items. Projects return it as `defaultDoneItems`.
+
+The rules:
+
+| Code            | Status | When                                                                                          |
+| --------------- | ------ | --------------------------------------------------------------------------------------------- |
+| `OPEN_ITEMS`    | 409    | An agent moves a task to In review or Done while a criterion or done item is open. See below. |
+| `TASK_CHANGED`  | 409    | `ifStatus` (or `ifUpdatedAt`) differs from the stored task. The body holds the current task.  |
+| `TASK_MIRRORED` | 409    | Writing the work record of a mirrored task, or a note on it. `field` names what.              |
+
+For `TASK_MIRRORED`, `field` is `criteria`, `doneItems`, `plan`, `finalSummary` or `notes`.
+
+`OPEN_ITEMS` is checked after the request's own operations, so one request that settles the last items and
+moves the task goes through. A person's request is never refused. In a bulk change (`POST /tasks/bulk`), one
+refused task fails the whole request. The problem lists the open items, criteria first:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Task has open items",
+  "status": 409,
+  "code": "OPEN_ITEMS",
+  "detail": "PAY-142 has open items: criterion 6. Check or waive them before moving it to In review.",
+  "requestId": "0b5e1f9e-7a43-4c1e-9d2b-6f0d1c0a2b77",
+  "openItems": [
+    { "kind": "criterion", "number": 6, "text": "The on-call runbook has an entry for exhausted retries" }
+  ]
+}
+```
 
 ### List filters and sort
 
@@ -112,6 +191,19 @@ It takes `status`, `priority`, `assignee`, `milestone`, `cycle`, `dueDate`, `add
 (null clears assignee, milestone, cycle and due date). It returns `{ items }`, the tasks in the order you
 sent them. A mirrored task fails the whole request with `409 TASK_MIRRORED`. Milestone and cycle need every
 task in one project (`422 NOT_SAME_PROJECT`).
+
+## Backlog.md export
+
+| Method and path                          | What it does                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------- |
+| `GET /projects/{project}/backlog/export` | The project as Backlog.md files, for `zamu backlog export` (0.9.0). |
+
+It returns `{ project, format, generatedAt, files: [{ path, content }], removedPrefixes }`. Paths are relative
+to the Backlog.md folder: every task that is not hidden under `tasks/`, milestones under `milestones/`.
+`format` names the Backlog.md file format the files target. `removedPrefixes` is `tasks/`, `completed/` and
+`milestones/`: Markdown files there that are not in `files` are stale. A read-only key can call it. A project
+that still mirrors Backlog.md gets `409 PROJECT_MIRRORED`. See
+[backlog-md.md](backlog-md.md#export-to-backlogmd).
 
 ## Labels
 

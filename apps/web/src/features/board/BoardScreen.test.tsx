@@ -18,6 +18,7 @@ import { resetFieldToastForTests } from '~/features/task-fields/toast';
 import { parseTaskListSearch } from '~/features/tasks/search';
 import { type DisplayOptions, displayStorageKey, TASK_NAV_STORAGE_KEY } from '~/features/views';
 import { resetDisplayOptionsForTests } from '~/features/views/useDisplayOptions';
+import { FinishingHost } from '~/features/work-record/FinishingHost';
 import { UIProvider } from '~/ui';
 import { BoardScreen } from './BoardScreen';
 import { resetFoldedColumnsForTests } from './collapsed';
@@ -87,6 +88,7 @@ function renderBoard(url = '/p/PAY?view=board', { quickCreate = false }: { quick
           )}
           <PeekProbe />
           <TaskFieldToast />
+          <FinishingHost />
         </PageSearchProvider>
       </UIProvider>
     ),
@@ -151,6 +153,47 @@ describe('board', () => {
     const inputs = api.current?.calls.list ?? [];
     expect(inputs.map((input) => (input.status as string[])[0])).not.toContain('done');
     expect(inputs[0]).toMatchObject({ sort: 'priority', topLevel: true });
+  });
+
+  it('shows the criteria marker only once Criteria is on, after subtasks and before the due date', async () => {
+    api.current = createFakeBoardApi({
+      criteria: {
+        'PAY-2': { settled: 1, open: 2, waived: 0, total: 3 },
+        'PAY-3': { settled: 5, open: 0, waived: 1, total: 5 },
+      },
+      dueDates: { 'PAY-2': '2026-11-07' },
+      subtasks: { parent: 'PAY-2', count: 4, done: 3 },
+    });
+    // Subtasks as cards: the parent's progress then sits in its meta line, next to the marker.
+    setDisplay({ boardSubtasks: 'cards' });
+    renderBoard();
+    await screen.findByText('Card 4');
+    // Off by default.
+    expect(screen.queryByRole('img', { name: /criteria/ })).toBeNull();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Display options' });
+    expect(within(dialog).getByText('Shown on cards')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Criteria', pressed: false }));
+    await user.keyboard('{Escape}');
+
+    const partial = await screen.findByRole('img', { name: '1 of 3 criteria checked' });
+    expect(partial).toHaveTextContent('1/3');
+    const card = partial.closest('[data-card-key]') as HTMLElement;
+    expect(card).toHaveAttribute('data-card-key', 'PAY-2');
+    const text = card.textContent ?? '';
+    expect(text.indexOf('3/4')).toBeGreaterThan(-1);
+    expect(text.indexOf('1/3')).toBeGreaterThan(text.indexOf('3/4'));
+    const due = card.querySelector('[data-due]')?.textContent ?? '';
+    expect(due).not.toBe('');
+    expect(text.indexOf(due)).toBeGreaterThan(text.indexOf('1/3'));
+
+    const complete = screen.getByRole('img', { name: 'All 5 criteria checked or waived' });
+    expect(complete).toHaveAttribute('data-complete', 'true');
+    expect(complete.closest('[data-card-key]')).toHaveAttribute('data-card-key', 'PAY-3');
+    // A card without criteria shows nothing.
+    const plain = document.querySelector('[data-card-key="PAY-4"]') as HTMLElement;
+    expect(within(plain).queryByRole('img', { name: /criteri/ })).toBeNull();
   });
 
   it('shows empty columns with their note when the option is on', async () => {
@@ -276,6 +319,56 @@ describe('board', () => {
     await waitFor(() => expect(keysIn(/^Todo/)).toEqual(['PAY-2', 'PAY-3']));
     await waitFor(() => expect(toast()).toHaveTextContent('Moved PAY-2 back to Todo'));
     await waitFor(() => expect(api.current?.tasks.find((task) => task.key === 'PAY-2')?.status).toBe('todo'));
+  });
+
+  it('warns before moving a card with open criteria to In review; Cancel leaves it in place', async () => {
+    api.current = createFakeBoardApi({ criteria: { 'PAY-5': { settled: 1, open: 2, waived: 0, total: 3 } } });
+    setDisplay({ orderBy: 'manual' });
+    const user = userEvent.setup();
+    renderBoard();
+    await screen.findByText('Card 4');
+    await user.keyboard('j{ArrowRight}{ArrowRight}{ArrowDown}');
+    await waitFor(() => expect(focusedKey()).toBe('PAY-5'));
+
+    await user.keyboard('{Shift>}{ArrowRight}{/Shift}');
+    const dialog = await screen.findByRole('dialog', { name: '2 items are still open' });
+    expect(dialog).toHaveTextContent('PAY-5 is moving to In review.');
+    expect(
+      within(dialog)
+        .getAllByRole('checkbox')
+        .map((item) => item.textContent),
+    ).toEqual(['Criterion 2 of PAY-5', 'Criterion 3 of PAY-5']);
+    // Nothing moved while the person decides.
+    expect(api.current?.calls.update).toHaveLength(0);
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /still open/ })).toBeNull());
+    expect(keysIn(/^In progress/)).toEqual(['PAY-4', 'PAY-5']);
+    expect(api.current?.calls.update).toHaveLength(0);
+  });
+
+  it('moves the card once the person moves it anyway, and moves a card without open items at once', async () => {
+    api.current = createFakeBoardApi({ criteria: { 'PAY-5': { settled: 1, open: 2, waived: 0, total: 3 } } });
+    setDisplay({ orderBy: 'manual' });
+    const user = userEvent.setup();
+    renderBoard();
+    await screen.findByText('Card 4');
+    await user.keyboard('j{ArrowRight}{ArrowRight}{ArrowDown}');
+    await waitFor(() => expect(focusedKey()).toBe('PAY-5'));
+    await user.keyboard('{Shift>}{ArrowRight}{/Shift}');
+    const dialog = await screen.findByRole('dialog', { name: /still open/ });
+    await user.click(within(dialog).getByRole('button', { name: /Move to In review/ }));
+    await waitFor(() => expect(keysIn(/^In review/)).toContain('PAY-5'));
+    await waitFor(() =>
+      expect(api.current?.calls.update.at(-1)).toMatchObject({ key: 'PAY-5', status: 'in_review' }),
+    );
+    await waitFor(() => expect(focusedKey()).toBe('PAY-5'));
+
+    // PAY-4 has no criteria: no question.
+    await user.keyboard('{ArrowLeft}');
+    await waitFor(() => expect(focusedKey()).toBe('PAY-4'));
+    await user.keyboard('{Shift>}{ArrowRight}{/Shift}');
+    expect(keysIn(/^In review/)).toContain('PAY-4');
+    expect(screen.queryByRole('dialog', { name: /still open/ })).toBeNull();
   });
 
   it('sends no position when the columns follow priority order', async () => {

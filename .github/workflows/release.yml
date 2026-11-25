@@ -1,9 +1,14 @@
-# Releases: an X.Y.Z tag (no pre-release suffix) runs CI on the tag and pushes the image to
-# ghcr.io/reddevsdotio/zamu (:<tag> and :latest). Deploying an instance is up to whoever runs it; this workflow
-# deploys nothing.
+# Releases: an X.Y.Z tag (no pre-release suffix) runs CI on the tag, then:
+# - release-image pushes the image to ghcr.io/reddevsdotio/zamu (:<tag> and :latest);
+# - publish-cli publishes the CLI to npm as @reddevs/zamu with trusted publishing (OIDC, no token), unless that
+#   version is already on npm: the first publish of the package is made by hand, and a re-run skips it;
+# - update-tap writes Formula/zamu.rb in reddevsdotio/homebrew-tap for the version npm has, with the
+#   HOMEBREW_TAP_TOKEN secret (a token that can push to that repository).
+# Deploying an instance is up to whoever runs it; this workflow deploys nothing.
 #
 # workflow_dispatch builds and pushes an existing tag by hand, for example the first push that creates the ghcr
-# package. It moves :latest only for an X.Y.Z tag.
+# package. It moves :latest only for an X.Y.Z tag. For an X.Y.Z tag it also runs publish-cli and update-tap,
+# which is how a failed tap update is retried: npm already has the version, so only the tap is written.
 name: Release
 
 on:
@@ -26,6 +31,9 @@ defaults:
 
 env:
   IMAGE: ghcr.io/reddevsdotio/zamu
+  # npm with trusted publishing (11.5.1 or later) that runs on Node 24.
+  NPM_VERSION: 11.21.3
+  TAP_REPOSITORY: reddevsdotio/homebrew-tap
 
 jobs:
   # Resolves the tag (the pushed one, or the dispatch input) and checks its format before anything runs.
@@ -34,6 +42,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      # true for an X.Y.Z tag: moves :latest and publishes the CLI. false for a pre-release dispatch.
       latest: ${{ steps.tag.outputs.latest }}
     steps:
       - name: Check the tag
@@ -86,6 +95,8 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            ZAMU_CLI_VERSION=${{ needs.meta.outputs.tag }}
           tags: |
             ${{ env.IMAGE }}:${{ needs.meta.outputs.tag }}
             ${{ needs.meta.outputs.latest == 'true' && format('{0}:latest', env.IMAGE) || '' }}
@@ -95,3 +106,194 @@ jobs:
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.version=${{ needs.meta.outputs.tag }}
             org.opencontainers.image.revision=${{ steps.checkout.outputs.commit }}
+
+  # Builds the npm folder from the tag (apps/cli/scripts/npm-package.ts), installs its tarball into an empty
+  # directory to check it, and publishes it unless npm already has the version.
+  publish-cli:
+    needs: [meta, ci]
+    if: needs.meta.outputs.latest == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # Trusted publishing: npm trades the job's OIDC token for a one-off publish token and signs provenance.
+      id-token: write
+    env:
+      TAG: ${{ needs.meta.outputs.tag }}
+    outputs:
+      package: ${{ steps.folder.outputs.package }}
+      published: ${{ steps.npm.outputs.published }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.meta.outputs.tag }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Build and check the npm folder
+        id: folder
+        run: |
+          folder="${RUNNER_TEMP}/npm-package"
+          node apps/cli/scripts/npm-package.ts --version "$TAG" --out "$folder" --check
+          echo "package=$(jq -r .name "${folder}/package.json")" >> "$GITHUB_OUTPUT"
+      - name: Look the version up on npm
+        id: npm
+        env:
+          PACKAGE: ${{ steps.folder.outputs.package }}
+        run: |
+          status=$(curl -sS -o /dev/null -w '%{http_code}' "https://registry.npmjs.org/${PACKAGE/\//%2f}/${TAG}")
+          case "$status" in
+            200)
+              echo "::notice::${PACKAGE}@${TAG} is already on npm (published by hand or by an earlier run), so this job does not publish it"
+              echo "${PACKAGE}@${TAG} was already on npm; not published again." >> "$GITHUB_STEP_SUMMARY"
+              echo "published=false" >> "$GITHUB_OUTPUT"
+              ;;
+            404)
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::npm answered HTTP ${status} for ${PACKAGE}@${TAG}; not publishing blind"
+              exit 1
+              ;;
+          esac
+      - name: Install npm ${{ env.NPM_VERSION }}
+        if: steps.npm.outputs.published == 'true'
+        run: npm install --global "npm@${NPM_VERSION}"
+      # A tag older than the newest version on npm (a patch on an older line) must not move the latest dist-tag.
+      - name: Publish to npm
+        if: steps.npm.outputs.published == 'true'
+        working-directory: ${{ runner.temp }}/npm-package
+        env:
+          PACKAGE: ${{ steps.folder.outputs.package }}
+        run: |
+          latest=$(npm view "$PACKAGE" dist-tags.latest 2>/dev/null || true)
+          dist_tag=latest
+          if [[ -n "$latest" && "$(printf '%s\n' "$latest" "$TAG" | sort -V | tail -n 1)" != "$TAG" ]]; then
+            dist_tag="release-${TAG%.*}"
+            echo "::notice::npm's latest is ${latest}, newer than ${TAG}; publishing under the dist-tag ${dist_tag}"
+          fi
+          npm publish --provenance --access public --tag "$dist_tag"
+          echo "Published ${PACKAGE}@${TAG} to npm (dist-tag ${dist_tag})." >> "$GITHUB_STEP_SUMMARY"
+      - name: Say what npm has
+        if: failure()
+        env:
+          PACKAGE: ${{ steps.folder.outputs.package }}
+        run: |
+          if [[ -z "$PACKAGE" ]]; then
+            message="publish-cli failed before the npm folder was built; npm was not changed and update-tap does not run"
+          else
+            latest=$(curl -sS "https://registry.npmjs.org/${PACKAGE/\//%2f}" | jq -r '."dist-tags".latest // empty' || true)
+            message="publish-cli failed for ${PACKAGE}@${TAG}. npm's latest is ${latest:-nothing (no version published)}. update-tap does not run, so the tap keeps its current version"
+          fi
+          echo "::error::${message}"
+          echo "${message}." >> "$GITHUB_STEP_SUMMARY"
+
+  # Writes Formula/zamu.rb in the tap for the tarball npm serves for this version, then pushes. When two releases
+  # race, the push is rejected: the job pulls, writes the formula again on top and retries, and it never replaces
+  # a newer version with an older one.
+  update-tap:
+    needs: [meta, publish-cli]
+    if: needs.meta.outputs.latest == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.meta.outputs.tag }}
+      PACKAGE: ${{ needs.publish-cli.outputs.package }}
+    steps:
+      - name: Check the tap token
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -z "$TAP_TOKEN" ]]; then
+            echo "::error::the HOMEBREW_TAP_TOKEN secret is not set; it needs Contents read and write on ${TAP_REPOSITORY}"
+            exit 1
+          fi
+      # Only the formula template, its script and .nvmrc.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.meta.outputs.tag }}
+          path: zamu
+          persist-credentials: false
+          sparse-checkout: |
+            apps/cli/scripts
+            docker/homebrew
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: zamu/.nvmrc
+      # npm can take a little while to serve a version it has just accepted.
+      - name: Download the tarball from npm
+        id: tarball
+        run: |
+          metadata="${RUNNER_TEMP}/version.json"
+          status=000
+          for attempt in $(seq 1 30); do
+            status=$(curl -sS -o "$metadata" -w '%{http_code}' "https://registry.npmjs.org/${PACKAGE/\//%2f}/${TAG}") || status=000
+            [[ "$status" == 200 ]] && break
+            echo "npm does not serve ${PACKAGE}@${TAG} yet (HTTP ${status}, attempt ${attempt}); waiting"
+            sleep 10
+          done
+          if [[ "$status" != 200 ]]; then
+            echo "::error::npm does not serve ${PACKAGE}@${TAG} (HTTP ${status})"
+            exit 1
+          fi
+          url=$(jq -r .dist.tarball "$metadata")
+          integrity=$(jq -r .dist.integrity "$metadata")
+          curl -fsSL --retry 5 -o "${RUNNER_TEMP}/zamu.tgz" "$url"
+          actual="sha512-$(openssl dgst -sha512 -binary "${RUNNER_TEMP}/zamu.tgz" | base64 -w 0)"
+          if [[ "$actual" != "$integrity" ]]; then
+            echo "::error::the tarball at ${url} does not match the integrity npm lists for it"
+            exit 1
+          fi
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(sha256sum "${RUNNER_TEMP}/zamu.tgz" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.TAP_REPOSITORY }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: Write, commit and push the formula
+        working-directory: tap
+        env:
+          URL: ${{ steps.tarball.outputs.url }}
+          SHA256: ${{ steps.tarball.outputs.sha256 }}
+        run: |
+          formula=Formula/zamu.rb
+          branch=$(git symbolic-ref --short HEAD)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            if (( attempt > 1 )); then
+              echo "the push was rejected (attempt $((attempt - 1))); pulling ${branch} and writing the formula again"
+              sleep $((attempt * 5))
+              git fetch --depth=1 origin "$branch"
+              git reset --hard FETCH_HEAD
+            fi
+            current=$(sed -nE 's|^  url ".*-([0-9]+\.[0-9]+\.[0-9]+)\.tgz"$|\1|p' "$formula" 2>/dev/null || true)
+            if [[ -n "$current" && "$current" != "$TAG" && "$(printf '%s\n' "$current" "$TAG" | sort -V | tail -n 1)" == "$current" ]]; then
+              echo "::warning::npm has ${PACKAGE}@${TAG}, but the tap already has zamu ${current}, which is newer; the tap is left at ${current}"
+              echo "The tap already has zamu ${current}, newer than ${TAG}; left at ${current}." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            node ../zamu/apps/cli/scripts/homebrew-formula.ts --version "$TAG" --url "$URL" --sha256 "$SHA256" --out "$formula"
+            if [[ -z "$(git status --porcelain -- "$formula")" ]]; then
+              echo "The tap already has zamu ${TAG}." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            git add -- "$formula"
+            git commit --quiet -m "zamu ${TAG}"
+            if git push origin "HEAD:${branch}"; then
+              echo "The tap now installs zamu ${TAG} (${URL})." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          echo "::error::the push to ${TAP_REPOSITORY} was rejected five times"
+          exit 1
+      - name: Say what npm and the tap have
+        if: failure()
+        run: |
+          tap=$(curl -fsSL "https://raw.githubusercontent.com/${TAP_REPOSITORY}/HEAD/Formula/zamu.rb" 2>/dev/null \
+            | sed -nE 's|^  url ".*-([0-9]+\.[0-9]+\.[0-9]+)\.tgz"$|\1|p' || true)
+          message="npm has ${PACKAGE}@${TAG}, but the tap was not updated: it has ${tap:+zamu }${tap:-no formula}. Fix the cause, then run this workflow by hand (workflow_dispatch) with the tag ${TAG}: publish-cli skips and only the tap is written"
+          echo "::error::${message}"
+          echo "${message}." >> "$GITHUB_STEP_SUMMARY"

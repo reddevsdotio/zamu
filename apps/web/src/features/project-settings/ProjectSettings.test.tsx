@@ -12,7 +12,6 @@ import {
   DeletedProjectToast,
   DeleteProjectDialog,
 } from './DeleteProjectDialog';
-import { DetachDialog } from './DetachDialog';
 import { CONNECTION, sourceStatus } from './fixtures';
 import { GeneralForm, GeneralSettings } from './GeneralSettings';
 import { type GeneralProject, generalFailure, keyLockReason, projectChanges } from './general';
@@ -145,7 +144,7 @@ function statusView(props: Partial<Parameters<typeof BacklogStatusView>[0]> = {}
   const handlers = {
     onRefresh: vi.fn(),
     onOpenWebhook: vi.fn(),
-    onDetach: vi.fn(),
+    onSwitch: vi.fn(),
     onUseAnotherConnection: vi.fn(),
   };
   render(
@@ -188,8 +187,11 @@ describe('Backlog.md settings', () => {
     expect(handlers.onRefresh).toHaveBeenCalled();
     await user.click(within(source).getByRole('button', { name: 'Setup' }));
     expect(handlers.onOpenWebhook).toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: 'Detach…' }));
-    expect(handlers.onDetach).toHaveBeenCalled();
+    const card = screen.getByRole('region', { name: 'Switch to Zamu' });
+    expect(card).toHaveTextContent('Make Zamu the owner of these tasks');
+    expect(screen.queryByRole('button', { name: 'Detach…' })).toBeNull();
+    await user.click(within(card).getByRole('button', { name: 'Switch to Zamu…' }));
+    expect(handlers.onSwitch).toHaveBeenCalled();
   });
 
   it('gives members a read-only page', () => {
@@ -197,7 +199,7 @@ describe('Backlog.md settings', () => {
     expect(screen.getByText(/You can read this page\. Owners and admins can refresh/)).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Refresh now' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Edit mappings' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Detach…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Switch to Zamu…' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Setup' })).toBeNull();
   });
 
@@ -243,7 +245,7 @@ describe('Backlog.md settings', () => {
     expect(handlers.onUseAnotherConnection).toHaveBeenCalled();
   });
 
-  it('shows an import with its history and no actions', () => {
+  it('shows an import as owned by Zamu, with the export command and its history', () => {
     statusView({
       status: sourceStatus({
         state: 'detached',
@@ -264,13 +266,18 @@ describe('Backlog.md settings', () => {
         ],
       }),
     });
-    expect(screen.getByText(/^Imported once on Oct 23, 2026 by Ana Ruiz, then detached\./)).toBeVisible();
-    expect(screen.getByText('used for the import')).toBeVisible();
+    const owned = screen.getByRole('note');
+    expect(owned).toHaveTextContent(/Owned by Zamu since Oct 23/);
+    expect(owned).toHaveTextContent('Imported once by Ana Ruiz. The task files are no longer read.');
+    expect(screen.getByRole('region', { name: 'Keep a copy as files' })).toHaveTextContent(
+      'zamu backlog export --project PAY',
+    );
     expect(screen.getByRole('region', { name: 'History' })).toHaveTextContent(
       'Backlog.md imported 412 tasks and 6 milestones from gitlab.com/reddevs/payments a1b2c3d',
     );
+    expect(screen.queryByRole('region', { name: 'Mappings' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Refresh now' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Detach…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Switch to Zamu…' })).toBeNull();
   });
 
   it('offers mirror and import on an empty project', () => {
@@ -290,35 +297,6 @@ describe('Backlog.md settings', () => {
     render(<NoSource project={{ key: 'WEB', repository: PROJECT.repository }} hasTasks canManage />);
     expect(screen.getByRole('button', { name: 'Set up a mirror' })).toBeDisabled();
     expect(screen.getByText(/already has tasks/)).toBeVisible();
-  });
-});
-
-describe('Detach dialog', () => {
-  it('asks for the typed key before detaching', async () => {
-    const user = userEvent.setup();
-    const onDetach = vi.fn().mockResolvedValue({});
-    const onOpenChange = vi.fn();
-    render(
-      <DetachDialog
-        isOpen
-        onOpenChange={onOpenChange}
-        status={sourceStatus()}
-        projectName="Payments"
-        onDetach={onDetach}
-      />,
-    );
-    const dialog = screen.getByRole('alertdialog', { name: 'Detach Payments from Backlog.md?' });
-    expect(dialog).toHaveTextContent(
-      "This can't be undone. Payments keeps all 412 tasks and 6 milestones as they are now, at commit a1b2c3d.",
-    );
-    expect(dialog).toHaveTextContent('9 hidden tasks stay hidden.');
-    expect(dialog).toHaveTextContent('Remove the webhook in GitLab; it will get 410 Gone from now on.');
-    const detach = within(dialog).getByRole('button', { name: 'Detach' });
-    expect(detach).toBeDisabled();
-    await user.type(within(dialog).getByLabelText('Type PAY to confirm'), 'pay');
-    await user.click(detach);
-    expect(onDetach).toHaveBeenCalledWith('pay');
-    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
 

@@ -1,5 +1,6 @@
 // Views foundation (M5-08): display options, filters, selection and navigation memory shared by
-// the list (M5-11), the board (M5-12), the task view (M5-13) and Home (M5-14).
+// the list (M5-11), the board (M5-12), the task view (M5-13) and Home (M5-14); M6 adds the
+// criteria and done-item counts those views show.
 
 export { type UseViewCommandsOptions, useViewCommands } from './commands';
 export {
@@ -115,3 +116,11 @@ export {
   useDisplayOptions,
 } from './useDisplayOptions';
 export { useUrlTaskFilter } from './useUrlTaskFilter';
+export {
+  checkedOf,
+  NO_PROGRESS,
+  progressOfItems,
+  progressText,
+  type WorkItemKind,
+  workItemNoun,
+} from './work-progress';

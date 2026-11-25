@@ -20,10 +20,22 @@
 //   a workspace-wide write key.
 // M5: labels follow milestones: read with project.read, create, rename, recolour and delete with
 //   task.write. Bulk task changes need task.write on every project they touch.
-import type { Actor, WorkspaceRole } from '@zamu/auth';
+// M6: a project's task defaults (default done items) are for owners and admins, people only;
+//   through an API key only a workspace-wide write key. The request actor also carries the machine
+//   and branch the CLI sent, which core writes on activity rows and comments.
+import type { Actor as RequestActor, WorkspaceRole } from '@zamu/auth';
+import type { EntrySource } from '@zamu/contracts';
 import { Forbidden } from './errors';
 
-export type { Actor, WorkspaceRole };
+export type { WorkspaceRole };
+
+/**
+ * Who makes a request (see @zamu/auth). M6: `source` holds the CLI's x-zamu-machine and
+ * x-zamu-branch headers; it is absent for the web app, jobs and tests that don't set it.
+ */
+export interface Actor extends RequestActor {
+  source?: EntrySource | null;
+}
 
 /** The owner of an API key, as needed to decide who may manage it. */
 export interface KeyOwner {
@@ -69,7 +81,9 @@ export type Action =
   /** Ask for a Backlog.md refresh now (Refresh now, zamu backlog refresh). */
   | 'backlog.refresh'
   /** Read a project's Backlog.md source status and problems. */
-  | 'backlog.read';
+  | 'backlog.read'
+  /** M6: change what new tasks of a project start with (default done items). Owners and admins. */
+  | 'project.defaults';
 
 export function isAdmin(actor: Actor): boolean {
   return actor.role === 'owner' || actor.role === 'admin';
@@ -162,6 +176,12 @@ export function can(actor: Actor, action: Action, resource?: Resource): boolean 
       const projectId = projectIdOf(resource);
       return projectId !== null && keyCoversProject(actor, projectId);
     }
+    case 'project.defaults': {
+      const projectId = projectIdOf(resource);
+      return (
+        projectId !== null && isAdmin(actor) && canManageSettings(actor) && keyCoversProject(actor, projectId)
+      );
+    }
   }
 }
 
@@ -182,6 +202,7 @@ const MESSAGES: Record<Action, string> = {
   'backlog.manage': 'Only workspace admins can set up, change or detach Backlog.md',
   'backlog.refresh': 'Only workspace admins and agents with write access can refresh Backlog.md',
   'backlog.read': 'Your API key does not cover this project',
+  'project.defaults': 'Only owners and admins can change the task defaults of a project',
 };
 
 /** Throws Forbidden unless `actor` may perform `action` on `resource`. */

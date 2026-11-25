@@ -1,0 +1,146 @@
+{
+  "description": "GET /projects/:id/merge_requests (opened, newest first) and GET /projects/:id/merge_requests/:iid/diffs for each.",
+  "source": "Hand-written from the GitLab REST docs (merge_requests: list project merge requests, list merge request diffs); shapes trimmed.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/merge_requests?state=opened&order_by=created_at&sort=desc&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-page": "1",
+          "x-per-page": "100",
+          "x-total": "3",
+          "x-next-page": ""
+        },
+        "json": [
+          {
+            "id": 300000077,
+            "iid": 77,
+            "project_id": 34675721,
+            "title": "Close BACK-4",
+            "state": "opened",
+            "created_at": "2026-11-27T10:00:00.000Z",
+            "target_branch": "main",
+            "source_branch": "task/back-4",
+            "author": {
+              "id": 5077,
+              "username": "ana-dev",
+              "name": "Ana-Dev"
+            },
+            "draft": false,
+            "web_url": "https://gitlab.com/gitlab-org/cli/-/merge_requests/77"
+          },
+          {
+            "id": 300000076,
+            "iid": 76,
+            "project_id": 34675721,
+            "title": "Docs only",
+            "state": "opened",
+            "created_at": "2026-11-26T10:00:00.000Z",
+            "target_branch": "main",
+            "source_branch": "docs/only",
+            "author": {
+              "id": 5076,
+              "username": "hubot",
+              "name": "Hubot"
+            },
+            "draft": false,
+            "web_url": "https://gitlab.com/gitlab-org/cli/-/merge_requests/76"
+          },
+          {
+            "id": 300000075,
+            "iid": 75,
+            "project_id": 34675721,
+            "title": "Rename a task file away",
+            "state": "opened",
+            "created_at": "2026-11-25T10:00:00.000Z",
+            "target_branch": "main",
+            "source_branch": "chore/rename",
+            "author": {
+              "id": 5075,
+              "username": "octocat",
+              "name": "Octocat"
+            },
+            "draft": false,
+            "web_url": "https://gitlab.com/gitlab-org/cli/-/merge_requests/75"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/merge_requests/77/diffs?page=1&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-next-page": ""
+        },
+        "json": [
+          {
+            "old_path": "backlog/tasks/back-4 - Four.md",
+            "new_path": "backlog/tasks/back-4 - Four.md",
+            "a_mode": "100644",
+            "b_mode": "100644",
+            "new_file": false,
+            "renamed_file": false,
+            "deleted_file": false,
+            "diff": "@@ -1 +1 @@\n-a\n+b\n"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/merge_requests/76/diffs?page=1&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-next-page": ""
+        },
+        "json": [
+          {
+            "old_path": "docs/backlog.md",
+            "new_path": "docs/backlog.md",
+            "a_mode": "100644",
+            "b_mode": "100644",
+            "new_file": false,
+            "renamed_file": false,
+            "deleted_file": false,
+            "diff": "@@ -1 +1 @@\n-a\n+b\n"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/merge_requests/75/diffs?page=1&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-next-page": ""
+        },
+        "json": [
+          {
+            "old_path": "backlog/tasks/back-2 - Two.md",
+            "new_path": "old/back-2 - Two.md",
+            "a_mode": "100644",
+            "b_mode": "100644",
+            "new_file": false,
+            "renamed_file": true,
+            "deleted_file": false,
+            "diff": "@@ -1 +1 @@\n-a\n+b\n"
+          }
+        ]
+      }
+    }
+  ]
+}

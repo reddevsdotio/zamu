@@ -2,6 +2,9 @@
 // edits or deletes, agents included (a responsible human cannot edit their agent's comments).
 // Delete is soft: the body becomes null and the timeline shows "Comment deleted by <author>".
 // Comments are not task changes: they write no activity and leave task.updated_at alone.
+// M6: a comment of kind note is a work note ("Migration written and tested"). It notifies only the
+// people it mentions, like any comment, and a task mirrored from Backlog.md takes none (its notes
+// live in the file). Comments and notes keep the machine and branch the CLI sent.
 import {
   type Comment,
   CommentList,
@@ -15,10 +18,22 @@ import {
 import { type DbOrTx, schema, type Tx } from '@zamu/db';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { z } from 'zod';
+import { entrySourceOf } from './activity';
 import { type Actor, authorize } from './authz';
 import type { DbContext } from './context';
-import { Conflict, Forbidden, Invalid, NotFound, parseInput } from './errors';
-import { findTask, loadUsers, userRef } from './internal';
+import { Conflict, Forbidden, Invalid, NotFound, parseInput, TaskMirrored } from './errors';
+import {
+  backlogEditCommand,
+  backlogFilePath,
+  findTask,
+  loadBacklogSource,
+  loadUsers,
+  type ProjectRow,
+  shellWord,
+  sourceMirrors,
+  type TaskRow,
+  userRef,
+} from './internal';
 import { mentionedUserIds, resolveMentions } from './mentions';
 
 const { comment, commentMention, project, task } = schema;
@@ -57,6 +72,8 @@ export async function toComments(db: DbOrTx, taskKey: string, rows: CommentRow[]
         onBehalfOf: row.onBehalfOfId ? ref(row.onBehalfOfId) : null,
         body: row.body,
         mentions: (mentions.get(row.id) ?? []).map(ref).filter((user) => user !== null),
+        kind: row.kind,
+        source: entrySourceOf(row),
         createdAt: row.createdAt,
         editedAt: row.editedAt,
         deletedAt: row.deletedAt,
@@ -132,7 +149,29 @@ async function findOwnComment(tx: Tx, actor: Actor, id: string, verb: 'edit' | '
 // Services
 // ---------------------------------------------------------------------------
 
-/** The comments of a task, oldest first. Deleted comments stay in the list with a null body. */
+/**
+ * TaskMirrored for a note on a task mirrored from Backlog.md: notes belong in the file's
+ * Implementation notes, which Backlog.md's CLI appends to.
+ */
+async function noteMirrored(db: DbOrTx, projectRow: ProjectRow, taskRow: TaskRow, body: string) {
+  const source = await loadBacklogSource(db, projectRow.id);
+  if (!sourceMirrors(source)) return null;
+  const key = formatTaskKey(projectRow.key, taskRow.number, taskRow.keySuffix);
+  const file = await backlogFilePath(db, source, { taskId: taskRow.id });
+  const command = backlogEditCommand(taskRow);
+  const short = body.length <= 80 && !body.includes('\n');
+  return new TaskMirrored(`${key} is mirrored from Backlog.md, so its notes are written in the task file`, {
+    field: 'notes',
+    ...(file ? { file } : {}),
+    ...(taskRow.backlogId ? { backlogId: taskRow.backlogId } : {}),
+    ...(command ? { hint: `${command} --append-notes ${short ? shellWord(body) : '"<note>"'}` } : {}),
+  });
+}
+
+/**
+ * The comments of a task, oldest first. Deleted comments stay in the list with a null body. M6:
+ * notes are listed too, told apart by kind.
+ */
 export async function listComments(
   { db }: DbContext,
   actor: Actor,
@@ -146,7 +185,11 @@ export async function listComments(
   };
 }
 
-/** Comments on a task as the actor (for agents, on behalf of their responsible human). */
+/**
+ * Comments on a task as the actor (for agents, on behalf of their responsible human). M6: kind
+ * note writes a work note (TaskMirrored on a mirrored task); the machine and branch of the actor's
+ * request are kept.
+ */
 export async function createComment(
   { db }: DbContext,
   actor: Actor,
@@ -158,6 +201,11 @@ export async function createComment(
       project: parsed.project,
     });
     authorize(actor, 'task.write', { type: 'project', projectId: projectRow.id });
+    const kind = parsed.kind ?? 'comment';
+    if (kind === 'note') {
+      const mirrored = await noteMirrored(tx, projectRow, taskRow, parsed.body);
+      if (mirrored) throw mirrored;
+    }
     const { body, userIds } = await prepareBody(tx, actor, parsed.body);
     const [row] = await tx
       .insert(comment)
@@ -168,6 +216,9 @@ export async function createComment(
         authorId: actor.userId,
         onBehalfOfId: actor.onBehalfOfId,
         body,
+        kind,
+        machine: actor.source?.machine ?? null,
+        branch: actor.source?.branch ?? null,
       })
       .returning();
     if (!row) throw new Error('comment insert returned no row');

@@ -48,13 +48,17 @@ People can create keys for themselves in Settings > My keys, for their own scrip
 
 ## Use zamu in an agent's environment
 
-The agent's machine needs Node 24 and the CLI. Until `zamu` is on npm, build it from this repository:
+Install the CLI on the agent's machine with npm (Node 24 or later) or Homebrew:
 
 ```sh
-pnpm install
-pnpm --filter @zamu/cli build
-alias zamu="node $PWD/apps/cli/dist/index.js"
+npm install --global @reddevs/zamu
+brew install reddevsdotio/tap/zamu
 ```
+
+Keep the full Homebrew name: a bare `brew install zamu` after `brew tap` stops with a trust error on current
+Homebrew. To upgrade, run `npm update --global @reddevs/zamu` or `brew upgrade reddevsdotio/tap/zamu`.
+`zamu --version` prints the version installed. The Docker image also ships the CLI as `zamu`, and the
+[CLI reference](../apps/cli/README.md#install) shows how to run it from a clone of this repository.
 
 Then give the agent two environment variables instead of running `zamu login`:
 
@@ -99,18 +103,34 @@ repository holds several projects, one file per subfolder), then the linked remo
 which one applies in the current folder.
 
 `zamu agents` puts a short block between `<!-- zamu:start ... -->` and `<!-- zamu:end -->` in `AGENTS.md`, or in
-`CLAUDE.md` when only that exists. It covers the loop below, `--json` and the exit codes. Run it again
-after upgrading zamu; it replaces only its own block. `zamu agents --print` shows the block without writing it.
+`CLAUDE.md` when only that exists. It names the project and points the agent to `zamu instructions` (below).
+Run it again after upgrading zamu; it replaces only its own block. `zamu agents --print` shows the block
+without writing it. In a project owned by Zamu, it also replaces a Backlog.md guidelines block in the same file
+(between `<!-- BACKLOG.MD GUIDELINES START -->` and `<!-- BACKLOG.MD GUIDELINES END -->`) with one line: tasks
+are in Zamu, and the `backlog` CLI is only for documents and decisions.
+
+## Instructions for agents
+
+`zamu instructions` prints how an agent works on a task with zamu. The text ships with the CLI, so it always
+matches the version installed, and the block that `zamu agents` writes stays short:
+
+```sh
+zamu instructions                # overview: the work record, the rules, the exit codes
+zamu instructions creating       # search before creating; criteria that can be tested
+zamu instructions working        # the plan when work starts, a note after each step, check only what is proven
+zamu instructions finishing      # the final summary, stopping at In review, the final report
+```
 
 A typical loop for an agent:
 
 ```sh
 zamu dashboard --json                     # reviews, mentions of the agent, stalled work, deadlines
 zamu tasks list --mine --status todo --cycle current --json
-zamu tasks update PAY-142 --status in_progress
-zamu tasks show PAY-142 --json
-zamu comments add PAY-142 "Tests pass. Ready for review, @ana@example.com"
-zamu tasks update PAY-142 --status in_review
+zamu tasks show PAY-142 --json            # criteria, done items, plan, summary and history
+zamu tasks update PAY-142 --status in_progress --plan - < plan.md
+zamu notes add PAY-142 "Retry queue written and tested"
+zamu tasks update PAY-142 --check-ac 1 --check-ac 2 --check-dod 1
+zamu tasks update PAY-142 --final-summary - --status in_review < summary.md
 ```
 
 `--mine` lists the tasks assigned to the key's owner across every project the key can read. Add `--project`
@@ -121,16 +141,89 @@ Tell the agent about the exit codes so it can react without parsing text:
 | Code | Meaning                                                                                      |
 | ---- | -------------------------------------------------------------------------------------------- |
 | 0    | OK                                                                                           |
-| 1    | Usage error, or the server rejected the input (400, 409, 422)                                |
+| 1    | Usage error, or the server rejected the input (400, 409, 422), open items included           |
 | 2    | Not logged in, or the key was refused (401): revoked or wrong                                |
 | 3    | Not found (404)                                                                              |
 | 4    | Forbidden: outside the key's scope, a read-only key writing, or owners and admins only (403) |
 | 5    | Server unreachable, 5xx, or a response this CLI does not understand                          |
-| 6    | Backlog.md: the change belongs in the files, or the mirror is paused or detached (409)       |
+| 6    | Backlog.md: the change belongs in the files, or the mirror is paused or switched (409)       |
+| 7    | Queued: the server didn't answer, and zamu stored the write to send later                    |
 
 Exit code 6 covers the problem codes `TASK_MIRRORED`, `MILESTONE_MIRRORED`, `PROJECT_MIRRORED`,
 `LABEL_MIRRORED`, `PROJECT_NOT_EMPTY`, `BACKLOG_PAUSED` and `BACKLOG_DETACHED`. Other conflicts, such as two
-edits racing, a blocker loop (`DEPENDENCY_LOOP`) or a label name the project has (`LABEL_EXISTS`), stay on 1. See [Backlog.md mirrors](#backlogmd-mirrors).
+edits racing, a blocker loop (`DEPENDENCY_LOOP`), a label name the project has (`LABEL_EXISTS`) or a task
+finished with open items (`OPEN_ITEMS`), stay on 1. See [Backlog.md mirrors](#backlogmd-mirrors) and
+[Offline queue](#offline-queue).
+
+## The work record
+
+A task's work record is what an agent writes while it works: the acceptance criteria, the definition of
+done, the plan, work notes and the final summary. People see it in the task view (see
+[guide.md](guide.md#the-work-record)).
+- **Acceptance criteria** say what must be true when the task is done. They are numbered from 1.
+- **Done items**, the definition of done, are the checks every task passes, such as "Tests and lint pass".
+  A new task starts with the project's default done items (Settings > Task defaults in the web app).
+- Each criterion and done item is open, checked or waived. **Waived** means it no longer applies, and it
+  always carries a reason.
+- **The plan** is Markdown, written when work starts.
+- **Work notes** are short entries in the task's history, one after each step. A note is quieter than a
+  comment and reaches nobody unless it mentions them.
+- **The final summary** is Markdown, written before the task goes to review. The task view and the peek
+  show it first.
+
+The flags keep the names of the Backlog.md CLI:
+
+```sh
+zamu tasks create --project PAY "Retry failed payouts" \
+  --ac "A failed payout is retried up to 8 times" --ac "On-call is alerted once"
+zamu tasks create --project PAY "Fix a typo in the receipt" --no-dod-defaults
+zamu tasks update PAY-142 --check-ac 1,2 --check-dod 1
+zamu tasks update PAY-142 --waive-ac 3 --reason "Load test replaced by a replay"
+zamu tasks update PAY-142 --ac "Retries stop when the payout is canceled" --remove-ac 4
+zamu tasks update PAY-142 --append-notes "Migration written and tested"
+zamu notes add PAY-142 "Backoff schedule covered by tests"
+```
+
+The numbers are the ones `zamu tasks show` prints. All the flags of one command go in one request, so
+`--check-ac 3 --final-summary - --status in_review` checks the item, writes the summary and moves the task at
+once. Criteria and done items are one line each, up to 500 characters and 50 per list. The plan and the
+summary take up to 50,000 characters. The [CLI reference](../apps/cli/README.md#work-record) lists every
+flag.
+
+An agent can't move a task to In review or Done while a criterion or done item is open. The server answers
+`409 OPEN_ITEMS`, and zamu prints the open items with the flags that settle each one and exits with code 1:
+
+```text
+$ zamu tasks update PAY-142 --status in_review
+zamu: PAY-142 has open items: criterion 6. Check or waive them before moving it to In review (open_items).
+  criterion 6  The on-call runbook has an entry for exhausted retries
+               check: --check-ac 6   waive: --waive-ac 6 --reason "..."
+  Check only what is proven and waive the rest with a reason. One command can settle them and move it:
+    zamu tasks update PAY-142 <flags above> --status in_review
+```
+
+The rule applies to agents only. A person moving the task in the web app sees the open items first and can
+move it anyway.
+
+## Where a change comes from
+
+zamu sends two headers with every request: `x-zamu-machine`, the machine name (`ZAMU_MACHINE`, else the host
+name), and `x-zamu-branch`, the git branch checked out in the current folder when there is one. The server
+stores them on history entries and notes. The web app shows them as "build-box · feat/payout-retries" under
+the History filter, and `zamu tasks show` prints them at the end of each line. Values are cut to 100
+characters. The web app sends neither header.
+
+## Offline queue
+
+When the server doesn't answer within 5 seconds, zamu stores some writes on an existing task in a local
+queue instead of failing: checking, unchecking or waiving items, a status change, and a note or comment. It
+prints "Queued: the server didn't answer. It will be sent on your next zamu command." and exits with code 7;
+every other write, such as creating a task, fails as before. The next zamu command that reaches the server
+sends the queued writes first, oldest first, and skips a queued status change when the task moved in the
+meantime. A status change is queued only when zamu has seen that task's status before; otherwise it fails
+and asks you to run `zamu tasks show` once the server answers. A queued write is sent only by a command
+that uses the key that queued it, so it keeps its author when a person and an agent share a machine. `zamu queue` lists what waits, `zamu queue drop ID` removes one write, and `zamu whoami` shows the
+count.
 
 ## Comments and mentions
 
@@ -155,8 +248,8 @@ cannot edit the agent's comments, and an agent trying to delete a person's comme
 Deleting leaves "Comment deleted by ..." in the history. Comment ids are in `zamu comments list`, in
 `zamu tasks show` and in the `--json` output.
 
-`zamu tasks show PAY-142` prints the history: activity on one line each, comments as indented blocks with
-their id.
+`zamu tasks show PAY-142` prints the history: activity on one line each, comments and notes as indented
+blocks with their id. Notes are comments of kind `note` (see [The work record](#the-work-record)).
 
 ## Milestones and cycles
 
@@ -237,9 +330,13 @@ In a mirrored project:
 - `zamu` reads the tasks, comments on them and sets their cycle. Every command that takes a task key also takes
   the Backlog.md ID: `zamu tasks show BACK-786.1`. IDs such as `TASK-12` can repeat across projects; add
   `--project` when zamu asks for it.
+- The work record comes from the file too: criteria and done items from its Acceptance Criteria and
+  Definition of Done, the plan and the final summary from their sections. `zamu tasks show` marks them
+  "from Backlog.md, read-only".
 - `zamu` refuses to change the title, description, status, priority, assignee, milestone, labels, due date,
-  blockers or parent of a mirrored task, to create tasks, to change milestones, and to rename or delete a
-  label read from the files. It exits with code 6 and says where the change belongs:
+  blockers, parent or work record of a mirrored task, to write a note on it, to create tasks, to change
+  milestones, and to rename or delete a label read from the files. It exits with code 6 and says where the
+  change belongs:
 
   ```text
   $ zamu tasks update PAY-786 --status done
@@ -270,9 +367,20 @@ web app) or detached (`BACKLOG_DETACHED`).
 A task whose file is deleted from the default branch is hidden, not deleted: it leaves `zamu tasks list`, and
 `zamu tasks show` marks it "Hidden". It comes back with the same key when a file with its ID returns.
 
-Once a project is detached from Backlog.md, or was imported once, its tasks behave like any other: `zamu`
-creates and updates them, and edits to the files no longer reach the project. Agents should stop editing
-`backlog/` then.
+Once a project is switched to Zamu (see [backlog-md.md](backlog-md.md#switch-to-zamu)), or was imported once,
+its tasks behave like any other: `zamu` creates and updates them, and edits to the files no longer reach the
+project. Agents should stop writing task files in `backlog/` then; `zamu agents` replaces the Backlog.md
+guidelines in `AGENTS.md` to say so. The repository can still keep a copy of the tasks as files:
+
+```sh
+zamu backlog export --dry-run      # what would change under backlog/, nothing written
+zamu backlog export                # write the tasks and milestones, remove task files Zamu no longer has
+git add backlog && git commit -m "Update the Backlog.md copy"
+```
+
+The export refuses (exit code 1) while the exported folders have uncommitted changes, unless you pass
+`--force`, and a project that still mirrors gets exit code 6 (`PROJECT_MIRRORED`). What it writes and what
+it leaves alone is in [backlog-md.md](backlog-md.md#export-to-backlogmd).
 
 ## Dashboard
 
@@ -372,18 +480,19 @@ breaking change ships as `zamu.v2`. The Zod schemas live in `packages/contracts`
 | --------------------------- | ---------------------------------------------------------------------------- |
 | `zamu.v1.login`             | `{ url, me }`                                                                |
 | `zamu.v1.logout`            | `{ url }` (null when nothing was stored)                                     |
-| `zamu.v1.whoami`            | `{ user, workspace, role, auth: { method, scope }, project }`                |
+| `zamu.v1.whoami`            | `{ user, workspace, role, auth: { method, scope }, project, queued }`        |
 | `zamu.v1.dashboard`         | `{ scope, generatedAt, groups, projects, agents }` (see Dashboard above)     |
 | `zamu.v1.projects.list`     | `{ items: Project[] }` with open counts per status                           |
 | `zamu.v1.projects.delete`   | `{ deleted }`: the key of the deleted project                                |
 | `zamu.v1.tasks.list`        | `{ items: TaskListItem[], nextCursor, counts }`                              |
-| `zamu.v1.tasks.show`        | `{ task: Task, activity: Activity[], timeline: TimelineEntry[] }`            |
+| `zamu.v1.tasks.show`        | `{ task: Task, activity: Activity[], timeline, timelineCounts }`             |
 | `zamu.v1.tasks.create`      | `Task`                                                                       |
 | `zamu.v1.tasks.update`      | `Task`                                                                       |
 | `zamu.v1.comments.list`     | `{ items: Comment[] }`                                                       |
 | `zamu.v1.comments.add`      | `Comment`                                                                    |
 | `zamu.v1.comments.edit`     | `Comment`                                                                    |
 | `zamu.v1.comments.delete`   | `Comment`, with `body` null and `deletedAt` set                              |
+| `zamu.v1.notes.add`         | `Comment` with `kind: "note"`                                                |
 | `zamu.v1.milestones.list`   | `{ items: Milestone[] }` with progress counts                                |
 | `zamu.v1.milestones.create` | `Milestone`                                                                  |
 | `zamu.v1.milestones.update` | `Milestone`                                                                  |
@@ -397,8 +506,13 @@ breaking change ships as `zamu.v2`. The Zod schemas live in `packages/contracts`
 | `zamu.v1.labels.delete`     | `{ deleted: Label, usageCount }`: the label as it was, and how many lost it  |
 | `zamu.v1.backlog.status`    | `BacklogSourceStatus`: mode, state, source, last read, counts, problems      |
 | `zamu.v1.backlog.refresh`   | The refresh request plus `outcome` and, with `--wait`, the final `status`    |
+| `zamu.v1.backlog.export`    | `{ project, dir, dryRun, format, files: [{ path, action }] }`                |
+| `zamu.v1.instructions`      | `{ topic, text }`                                                            |
+| `zamu.v1.queue.list`        | `{ items }`: the queued writes, oldest first                                 |
+| `zamu.v1.queue.drop`        | `{ dropped }`: the write removed from the queue                              |
+| `zamu.v1.queued`            | `{ entry }`: the write zamu queued (exit code 7)                             |
 | `zamu.v1.link`              | `{ project, target, action, repository, file }`                              |
-| `zamu.v1.agents`            | `{ file, action, project, block }`                                           |
+| `zamu.v1.agents`            | `{ file, action, project, block, replacedBacklogBlock }`                     |
 | `zamu.v1.error`             | RFC 9457 problem: `{ type, title, status, code, detail, requestId, issues }` |
 
 Statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, `canceled`. Priorities are `none`, `low`,
@@ -408,7 +522,11 @@ Statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, `canceled`. 
 a board column. Since 0.7.0 tasks also carry `labels` (`{ id, name, color, source }`), `dueDate`,
 `subtaskProgress` (`{ done, total }`) and `blocked`; `zamu tasks show` adds `parent`, `subtasks`, `blockedBy`
 and `blocks`, where a blocker you can't see is `null` ("Removed task"). List rows carry `parentKey` instead
-of `parent`.
+of `parent`. Since 0.9.0 a task carries its work record: `criteria` and `doneItems` (each item
+`{ number, text, state, waivedReason, waivedBy, locked }`, with `state` `open`, `checked` or `waived`), `plan`,
+`finalSummary`, and `planMeta` and `finalSummaryMeta` (who last wrote them and when). List rows carry
+`criteriaProgress` and `doneProgress` (`{ settled, open, waived, total }`, where settled counts checked and
+waived items) and `hasFinalSummary`.
 
 `zamu tasks list --project PAY --json`:
 
@@ -497,8 +615,10 @@ of `parent`.
 }
 ```
 
-`timeline` holds the same activity entries plus the comments, oldest first, each with a `kind` of
-`activity` or `comment`. A comment entry:
+`timeline` holds the same activity entries plus the comments and notes, oldest first, each with a `kind` of
+`activity`, `comment` or `note`. `timelineCounts` gives the size of each filter of the web app's history:
+`{ all, comments, notes, history }`. Entries written through zamu carry `source: { machine, branch }`. A
+comment entry:
 
 ```json
 {

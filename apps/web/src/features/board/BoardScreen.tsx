@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter } from '@tanstack/react-router';
 import { type AssigneeRef, TASK_STATUSES, type TaskListItem, type TaskStatus } from '@zamu/contracts';
 import {
@@ -29,7 +29,7 @@ import {
 import { useSearchText } from '~/features/project-header/useSearchText';
 import { usePageSearchRef } from '~/features/shell/page-search';
 import { useOptionalQuickCreate } from '~/features/shell/quick-create';
-import { useFieldChange, useTaskFieldKeys } from '~/features/task-fields';
+import { confirmFinishing, finishingRequest, useFieldChange, useTaskFieldKeys } from '~/features/task-fields';
 import { toCycleRef, toMilestoneRef } from '~/features/task-fields/planning';
 import { showFieldToast } from '~/features/task-fields/toast';
 import { describeError } from '~/features/tasks/errors';
@@ -117,6 +117,12 @@ const LANE_CELL_CAP = 2;
 
 type Locked = 'status' | 'priority' | 'assignee' | 'milestone';
 
+/** Runs `run` after `count` animation frames. */
+function afterFrames(count: number, run: () => void) {
+  if (count <= 0) run();
+  else requestAnimationFrame(() => afterFrames(count - 1, run));
+}
+
 /** A move the board can't make: the field toast says why. */
 const refuse = (text: string) => showFieldToast({ text, tone: 'error' });
 
@@ -130,6 +136,7 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
   const mirrored = isMirrored(project);
   const viewerId = useQuery(meQuery()).data?.user.id ?? null;
   const { apply } = useFieldChange();
+  const queryClient = useQueryClient();
   const peek = usePeek();
   const peekOpen = peek !== null;
 
@@ -497,24 +504,29 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
     return patch;
   };
 
-  /** Moves a card into a column (and lane). `hint` is the manual-order position, when known. */
+  /**
+   * Moves a card into a column (and lane). `hint` is the manual-order position, when known. `onMoved`
+   * runs when the card moved at once. A move that waits for the finishing warning focuses the card
+   * itself once the person moves it anyway.
+   */
   const dropTo = (
     key: string,
     columnId: string,
     laneId: string | null,
     hint: Placement | null,
     via: 'drag' | 'keyboard',
-  ): boolean => {
+    onMoved: () => void,
+  ): void => {
     const card = cardsRef.current.get(key);
     const column = columnsRef.current.find((candidate) => candidate.id === columnId);
-    if (!card || !column) return false;
+    if (!card || !column) return;
     const lanePatch = lanePatchFor(card, laneId);
-    if (lanePatch === 'refused') return false;
+    if (lanePatch === 'refused') return;
     if (statusMode) {
       const to = columnId as TaskStatus;
       if (to !== card.status && isLocked(card, 'status')) {
         refuse(statusRefusalText(card.key, STATUS_LABELS[card.status]));
-        return false;
+        return;
       }
       const target = column.cards.filter((other) => other.key !== card.key);
       const placement: Placement = manual
@@ -524,31 +536,42 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
             { ...card, ...lanePatch, status: to, updatedAt: new Date().toISOString() },
             options.orderBy,
           );
-      return moves.move({
-        key: card.key,
-        to,
-        placement,
-        ...(lanePatch ? { patch: lanePatch } : {}),
-        sendPosition: manual,
-        via,
-      });
+      const move = () =>
+        moves.move({
+          key: card.key,
+          to,
+          placement,
+          ...(lanePatch ? { patch: lanePatch } : {}),
+          sendPosition: manual,
+          via,
+        });
+      // Into In review or Done with open items: the card stays until the person answers the warning.
+      if (finishingRequest(queryClient, [card], to)) {
+        void confirmFinishing(queryClient, [card], to).then((ok) => {
+          // The dialog hands focus back in a frame after it closes (to a card still in the old column,
+          // as this one moved): the card takes the keyboard once that has happened.
+          if (ok && move()) afterFrames(4, () => focusCard(card.key, { afterRender: false }));
+        });
+      } else if (move()) onMoved();
+      return;
     }
     const sameColumn = inGroup(groupBy, card, columnId);
-    if (sameColumn && !lanePatch) return false;
+    if (sameColumn && !lanePatch) return;
     const columnPatch = sameColumn ? {} : groupPatch(column.value);
     if (columnPatch === null) {
       refuse(
         `Cards can't move between ${groupBy === 'label' ? 'label' : 'these'} columns. Change the field instead.`,
       );
-      return false;
+      return;
     }
     const locked = sameColumn ? null : patchField(groupBy);
     if (locked && isLocked(card, locked)) {
       refuse(`${card.key} keeps its ${fieldWord(groupBy)}: it comes from Backlog.md.`);
-      return false;
+      return;
     }
+    // A status lane goes through the field change, and so through the finishing warning.
     void apply([card], { ...columnPatch, ...lanePatch });
-    return true;
+    onMoved();
   };
 
   const onDrop = (drop: CardDrop, columnId: string, laneId: string | null) => {
@@ -559,7 +582,7 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
         ? { before: drop.target.key }
         : { after: drop.target.key }
       : null;
-    if (dropTo(drop.key, columnId, laneId, hint, 'drag')) selectionRef.current.focus(drop.key);
+    dropTo(drop.key, columnId, laneId, hint, 'drag', () => selectionRef.current.focus(drop.key));
   };
 
   /** Shift+← / Shift+→: the card to the neighbouring column, folded or not. */
@@ -586,7 +609,7 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
       const first = lane?.cells[to]?.[0];
       if (first) hint = { before: first.key };
     }
-    if (dropTo(card.key, to, null, hint, 'keyboard')) focusCard(card.key);
+    dropTo(card.key, to, null, hint, 'keyboard', () => focusCard(card.key));
   };
 
   /** Shift+J / Shift+K: up or down within the cell (manual order, status columns). */
@@ -806,6 +829,9 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
       const times: string[] = [];
       if (shows('created')) times.push(`Created ${formatAge(card.createdAt)}`);
       if (shows('updated')) times.push(`Updated ${formatAge(card.updatedAt)}`);
+      const due = shows('due') && card.dueDate ? { dueDate: card.dueDate, status: card.status, today } : null;
+      // The criteria marker (off by default): the kit draws it after subtasks, before the due date.
+      const criteria = shows('criteria') ? (card.criteriaProgress ?? null) : null;
       return (
         <>
           <BoardCardContent
@@ -817,7 +843,8 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
             }
             labels={shows('labels') ? (card.labels ?? []) : null}
             subtasks={hasSubtasks && subtaskCards ? progress : null}
-            due={shows('due') && card.dueDate ? { dueDate: card.dueDate, status: card.status, today } : null}
+            criteria={criteria}
+            due={due}
             blocked={shows('blocked') && card.blocked === true}
             milestone={
               shows('milestone') && usesMilestones && card.milestone && groupBy !== 'milestone'

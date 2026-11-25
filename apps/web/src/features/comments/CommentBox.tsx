@@ -1,5 +1,5 @@
 import type { Member } from '@zamu/contracts';
-import { type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
   Tab as AriaTab,
   TabList as AriaTabList,
@@ -40,6 +40,12 @@ export interface CommentBoxProps {
   autoFocus?: boolean;
   /** Lets the owner focus the text (M focuses the composer). */
   handleRef?: Ref<CommentBoxHandle>;
+  /** Left of the footer, before the hint: the composer's Note switch. */
+  footerStart?: ReactNode;
+  /** Replaces "Markdown · @ to mention" (the note mode's "A note tells nobody unless it mentions them."). */
+  hint?: ReactNode;
+  /** Draw the box as a note: a side rule in --fg-3 (m6.css .composer.note-on). */
+  tone?: 'comment' | 'note';
   className?: string;
 }
 
@@ -57,6 +63,9 @@ export function CommentBox({
   error,
   autoFocus = false,
   handleRef,
+  footerStart,
+  hint = 'Markdown · @ to mention',
+  tone = 'comment',
   className,
 }: CommentBoxProps) {
   const [mode, setMode] = useState<'write' | 'preview'>('write');
@@ -98,7 +107,11 @@ export function CommentBox({
       data-error={error ? true : undefined}
       className={cn(
         'relative m-0 flex min-w-0 flex-col gap-2.5 rounded-md border bg-surface px-3.25 py-2.75',
-        error ? 'border-danger' : 'halo',
+        error
+          ? 'border-danger'
+          : tone === 'note'
+            ? 'border-line border-l-2 border-l-fg-3 shadow-[0_0_0_3px_var(--bg-lane)]'
+            : 'halo',
         className,
       )}
       onKeyDown={(event) => {
@@ -155,12 +168,13 @@ export function CommentBox({
         </AriaTabPanel>
       </AriaTabs>
       <div className="flex items-center gap-2">
+        {footerStart}
         {error ? (
           <span role="alert" className="min-w-0 text-xs text-danger">
             {error}
           </span>
         ) : (
-          <span className="min-w-0 truncate text-xs text-fg-3">Markdown · @ to mention</span>
+          <span className="min-w-0 truncate text-xs text-fg-3">{hint}</span>
         )}
         <span className="flex-1" />
         {isSending ? (

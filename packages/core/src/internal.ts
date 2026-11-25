@@ -1,7 +1,9 @@
 // Helpers shared by services. Not part of the public API, except isMirrored (re-exported by
 // projects.ts).
 import {
+  BacklogBlock,
   formatBacklogId,
+  formatTaskKey,
   ProjectKeyInput,
   parseBacklogId,
   splitTaskKey,
@@ -346,4 +348,17 @@ export async function backlogFilePath(
     .orderBy(sql`${schema.backlogFile.error} is not null`, asc(schema.backlogFile.path))
     .limit(1);
   return row?.path ?? null;
+}
+
+/**
+ * The `backlog task edit <id>` command (`backlog draft edit` for drafts) that changes a mirrored
+ * task in Backlog.md, without flags; null for tasks without a Backlog.md id.
+ */
+export function backlogEditCommand(row: Pick<TaskRow, 'backlogId' | 'backlogData'>): string | null {
+  if (!row.backlogId) return null;
+  const parts = parseBacklogId(row.backlogId);
+  const id = parts ? formatTaskKey('', parts.number, parts.suffix).slice(1) : row.backlogId;
+  const block = BacklogBlock.safeParse(row.backlogData ?? {});
+  const command = block.success && block.data.kind === 'draft' ? 'draft' : 'task';
+  return `backlog ${command} edit ${id}`;
 }

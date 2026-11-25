@@ -40,7 +40,7 @@ const ANY_MARKER_LINE = /^<!-- (?:SECTION:[A-Z][A-Z0-9_]*|AC|DOD|COMMENTS|COMMEN
 const HEADING_LINE = /^##[\t ]+(.+?)[\t ]*$/;
 
 /** True for every line inside a fenced code block, fences included. */
-function fenceMask(lines: string[]): boolean[] {
+export function fenceMask(lines: string[]): boolean[] {
   const mask: boolean[] = [];
   let fence: { char: string; length: number } | null = null;
   for (const line of lines) {

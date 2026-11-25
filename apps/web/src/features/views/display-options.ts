@@ -53,6 +53,7 @@ export type TaskProperty =
   | 'key'
   | 'labels'
   | 'subtasks'
+  | 'criteria'
   | 'due'
   | 'blocked'
   | 'assignee'
@@ -65,6 +66,7 @@ export const TASK_PROPERTIES: readonly TaskProperty[] = [
   'key',
   'labels',
   'subtasks',
+  'criteria',
   'due',
   'blocked',
   'assignee',
@@ -98,12 +100,17 @@ export interface DisplayOptions {
   properties: Readonly<Record<TaskProperty, boolean>>;
 }
 
-/** Brief "Default card and row content": shown by default; milestone, cycle and created hidden. */
+/**
+ * Brief "Default card and row content": shown by default; milestone, cycle and created hidden. The
+ * M6 criteria marker is hidden too: it is one more chip people switch on.
+ */
 const DEFAULT_PROPERTIES: Record<TaskProperty, boolean> = {
   priority: true,
   key: true,
   labels: true,
   subtasks: true,
+  // M6 design call 7: the criteria marker is off by default on rows and cards.
+  criteria: false,
   due: true,
   blocked: true,
   assignee: true,
@@ -228,6 +235,7 @@ export const PROPERTY_LABELS: Record<TaskProperty, string> = {
   key: 'Key',
   labels: 'Labels',
   subtasks: 'Subtasks',
+  criteria: 'Criteria',
   due: 'Due date',
   blocked: 'Blocked',
   assignee: 'Assignee',

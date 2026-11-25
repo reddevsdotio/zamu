@@ -1,6 +1,7 @@
 // Runs the Gitea/Forgejo adapter against a real Forgejo container started by docker/forgejo/setup.sh:
-// creates a repository with a small backlog/ folder, lists and reads it, and verifies a real
-// webhook delivery. Skipped with a message when Docker is not available.
+// creates a repository with a small backlog/ folder, lists and reads it, verifies a real webhook
+// delivery, and lists open pull requests that touch the folder with a read-only token. Skipped with
+// a message when Docker is not available.
 
 import { execFileSync } from 'node:child_process';
 import { once } from 'node:events';
@@ -64,6 +65,7 @@ describe.skipIf(!docker)('Gitea/Forgejo adapter against a Forgejo container', ()
   let baseUrl = '';
   let host = '';
   let token = '';
+  let password = '';
   let provider: GitProvider;
   let hookServer: Server | undefined;
   const deliveries: Delivery[] = [];
@@ -114,6 +116,7 @@ describe.skipIf(!docker)('Gitea/Forgejo adapter against a Forgejo container', ()
     );
     baseUrl = env.FORGEJO_URL as string;
     token = env.FORGEJO_TOKEN as string;
+    password = env.FORGEJO_PASSWORD as string;
     host = new URL(baseUrl).host;
     provider = createProvider({
       provider: 'gitea',
@@ -244,19 +247,24 @@ describe.skipIf(!docker)('Gitea/Forgejo adapter against a Forgejo container', ()
       ],
     });
 
+    // Forgejo may also deliver the push that created the branch, queued before the hook existed:
+    // wait for the delivery of this edit, the one whose `after` is the new head.
+    const head = await provider.getBranchHead(path, 'main');
+    const isEdit = (entry: Delivery) =>
+      (JSON.parse(entry.body.toString()) as { after?: string }).after === head;
     const deadline = Date.now() + 30_000;
-    while (deliveries.length === 0 && Date.now() < deadline) {
+    while (!deliveries.some(isEdit) && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
+    const delivery = deliveries.find(isEdit);
     expect(
-      deliveries.length,
-      'no webhook delivery reached the test server within 30 seconds',
-    ).toBeGreaterThan(0);
-    const delivery = deliveries[0] as Delivery;
+      delivery,
+      'no webhook delivery for the edit reached the test server within 30 seconds',
+    ).toBeDefined();
+    if (!delivery) return;
     expect(delivery.headers['x-forgejo-signature']).toMatch(/^[0-9a-f]{64}$/);
     expect(delivery.headers['x-gitea-signature']).toBe(delivery.headers['x-forgejo-signature']);
 
-    const head = await provider.getBranchHead(path, 'main');
     expect(provider.verifyWebhook(delivery.headers, delivery.body, secret)).toEqual({
       ok: true,
       event: 'push',
@@ -276,5 +284,63 @@ describe.skipIf(!docker)('Gitea/Forgejo adapter against a Forgejo container', ()
       .map((entry) => entry.path);
     expect(changedPaths).toEqual([target]);
     await expect(provider.readFile(path, head, target)).resolves.toMatchObject({ content: changed });
+  });
+
+  it('lists open pull requests under backlog/ with a read-only token (M6)', async () => {
+    const branchWith = async (branch: string, file: string, content: string) => {
+      await api('POST', `/repos/${path}/contents`, {
+        branch: 'main',
+        new_branch: branch,
+        message: `Change ${file}`,
+        files: [{ operation: 'create', path: file, content: Buffer.from(content).toString('base64') }],
+      });
+      return (await api('POST', `/repos/${path}/pulls`, {
+        base: 'main',
+        head: branch,
+        title: `Change ${file}`,
+      })) as { number: number; html_url: string };
+    };
+    const touching = await branchWith(
+      'task-13',
+      'backlog/tasks/back-13 - Task 13.md',
+      '---\nid: BACK-13\n---\n',
+    );
+    await branchWith('docs-only', 'docs/other.md', 'Docs.\n');
+
+    // A token limited to read:repository and read:user, as the docs ask for.
+    const created = await fetch(`${baseUrl}/api/v1/users/${owner}/tokens`, {
+      method: 'POST',
+      headers: {
+        authorization: `Basic ${Buffer.from(`${owner}:${password}`).toString('base64')}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: `read-only-${process.pid}`, scopes: ['read:repository', 'read:user'] }),
+    });
+    expect(created.status).toBe(201);
+    const { sha1 } = (await created.json()) as { sha1: string };
+    const readOnly = createProvider({
+      provider: 'gitea',
+      host,
+      token: sha1,
+      allowHttp: true,
+      hostPolicy: { allowPrivate: true },
+    });
+
+    await expect(readOnly.listOpenRequests?.(path, 'backlog')).resolves.toEqual({
+      requests: [
+        {
+          number: touching.number,
+          title: 'Change backlog/tasks/back-13 - Task 13.md',
+          author: owner,
+          headBranch: 'task-13',
+          webUrl: touching.html_url,
+        },
+      ],
+      truncated: false,
+      listUrl: `${baseUrl}/${path}/pulls`,
+    });
+    await expect(readOnly.listOpenRequests?.(path, 'docs')).resolves.toMatchObject({
+      requests: [{ headBranch: 'docs-only' }],
+    });
   });
 });

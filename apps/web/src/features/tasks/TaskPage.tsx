@@ -17,9 +17,12 @@ import {
   useTaskFieldKeys,
 } from '~/features/task-fields';
 import { useTaskNavigation } from '~/features/views';
+import { FileNotes, PlanSection, TaskSummary, WorkItemSection } from '~/features/work-record';
 import {
   Banner,
   Button,
+  type ChecklistHandle,
+  ClippedText,
   cn,
   Menu,
   MenuItem,
@@ -33,21 +36,25 @@ import {
 } from '~/ui';
 import { useNow } from './clock';
 import { describeError } from './errors';
-import { atTime, formatRelative, toggleCheckbox } from './format';
+import { atTime, formatDay, formatRelative, toggleCheckbox } from './format';
 import { listSearchFor } from './list-memory';
 import { Markdown } from './Markdown';
 import { backlogHistoryQuery, RemovedBanner, TaskFileBadge, useBacklogSummary } from './MirroredTask';
 import { commentPlaceholder, mirrorOf } from './mirror';
-import { membersQuery, taskQuery, timelineQuery } from './queries';
+import { membersQuery, projectsQuery, taskQuery, timelineQuery } from './queries';
 import { LockTooltip, type PropertyAnchors, TaskProperties } from './TaskPageProperties';
 import { BlockedBySection, projectOfKey, SubtasksSection } from './TaskPageRelations';
 
-// /p/$projectKey/$taskKey: the task view (frames 051–066). The header holds the crumb (the title joins
-// it once the big title scrolls away), ‹ › with "12 of 40 in List", Copy link and more. The content
-// column has the serif title (E edits), the description (D edits), Subtasks, Blocked by and the
-// history with the comment box; the properties sit on the right. J / K walk the list the task was
-// opened from; Esc goes back to it with the task selected. The task keys (S, P, A, I, L, ⇧D, ⇧M, ⇧C,
-// ⇧B, ⇧S, ⌘C, ⌘⇧C) open their pickers over the property rows.
+// /p/$projectKey/$taskKey: the task view (frames 051–066; M6 001 to 022, 047 to 050). The header holds the
+// crumb (the title joins it once the big title scrolls away), ‹ › with "12 of 40 in List", Copy link and
+// more. The content column is the work record in this order: the serif title (E edits), the final
+// summary when there is one, the description (D edits; clipped to two lines under a summary, where D
+// shows it first), acceptance criteria (⇧A adds, ⇧X focuses the first open one), definition of done,
+// the plan, Subtasks, Blocked by and the history with the comment box (M comments, N writes a note).
+// The properties sit on the right. J / K walk the list the task was opened from; Esc goes back to it
+// with the task selected. The task keys (S, P, A, I, L, ⇧D, ⇧M, ⇧C, ⇧B, ⇧S, ⌘C, ⌘⇧C) open their
+// pickers over the property rows; a person moving the task to In review or Done with open items sees
+// the finishing step first.
 
 export interface TaskPageProps {
   projectKey: string;
@@ -64,6 +71,18 @@ export function backHref(projectKey: string, taskKey: string, returnTo: string |
   url.searchParams.set('focus', taskKey);
   return `${url.pathname}${url.search}`;
 }
+
+/** The done items new tasks of the project start with, from the cached project list. */
+function useProjectDefaults(projectKey: string): readonly string[] {
+  return (
+    useQuery({
+      ...projectsQuery(),
+      select: (data) => data.items.find((item) => item.key === projectKey)?.defaultDoneItems,
+    }).data ?? NO_DEFAULTS
+  );
+}
+
+const NO_DEFAULTS: readonly string[] = [];
 
 export function TaskPage({ projectKey, taskKey }: TaskPageProps) {
   const router = useRouter();
@@ -236,8 +255,15 @@ function TaskView({
   const timeline = useQuery(timelineQuery(task.key)).data;
   const now = useNow();
   const time = atTime(formatRelative, now);
+  const day = atTime(formatDay, now);
+  const defaults = useProjectDefaults(projectKey);
   const { apply } = useFieldChange();
   const [editing, setEditing] = useState<'title' | 'description' | null>(null);
+  // Under a summary the description starts clipped to two lines; D shows it first (frame 001).
+  const hasSummary = Boolean(task.finalSummary?.trim());
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
+  const criteriaList = useRef<ChecklistHandle>(null);
+  const doneList = useRef<ChecklistHandle>(null);
   const [lockTip, setLockTip] = useState<string | null>(null);
   const [revealId, setRevealId] = useState<string | null>(null);
   const locked = new Set(task.locked ?? []);
@@ -283,7 +309,8 @@ function TaskView({
     targets: task,
     anchors: fieldAnchors,
     enabled: editing === null,
-    // Fields Backlog.md owns answer with the lock tooltip instead of a read-only picker.
+    // Fields Backlog.md owns answer with the lock tooltip instead of a read-only picker. A move to In
+    // review or Done with open items goes through the finishing warning, as everywhere else.
     onOpenField: (field) => {
       if (!ownedBy(field)) return false;
       setLockTip(field);
@@ -296,13 +323,21 @@ function TaskView({
     else setEditing(part);
   };
 
+  const isNative = locked.size === 0;
   useHotkeys(
     {
       Escape: onBack,
       j: onNext,
       k: onPrev,
       e: () => startEditing('title'),
-      d: () => startEditing('description'),
+      d: () => {
+        if (hasSummary && !descriptionOpen && task.description?.trim()) setDescriptionOpen(true);
+        else startEditing('description');
+      },
+      'Shift+a': isNative ? () => criteriaList.current?.startAdding() : null,
+      'Shift+x': () => {
+        if (!criteriaList.current?.focusFirstOpen()) doneList.current?.focusFirstOpen();
+      },
     },
     { enabled: editing === null && keys.open === null },
   );
@@ -360,11 +395,14 @@ function TaskView({
               placement="bottom start"
             />
           ) : null}
+          <TaskSummary task={task} time={time} />
           <TaskDescription
             task={task}
             boxRef={descriptionRef}
             isLocked={locked.has('description')}
             isEditing={editing === 'description'}
+            clipped={hasSummary && !descriptionOpen}
+            onExpand={setDescriptionOpen}
             onEdit={() => startEditing('description')}
             onDone={() => setEditing(null)}
             onSave={(description) => apply([task], { description })}
@@ -377,6 +415,10 @@ function TaskView({
               placement="bottom start"
             />
           ) : null}
+          <WorkItemSection task={task} kind="criterion" listRef={criteriaList} />
+          <WorkItemSection task={task} kind="done" defaults={defaults} listRef={doneList} />
+          <PlanSection key={`${task.key}:${task.status}`} task={task} day={day} />
+          <FileNotes task={task} />
           <SubtasksSection
             task={task}
             readOnly={locked.has('parent')}
@@ -404,6 +446,7 @@ function TaskView({
                 onSent={setRevealId}
                 placeholder={commentPlaceholder(mirrorInfo)}
                 hotkey={editing === null}
+                notes={!isMirrored}
               />
             }
           />
@@ -415,6 +458,9 @@ function TaskView({
         anchors={anchors}
         openField={keys.open}
         onOpenField={keys.openField}
+        defaults={defaults}
+        onFocusCriteria={() => criteriaList.current?.focusFirstOpen()}
+        onFocusDone={() => doneList.current?.focusFirstOpen()}
         lockTip={lockTip && lockTip in anchors ? (lockTip as TaskFieldKey) : null}
         onLockTipClose={() => setLockTip(null)}
         updatedBy={isMirrored ? null : lastActor}
@@ -500,6 +546,8 @@ function TaskDescription({
   boxRef,
   isLocked,
   isEditing,
+  clipped,
+  onExpand,
   onEdit,
   onDone,
   onSave,
@@ -508,6 +556,9 @@ function TaskDescription({
   boxRef: RefObject<HTMLDivElement | null>;
   isLocked: boolean;
   isEditing: boolean;
+  /** Under a summary: two lines and "Show the description". */
+  clipped: boolean;
+  onExpand: (open: boolean) => void;
   onEdit: () => void;
   onDone: () => void;
   onSave: (description: string | null) => Promise<boolean>;
@@ -576,6 +627,19 @@ function TaskDescription({
     );
   }
 
+  const markdown = (
+    <Markdown
+      source={source}
+      size="page"
+      variant={isLocked ? 'backlog' : 'default'}
+      {...(isLocked
+        ? {}
+        : {
+            onToggleCheckbox: (index: number) => void onSave(toggleCheckbox(source, index)),
+          })}
+    />
+  );
+
   return (
     // A click on the text (not on a link or a checkbox) edits it, like D.
     // biome-ignore lint/a11y/noStaticElementInteractions: D is the keyboard way to edit
@@ -589,16 +653,20 @@ function TaskDescription({
       }}
       className={cn('rounded-sm', !isLocked && 'cursor-text')}
     >
-      <Markdown
-        source={source}
-        size="page"
-        variant={isLocked ? 'backlog' : 'default'}
-        {...(isLocked
-          ? {}
-          : {
-              onToggleCheckbox: (index: number) => void onSave(toggleCheckbox(source, index)),
-            })}
-      />
+      {clipped ? (
+        <ClippedText
+          lines={2}
+          showLabel="Show the description"
+          kbd="D"
+          expanded={false}
+          onExpandedChange={onExpand}
+          contentClassName="text-lg leading-prose"
+        >
+          {markdown}
+        </ClippedText>
+      ) : (
+        markdown
+      )}
     </div>
   );
 }

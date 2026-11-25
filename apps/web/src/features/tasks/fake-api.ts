@@ -1,6 +1,7 @@
 import { ORPCError } from '@orpc/client';
 import type {
   Activity,
+  ActivityChange,
   Comment,
   Cycle,
   Label,
@@ -19,15 +20,21 @@ import type {
   TaskListPage,
   TaskOwnedField,
   TaskStatus,
+  Timeline,
+  TimelineFilter,
   TimelineItem,
+  WorkItem,
 } from '@zamu/contracts';
 import { isOpenStatus, PRIORITIES, TASK_STATUSES } from '@zamu/contracts';
+import { applyItemOps, type ItemOps, progressOf as workProgressOf } from '~/features/work-record/ops';
 
 // In-memory stand-in for the /api/v1 client, for component tests of the task screens. It follows the
 // contract's shapes and rules that the screens rely on (ordering, counts ignoring the status filter,
 // cursor pagination, and from M5 labels, due dates, blockers with loop refusal, one level of
-// subtasks, bulk changes for native tasks only). Tests replace `client` in ~/lib/orpc with
-// `createFakeApi().client`.
+// subtasks, bulk changes for native tasks only; from M6 the work record: criteria and done items with
+// their operations and history, the plan and summary with who wrote them, progress on list items, the
+// project's default done items, notes, and the timeline filter with its counts). Tests replace `client`
+// in ~/lib/orpc with `createFakeApi().client`.
 
 const ANA = '00000000-0000-4000-8000-000000000001';
 const TOMAS = '00000000-0000-4000-8000-000000000002';
@@ -70,7 +77,17 @@ interface Options {
    * backend and is due in 2 days, PAY-2 waits on PAY-3, PAY-5 is a subtask of PAY-1.
    */
   fields?: boolean;
+  /**
+   * M6 sample work record (default off, so older tests keep their tasks): the project's default done
+   * items "Tests and lint pass" and "Changelog has a line"; PAY-1 (In progress) has three open criteria,
+   * both done items open and a plan; PAY-2 (In review) has six criteria (four checked, one waived, one
+   * open), one of two done items checked, a plan, a final summary and two work notes.
+   */
+  workRecord?: boolean;
 }
+
+/** The project's default done items with `workRecord`. */
+export const FAKE_DEFAULT_DONE_ITEMS = ['Tests and lint pass', 'Changelog has a line'] as const;
 
 type Input = Record<string, unknown>;
 
@@ -79,6 +96,7 @@ export function createFakeApi({
   usesMilestones = true,
   usesCycles = true,
   fields = false,
+  workRecord = false,
 }: Options = {}) {
   const now = Date.now();
   const project = { id: '10000000-0000-4000-8000-000000000001', key: 'PAY', name: 'Payments' };
@@ -205,6 +223,67 @@ export function createFakeApi({
   }
   const activity: Activity[] = [];
   const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
+  // M6: the work record. Lists are kept as written; numbers and locks are set on the way out.
+  const defaultDoneItems: string[] = workRecord ? [...FAKE_DEFAULT_DONE_ITEMS] : [];
+  const item = (
+    text: string,
+    state: WorkItem['state'] = 'open',
+    waived?: { reason: string; by: (typeof people)[keyof typeof people] },
+  ): WorkItem => ({
+    number: 0,
+    text,
+    state,
+    waivedReason: waived?.reason ?? null,
+    waivedBy: waived?.by ?? null,
+    locked: false,
+  });
+  const numbered = (items: WorkItem[]) => items.map((entry, index) => ({ ...entry, number: index + 1 }));
+  for (const task of tasks) {
+    task.criteria = [];
+    task.doneItems = [];
+    task.plan = null;
+    task.planMeta = null;
+    task.finalSummary = null;
+    task.finalSummaryMeta = null;
+  }
+  const agentMeta = (minutesAgo: number) => ({
+    author: people.claude,
+    onBehalfOf: people.ana,
+    origin: 'app' as const,
+    at: at(minutesAgo),
+  });
+  if (workRecord) {
+    const pay1 = tasks[0];
+    if (pay1) {
+      pay1.criteria = numbered([
+        item('A failed payout is retried up to 8 times'),
+        item('Every attempt reuses the idempotency key'),
+        item('On-call is alerted once after the last attempt'),
+      ]);
+      pay1.doneItems = numbered(defaultDoneItems.map((text) => item(text)));
+      pay1.plan = '1. Store the attempt count\n2. Backoff schedule with jitter\n3. Alert on-call';
+      pay1.planMeta = agentMeta(90);
+    }
+    const pay2 = tasks[1];
+    if (pay2) {
+      pay2.criteria = numbered([
+        item('A failed payout is retried up to 8 times', 'checked'),
+        item('Every attempt reuses the idempotency key', 'checked'),
+        item('After the 8th attempt on-call is alerted once', 'checked'),
+        item('account_closed skips the retries', 'checked'),
+        item('The schedule holds under a load test', 'waived', {
+          reason: 'load test replaced by a replay',
+          by: people.ana,
+        }),
+        item('The on-call runbook describes the alert'),
+      ]);
+      pay2.doneItems = numbered([item('Tests and lint pass', 'checked'), item('Changelog has a line')]);
+      pay2.plan = '1. Store the attempt count\n2. Backoff schedule with jitter';
+      pay2.planMeta = agentMeta(600);
+      pay2.finalSummary = 'Failed payouts now retry on a backoff schedule.\n\nStill open: the runbook entry.';
+      pay2.finalSummaryMeta = agentMeta(120);
+    }
+  }
   const comments: Comment[] = [
     {
       id: '70000000-0000-4000-8000-000000000001',
@@ -251,6 +330,47 @@ export function createFakeApi({
       deletedAt: null,
     },
   ];
+
+  if (workRecord) {
+    comments.push(
+      {
+        id: '70000000-0000-4000-8000-000000000010',
+        taskKey: 'PAY-2',
+        author: people.claude,
+        onBehalfOf: people.ana,
+        body: 'Backoff schedule is in. Jitter now applies after the cap.',
+        mentions: [],
+        kind: 'note',
+        source: { machine: 'laptop', branch: 'feat/payout-retries' },
+        createdAt: at(300),
+        editedAt: null,
+        deletedAt: null,
+      },
+      {
+        id: '70000000-0000-4000-8000-000000000011',
+        taskKey: 'PAY-2',
+        author: people.claude,
+        onBehalfOf: people.ana,
+        body: 'Summary written. The runbook entry is still to do (criterion 6).',
+        mentions: [],
+        kind: 'note',
+        source: null,
+        createdAt: at(110),
+        editedAt: null,
+        deletedAt: null,
+      },
+    );
+    activity.push({
+      id: '40000000-0000-4000-8000-000000000200',
+      type: 'task.updated',
+      taskKey: 'PAY-2',
+      actor: people.claude,
+      onBehalfOf: people.ana,
+      changes: [{ field: 'criterion.checked', number: 2, text: 'Every attempt reuses the idempotency key' }],
+      source: { machine: 'laptop', branch: 'feat/payout-retries' },
+      createdAt: at(200),
+    });
+  }
 
   /** M3: the project's Backlog.md summary and project-level history (see `mirrorTask`). */
   const mirror = {
@@ -305,6 +425,20 @@ export function createFakeApi({
     });
   const sortLabels = (list: Label[]) =>
     [...list].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  /** M6: the lists numbered and locked while Backlog.md owns the task, the texts and who wrote them. */
+  const workRecordOf = (task: Task) => {
+    const locked = (task.locked?.length ?? 0) > 0;
+    const out = (items: WorkItem[] | undefined) =>
+      (items ?? []).map((entry, index) => ({ ...entry, number: index + 1, locked }));
+    return {
+      criteria: out(task.criteria),
+      doneItems: out(task.doneItems),
+      plan: task.plan ?? null,
+      planMeta: task.plan ? (task.planMeta ?? null) : null,
+      finalSummary: task.finalSummary ?? null,
+      finalSummaryMeta: task.finalSummary ? (task.finalSummaryMeta ?? null) : null,
+    };
+  };
   /** The task with its M5 relations, as tasks.get answers. */
   const full = (task: Task): Task => {
     const parentKey = parents.get(task.key);
@@ -320,6 +454,7 @@ export function createFakeApi({
         .filter(([, list]) => list.includes(task.key))
         .map(([key]) => relatedOrNull(key)),
       blocked: isBlocked(task.key),
+      ...workRecordOf(task),
     };
   };
   const listItem = (task: Task): TaskListItem => {
@@ -331,9 +466,21 @@ export function createFakeApi({
       subtasks: _s,
       blockedBy: _b,
       blocks: _r,
-      ...item
+      criteria,
+      doneItems,
+      plan: _plan,
+      planMeta: _planMeta,
+      finalSummary,
+      finalSummaryMeta: _summaryMeta,
+      ...row
     } = full(task);
-    return { ...item, parentKey: parents.get(task.key) ?? null };
+    return {
+      ...row,
+      parentKey: parents.get(task.key) ?? null,
+      criteriaProgress: workProgressOf(criteria),
+      doneProgress: workProgressOf(doneItems),
+      hasFinalSummary: Boolean(finalSummary),
+    };
   };
   const rank = (task: Task) => TASK_STATUSES.indexOf(task.status);
   const sorted = () =>
@@ -491,6 +638,112 @@ export function createFakeApi({
     blockers.set(task.key, [...current, blocker.key]);
   };
   const personById = (id: string) => Object.values(people).find((candidate) => candidate.id === id);
+
+  // ── M6: the work record ──
+  const LISTS = [
+    ['Criteria', 'criteria', 'criterion'],
+    ['DoneItems', 'doneItems', 'doneItem'],
+  ] as const;
+  const OPERATIONS = ['add', 'check', 'uncheck', 'waive', 'unwaive', 'edit', 'move', 'remove'] as const;
+  const opsOf = (input: Input, suffix: string): ItemOps | null => {
+    const ops: Record<string, unknown> = {};
+    for (const name of OPERATIONS)
+      if (input[`${name}${suffix}`] !== undefined) ops[name] = input[`${name}${suffix}`];
+    return Object.keys(ops).length ? (ops as ItemOps) : null;
+  };
+  const touchesWorkRecord = (input: Input) =>
+    LISTS.some(([suffix]) => opsOf(input, suffix) != null) ||
+    input.plan !== undefined ||
+    input.finalSummary !== undefined;
+  const invalid = (message: string) =>
+    new ORPCError('UNPROCESSABLE_CONTENT', {
+      status: 422,
+      message,
+      data: { issues: [{ path: '', message }] },
+    });
+  /** The history changes of one list's operations, as the server records them. */
+  const itemChanges = (prefix: 'criterion' | 'doneItem', before: WorkItem[], ops: ItemOps) => {
+    const text = (number: number) => before[number - 1]?.text ?? '';
+    const changes: Record<string, unknown>[] = [];
+    for (const edit of ops.edit ?? [])
+      changes.push({
+        field: `${prefix}.edited`,
+        number: edit.number,
+        text: edit.text,
+        from: text(edit.number),
+      });
+    for (const number of ops.check ?? [])
+      changes.push({ field: `${prefix}.checked`, number, text: text(number) });
+    for (const number of ops.uncheck ?? [])
+      changes.push({ field: `${prefix}.unchecked`, number, text: text(number) });
+    for (const waive of ops.waive ?? [])
+      changes.push({
+        field: `${prefix}.waived`,
+        number: waive.number,
+        text: text(waive.number),
+        reason: waive.reason,
+      });
+    for (const number of ops.unwaive ?? [])
+      changes.push({ field: `${prefix}.unwaived`, number, text: text(number) });
+    for (const number of ops.remove ?? [])
+      changes.push({ field: `${prefix}.removed`, number, text: text(number) });
+    for (const move of ops.move ?? [])
+      changes.push({ field: `${prefix}.moved`, text: text(move.from), from: move.from, to: move.to });
+    const kept = before.length - (ops.remove?.length ?? 0);
+    (ops.add ?? []).forEach((added, index) => {
+      changes.push({ field: `${prefix}.added`, number: kept + index + 1, text: added });
+    });
+    return changes as ActivityChange[];
+  };
+  /** Applies the work-record part of a task write and records its history. */
+  const applyWorkRecord = (task: Task, input: Input) => {
+    if (!touchesWorkRecord(input)) return;
+    if ((task.locked?.length ?? 0) > 0) {
+      throw new ORPCError('TASK_MIRRORED', {
+        status: 409,
+        message: 'The work record comes from Backlog.md',
+        data: { field: 'criteria' },
+      });
+    }
+    const changes: ActivityChange[] = [];
+    for (const [suffix, key, prefix] of LISTS) {
+      const ops = opsOf(input, suffix);
+      if (!ops) continue;
+      const before = task[key] ?? [];
+      const numbers = [
+        ...(ops.check ?? []),
+        ...(ops.uncheck ?? []),
+        ...(ops.unwaive ?? []),
+        ...(ops.remove ?? []),
+        ...(ops.waive ?? []).map((waive) => waive.number),
+        ...(ops.edit ?? []).map((edit) => edit.number),
+      ];
+      const missing = numbers.find((number) => number < 1 || number > before.length);
+      if (missing !== undefined) throw invalid(`There is no item ${missing}`);
+      changes.push(...itemChanges(prefix, before, ops));
+      task[key] = applyItemOps(before, ops, people.ana);
+    }
+    for (const field of ['plan', 'finalSummary'] as const) {
+      if (input[field] === undefined) continue;
+      const value = (input[field] as string | null) || null;
+      changes.push({ field, from: task[field] ?? null, to: value });
+      task[field] = value;
+      const meta = value
+        ? { author: people.ana, onBehalfOf: null, origin: 'app' as const, at: new Date().toISOString() }
+        : null;
+      if (field === 'plan') task.planMeta = meta;
+      else task.finalSummaryMeta = meta;
+    }
+    activity.push({
+      id: `40000000-0000-4000-8000-${String(1000 + activity.length).padStart(12, '0')}`,
+      type: 'task.updated',
+      taskKey: task.key,
+      actor: people.ana,
+      onBehalfOf: null,
+      changes,
+      createdAt: new Date().toISOString(),
+    });
+  };
   /** The plain fields of a task write (update and bulk). */
   const applyFields = (task: Task, input: Input) => {
     if (typeof input.title === 'string') task.title = input.title;
@@ -557,6 +810,7 @@ export function createFakeApi({
               lastActivityAt: new Date(now).toISOString(),
               assignees: [],
               backlog: mirror.summary,
+              defaultDoneItems: [...defaultDoneItems],
             },
           ],
         };
@@ -663,6 +917,7 @@ export function createFakeApi({
             (blockers.get(task.key) ?? []).filter((key) => !removed.has(key)),
           );
         }
+        applyWorkRecord(task, input);
         applyFields(task, input);
         task.updatedAt = new Date().toISOString();
         return structuredClone(full(task));
@@ -688,7 +943,7 @@ export function createFakeApi({
         }
         return structuredClone({ items: targets.map(listItem) });
       },
-      timeline: async (input: Input): Promise<{ items: TimelineItem[] }> => {
+      timeline: async (input: Input): Promise<Timeline> => {
         const task = find(input.key);
         const items: TimelineItem[] = [
           // Tasks of a Backlog.md first read have no "created" entry: the project-level one stands in.
@@ -711,10 +966,32 @@ export function createFakeApi({
             .map((item) => ({ ...item, kind: 'activity' as const })),
           ...comments
             .filter((item) => item.taskKey === task.key)
-            .map((item) => ({ ...item, kind: 'comment' as const })),
+            .map((item) =>
+              item.kind === 'note'
+                ? { ...item, kind: 'note' as const }
+                : { ...item, kind: 'comment' as const },
+            ),
         ];
         items.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-        return structuredClone({ items });
+        const count = (kind: TimelineItem['kind']) => items.filter((item) => item.kind === kind).length;
+        const counts = {
+          all: items.length,
+          comments: count('comment'),
+          notes: count('note'),
+          history: count('activity'),
+        };
+        const show = (input.show as TimelineFilter | undefined) ?? 'all';
+        const kinds: Record<TimelineFilter, TimelineItem['kind'] | null> = {
+          all: null,
+          comments: 'comment',
+          notes: 'note',
+          history: 'activity',
+        };
+        const wanted = kinds[show];
+        return structuredClone({
+          items: wanted ? items.filter((item) => item.kind === wanted) : items,
+          counts,
+        });
       },
       create: async (input: Input): Promise<Task> => {
         calls.create.push(input);
@@ -752,6 +1029,20 @@ export function createFakeApi({
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
+        const given = (value: unknown) => (Array.isArray(value) ? (value as string[]) : []);
+        const defaults = input.skipDefaultDoneItems === true ? [] : defaultDoneItems;
+        task.criteria = numbered(given(input.criteria).map((text) => item(text)));
+        task.doneItems = numbered(
+          [...defaults, ...given(input.doneItems).filter((text) => !defaults.includes(text))].map((text) =>
+            item(text),
+          ),
+        );
+        task.plan = typeof input.plan === 'string' && input.plan ? input.plan : null;
+        task.planMeta = task.plan
+          ? { author: people.ana, onBehalfOf: null, origin: 'app', at: task.createdAt }
+          : null;
+        task.finalSummary = null;
+        task.finalSummaryMeta = null;
         tasks.push(task);
         if (Array.isArray(input.labels)) task.labels = resolveLabels(input.labels as string[]);
         if (parentTask) parents.set(task.key, parentTask.key);
@@ -822,12 +1113,22 @@ export function createFakeApi({
           throw new ORPCError('INTERNAL_SERVER_ERROR', { status: 500, message: 'boom' });
         }
         const task = find(input.key);
+        const kind = input.kind === 'note' ? 'note' : 'comment';
+        if (kind === 'note' && (task.locked?.length ?? 0) > 0) {
+          throw new ORPCError('TASK_MIRRORED', {
+            status: 409,
+            message: 'Notes of a mirrored task come from Backlog.md',
+            data: { field: 'notes' },
+          });
+        }
         const comment: Comment = {
           id: `70000000-0000-4000-8000-${String(100 + comments.length).padStart(12, '0')}`,
           taskKey: task.key,
           author: people.ana,
           onBehalfOf: null,
           body: String(input.body),
+          kind,
+          source: null,
           mentions: String(input.body).includes(`mention:${CLAUDE}`) ? [people.claude] : [],
           createdAt: new Date().toISOString(),
           editedAt: null,
@@ -881,6 +1182,8 @@ export function createFakeApi({
     cycles,
     mirror,
     labels,
+    /** M6: the done items new tasks start with; tests may change them. */
+    defaultDoneItems,
     /** M5 relations by task key: the keys each task waits on, and the parent of each subtask. */
     blockers,
     parents,

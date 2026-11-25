@@ -1,5 +1,6 @@
 // Field pickers and mutations (M5-09): wired pickers for one task or a selection, the change toast
-// with Undo, and the task keys with their palette commands. Screens import from here.
+// with Undo, the finishing warning before In review and Done (M6), and the task keys with their
+// palette commands. Screens import from here.
 
 export { AssigneeMenu, type AssigneeMenuProps, AssigneePicker, toAssigneeRef } from './AssigneePicker';
 export { type ApplyOptions, type FieldChange, failureText, useFieldChange } from './apply';
@@ -22,6 +23,15 @@ export {
   relativeDay,
 } from './dates';
 export { describeChange, listWords } from './describe';
+export {
+  confirmFinishing,
+  type FinishingRequest,
+  finishingRequest,
+  hasOpenItems,
+  registerFinishingHost,
+  settleFinishing,
+  useFinishingRequest,
+} from './finishing';
 export {
   LabelMenu,
   type LabelMenuProps,

@@ -8,7 +8,6 @@ import {
   parseRepositoryUrl,
   toProblemIssues,
 } from '@zamu/contracts';
-import { createApiClient } from '../client';
 import {
   configPath,
   DEFAULT_URL,
@@ -18,10 +17,11 @@ import {
   readConfig,
   writeConfig,
 } from '../config';
-import { type CommandContext, emit } from '../context';
+import { apiClient, type CommandContext, emit } from '../context';
 import { usageError } from '../errors';
 import { fields, personLabel, scopeLabel } from '../format';
 import { resolveProject } from '../project';
+import { countQueued } from '../queue';
 
 export interface LoginOptions {
   key: string;
@@ -46,7 +46,19 @@ function projectLabel(context: CommandContext, project: CliResolvedProject | nul
   return `${project.key} (from ${from})`;
 }
 
-function meFields(context: CommandContext, me: Me, url: string, project?: CliResolvedProject | null): string {
+/** "2 writes wait for the server (zamu queue)", for whoami (M6). */
+function queuedLabel(queued: number): string {
+  if (queued === 0) return 'nothing';
+  return `${queued === 1 ? '1 write waits' : `${queued} writes wait`} for the server (zamu queue)`;
+}
+
+function meFields(
+  context: CommandContext,
+  me: Me,
+  url: string,
+  project?: CliResolvedProject | null,
+  queued?: number,
+): string {
   return fields(
     [
       ['Workspace', me.workspace.name],
@@ -54,6 +66,7 @@ function meFields(context: CommandContext, me: Me, url: string, project?: CliRes
       ['Access', me.auth.scope ? `API key: ${scopeLabel(me.auth.scope)}` : 'Session: full member rights'],
       ['Server', url],
       ...(project === undefined ? [] : [['Project', projectLabel(context, project)] as [string, string]]),
+      ...(queued === undefined ? [] : [['Queued', queuedLabel(queued)] as [string, string]]),
     ],
     context.style,
   );
@@ -72,7 +85,7 @@ export async function login(context: CommandContext, options: LoginOptions): Pro
   const url = normalizeUrl(options.url ?? (io.env.ZAMU_URL || stored?.url || DEFAULT_URL));
   context.url = url;
 
-  const client = createApiClient({ url, key: parsedKey.data, ...(io.fetch ? { fetch: io.fetch } : {}) });
+  const client = await apiClient(io, { url, key: parsedKey.data });
   const me = MeSchema.parse(await client.me.get());
   const path = await writeConfig(io, { url, key: parsedKey.data });
 
@@ -103,10 +116,13 @@ export async function whoami(context: CommandContext): Promise<void> {
   const me = await client.me.get();
   const url = context.url as string;
   const project = await resolveProject(context);
+  // Counted after the client sent what it could: what still waits for this server.
+  const queued = await countQueued(context.io, url).catch(() => undefined);
   emit(
     context,
     'whoami',
-    { ...me, project },
-    (data) => `${context.style.bold(whoLine(data))}\n${meFields(context, data, url, data.project ?? null)}`,
+    { ...me, project, ...(queued === undefined ? {} : { queued }) },
+    (data) =>
+      `${context.style.bold(whoLine(data))}\n${meFields(context, data, url, data.project ?? null, data.queued)}`,
   );
 }

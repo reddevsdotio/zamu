@@ -474,7 +474,8 @@ export const BACKLOG_ACTOR_NAME = 'Backlog.md';
 
 /**
  * Task fields Backlog.md owns while the project mirrors. Contract field names. M5 adds labels,
- * dueDate, blockedBy and parent (filled from the files on refresh).
+ * dueDate, blockedBy and parent (filled from the files on refresh). M6 adds the work record:
+ * criteria, doneItems, plan and finalSummary (every item operation on them is refused).
  */
 export const TASK_OWNED_FIELDS = [
   'title',
@@ -488,6 +489,10 @@ export const TASK_OWNED_FIELDS = [
   'dueDate',
   'blockedBy',
   'parent',
+  'criteria',
+  'doneItems',
+  'plan',
+  'finalSummary',
 ] as const;
 export const TaskOwnedField = z.enum(TASK_OWNED_FIELDS);
 export type TaskOwnedField = z.infer<typeof TaskOwnedField>;

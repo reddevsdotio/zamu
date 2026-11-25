@@ -9,6 +9,9 @@ import {
   type BlobRef,
   GitNotFound,
   type GitProvider,
+  isUnderFolder,
+  type OpenRequest,
+  type OpenRequestList,
   type ProviderKind,
   type TreeEntry,
   verifyWebhook,
@@ -40,6 +43,9 @@ export function blobSha(text: string): string {
 export class FakeRepository {
   readonly path: string;
   defaultBranch = 'main';
+  /** M6: open requests listOpenRequests serves, and whether that list was cut. */
+  openRequests: FakeOpenRequest[] = [];
+  openRequestsTruncated = false;
   readonly #blobs = new Map<string, string>();
   readonly #commits = new Map<string, Map<string, string>>();
   #working = new Map<string, string>();
@@ -125,6 +131,12 @@ export interface ProviderCalls {
   listTree: number;
   readBlob: number;
   readFile: number;
+  listOpenRequests: number;
+}
+
+/** M6: an open request of a FakeRepository and the files it changes. */
+export interface FakeOpenRequest extends OpenRequest {
+  files: string[];
 }
 
 /** A GitProvider over FakeRepository instances keyed by repository path. */
@@ -140,6 +152,7 @@ export class FakeProvider implements GitProvider {
     listTree: 0,
     readBlob: 0,
     readFile: 0,
+    listOpenRequests: 0,
   };
   /** Thrown by the next call (any method) when set; cleared after throwing unless `failAlways`. */
   failWith: Error | null = null;
@@ -222,6 +235,18 @@ export class FakeProvider implements GitProvider {
     const tree = repo.tree(ref === repo.defaultBranch ? repo.head : ref);
     const sha = tree.get(filePath);
     return sha ? { content: repo.blob(sha), blobSha: sha } : null;
+  }
+
+  async listOpenRequests(path: string, folder: string): Promise<OpenRequestList> {
+    this.#call('listOpenRequests');
+    const repo = this.#repo(path);
+    return {
+      requests: repo.openRequests
+        .filter((request) => request.files.some((file) => isUnderFolder(file, folder)))
+        .map(({ files: _files, ...request }) => request),
+      truncated: repo.openRequestsTruncated,
+      listUrl: `${this.webBaseUrl}/${repo.path}/-/merge_requests`,
+    };
   }
 
   fileUrl(path: string, branch: string, filePath: string) {

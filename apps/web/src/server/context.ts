@@ -3,7 +3,9 @@
 // helpers, the /api/v1 handler, server functions, the webhook route and server-side oRPC calls all
 // share it.
 // Framework-free on purpose: tests and scripts import it without TanStack Start.
+// M6: requestSource reads the machine and branch the CLI sends with every request into the actor.
 import { type Auth, createAuth } from '@zamu/auth';
+import { type EntrySource, parseSourceHeader, SOURCE_HEADERS } from '@zamu/contracts';
 import type { CoreContext } from '@zamu/core';
 import { createDb, type Db, type DbHandle } from '@zamu/db';
 import { readServerConfig, type ServerEnv } from './config';
@@ -42,6 +44,17 @@ export function createServerContext(env: ServerEnv = process.env): ServerContext
     ...(config.encryptionKey ? { encryptionKey: config.encryptionKey } : {}),
     gitHosts: config.gitHosts,
   };
+}
+
+/**
+ * M6: the machine and branch of a request, from the CLI's x-zamu-machine and x-zamu-branch headers
+ * (trimmed, cut to 100 characters, dropped when empty or holding control characters). Undefined
+ * when neither is usable: the web app sends neither.
+ */
+export function requestSource(headers: Headers): EntrySource | undefined {
+  const machine = parseSourceHeader(headers.get(SOURCE_HEADERS.machine));
+  const branch = parseSourceHeader(headers.get(SOURCE_HEADERS.branch));
+  return machine === null && branch === null ? undefined : { machine, branch };
 }
 
 const globalKey = Symbol.for('zamu.web.serverContext');

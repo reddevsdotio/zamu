@@ -1,5 +1,7 @@
 // Gitea and Forgejo, API v1. Checked against the Forgejo 17 swagger (codeberg.org/swagger.v1.json)
-// and its source (services/repository/files/tree.go).
+// and its source (services/repository/files/tree.go). Pull request lists and their changed files
+// (repos/{owner}/{repo}/pulls, pulls/{index}/files) page with page and limit; the server caps limit
+// at [api] MAX_RESPONSE_ITEMS (50 by default) and sends the total in X-Total-Count.
 //
 // Tree listings are paged with page and per_page; the server caps per_page at
 // [api] DEFAULT_GIT_TREES_PER_PAGE (1000 by default). Forgejo sets `truncated` to true on every page
@@ -9,12 +11,24 @@
 import { GitNotFound, GitUnauthorized, GitUnexpected } from './errors';
 import { type FetchTree, listTreeByWalk, type RawTreeEntry, rawEntry, readFileByWalk } from './git-trees';
 import { asArray, asRecord, decodeBase64, encodeSegments, type HttpClient, stringField } from './http';
+import { changedPaths, loginOf, requestsUnderFolder } from './open-requests';
 import { repoSegments } from './paths';
-import type { FileContent, GitProvider, RepositoryInfo, TreeEntry, Whoami } from './types';
+import {
+  type FileContent,
+  type GitProvider,
+  MAX_OPEN_REQUESTS,
+  type OpenRequest,
+  type OpenRequestList,
+  type RepositoryInfo,
+  type TreeEntry,
+  type Whoami,
+} from './types';
 import { verifyWebhook } from './webhooks';
 
 const TREE_PAGE_SIZE = 1000;
 const MAX_TREE_PAGES = 10_000;
+/** Page size for pull requests and their files: Forgejo's default MAX_RESPONSE_ITEMS. */
+const PULL_PAGE_SIZE = 50;
 
 export class GiteaProvider implements GitProvider {
   readonly provider = 'gitea' as const;
@@ -102,6 +116,63 @@ export class GiteaProvider implements GitProvider {
 
   readFile(path: string, ref: string, filePath: string): Promise<FileContent | null> {
     return readFileByWalk(this.fetchTree(path), (sha) => this.readBlob(path, sha), ref, filePath);
+  }
+
+  async listOpenRequests(path: string, folder: string): Promise<OpenRequestList> {
+    const requests: OpenRequest[] = [];
+    let more = false;
+    // Newest first (the default order), until MAX_OPEN_REQUESTS are in or a page comes back short.
+    for (let page = 1; requests.length < MAX_OPEN_REQUESTS; page++) {
+      const { data, response } = await this.http.getJson(
+        this.http.url(`${this.repo(path)}/pulls`, { state: 'open', page, limit: PULL_PAGE_SIZE }),
+      );
+      const entries = asArray(data, 'pull request list');
+      for (const value of entries) {
+        const pull = asRecord(value, 'pull request');
+        const number = pull.number;
+        if (typeof number !== 'number') {
+          throw new GitUnexpected('The provider sent a pull request without a number.');
+        }
+        requests.push({
+          number,
+          title: typeof pull.title === 'string' ? pull.title : '',
+          author: loginOf(pull.user, 'login'),
+          headBranch: stringField(asRecord(pull.head, 'pull request head'), 'ref', 'a pull request head'),
+          webUrl: stringField(pull, 'html_url', 'a pull request'),
+        });
+      }
+      const total = Number(response.headers.get('x-total-count'));
+      const known = response.headers.has('x-total-count') && Number.isFinite(total);
+      if (known && total <= requests.length) break;
+      if (entries.length === 0 || (!known && entries.length < PULL_PAGE_SIZE)) break;
+      if (requests.length >= MAX_OPEN_REQUESTS) {
+        more = known ? total > MAX_OPEN_REQUESTS : true;
+        break;
+      }
+    }
+    return requestsUnderFolder(
+      {
+        requests,
+        more,
+        listUrl: `${this.webBaseUrl}/${repoSegments(path, false).join('/')}/pulls`,
+      },
+      folder,
+      async (request) => {
+        const { data, response } = await this.http.getJson(
+          this.http.url(`${this.repo(path)}/pulls/${request.number}/files`, {
+            page: 1,
+            limit: PULL_PAGE_SIZE,
+          }),
+        );
+        const entries = asArray(data, 'pull request file list');
+        const total = Number(response.headers.get('x-total-count'));
+        const more =
+          response.headers.has('x-total-count') && Number.isFinite(total)
+            ? total > entries.length
+            : entries.length >= PULL_PAGE_SIZE;
+        return { paths: changedPaths(entries, ['filename', 'previous_filename']), more };
+      },
+    );
   }
 
   fileUrl(path: string, branch: string, filePath: string): string {

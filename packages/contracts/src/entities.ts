@@ -150,6 +150,11 @@ export const Project = z.object({
    * unless the project mirrors Backlog.md.
    */
   locked: z.array(ProjectOwnedField).optional(),
+  /**
+   * M6: done items every new task starts with, in order (unless created with skipDefaultDoneItems).
+   * Changing them leaves existing tasks alone. Optional in the type like the M3 fields; missing reads as [].
+   */
+  defaultDoneItems: z.array(z.string()).optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 });
@@ -231,6 +236,12 @@ export const BacklogBlock = z.object({
   ordinal: z.number().nullable().default(null),
   /** Frontmatter keys the parser does not know, kept as read. */
   other: z.record(z.string(), z.unknown()).default({}),
+  /**
+   * M6: the Implementation notes section as written, markers stripped and trimmed; null when the
+   * file has none. Shown as one read-only block. Criteria, done items, plan and final summary have
+   * their own columns.
+   */
+  implementationNotes: z.string().nullable().default(null),
 });
 export type BacklogBlock = z.output<typeof BacklogBlock>;
 
@@ -332,6 +343,112 @@ export const SubtaskProgress = z
 export type SubtaskProgress = z.output<typeof SubtaskProgress>;
 
 // ---------------------------------------------------------------------------
+// Work record (M6): criteria, done items, plan, final summary, and where a change came from
+// ---------------------------------------------------------------------------
+
+/** Most acceptance criteria on one task, and most done items (each list on its own). */
+export const MAX_WORK_ITEMS = 50;
+/** Longest criterion, done item or waiver reason, in characters after trimming. One line each. */
+export const MAX_WORK_ITEM_LENGTH = 500;
+/** Longest plan or final summary, in characters. */
+export const MAX_WORK_TEXT_LENGTH = 50_000;
+
+/** criterion: an acceptance criterion. done: a definition-of-done item. */
+export const WORK_ITEM_KINDS = ['criterion', 'done'] as const;
+export const WorkItemKind = z.enum(WORK_ITEM_KINDS);
+export type WorkItemKind = z.infer<typeof WorkItemKind>;
+
+/** An item stays open until someone checks it, or waives it with a reason. */
+export const WORK_ITEM_STATES = ['open', 'checked', 'waived'] as const;
+export const WorkItemState = z.enum(WORK_ITEM_STATES);
+export type WorkItemState = z.infer<typeof WorkItemState>;
+
+/** An item's number: its position in its list, counted from 1, as in Backlog.md. */
+export const WorkItemNumber = z.number().int().min(1).max(MAX_WORK_ITEMS);
+
+/**
+ * One acceptance criterion or done item. Numbers follow the order of the list and change when
+ * items are removed or moved; history entries keep the text, so they still read right.
+ */
+export const WorkItem = z
+  .object({
+    number: z.number().int().positive(),
+    text: z.string(),
+    state: WorkItemState,
+    /** Set while waived, null otherwise. */
+    waivedReason: z.string().nullable(),
+    /** Who waived it; null when not waived, or when the waiver came from a Backlog.md file. */
+    waivedBy: UserRef.nullable(),
+    /** The item comes from a mirrored Backlog.md file: writes fail with TASK_MIRRORED. */
+    locked: z.boolean(),
+  })
+  .refine((item) => (item.state === 'waived') === (item.waivedReason !== null), {
+    message: 'waivedReason is set exactly while the item is waived',
+    path: ['waivedReason'],
+  });
+export type WorkItem = z.output<typeof WorkItem>;
+
+/**
+ * Counts of one list on rows, cards and the peek: settled is checked plus waived, waived counts
+ * the waived ones among them, open is the rest. A task without items has total 0; the UI shows
+ * nothing then.
+ */
+export const WorkItemProgress = z
+  .object({
+    settled: z.number().int().nonnegative(),
+    open: z.number().int().nonnegative(),
+    waived: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  })
+  .refine((progress) => progress.settled + progress.open === progress.total, {
+    message: 'settled and open add up to total',
+    path: ['total'],
+  })
+  .refine((progress) => progress.waived <= progress.settled, {
+    message: 'waived items are settled, so waived cannot be above settled',
+    path: ['waived'],
+  });
+export type WorkItemProgress = z.output<typeof WorkItemProgress>;
+
+/**
+ * Who last wrote the plan or the final summary, and when: the latest activity change of the field.
+ * author null with origin backlog: the Backlog.md file.
+ */
+export const WorkTextMeta = z.object({
+  author: UserRef.nullable(),
+  /** The agent's responsible human when an agent wrote it; null for people. */
+  onBehalfOf: UserRef.nullable(),
+  origin: ActivityOrigin.default('app'),
+  at: Timestamp,
+});
+export type WorkTextMeta = z.output<typeof WorkTextMeta>;
+
+/** Request headers the CLI sets on every call; the web app sends neither. */
+export const SOURCE_HEADERS = { machine: 'x-zamu-machine', branch: 'x-zamu-branch' } as const;
+/** Longest machine or branch name kept, in characters. */
+export const MAX_SOURCE_LENGTH = 100;
+
+/**
+ * Reads one source header: trimmed, cut to MAX_SOURCE_LENGTH characters; null when missing, empty,
+ * or holding control characters. A bad header never fails the request.
+ */
+export function parseSourceHeader(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed || /\p{Cc}/u.test(trimmed)) return null;
+  return [...trimmed].slice(0, MAX_SOURCE_LENGTH).join('').trimEnd();
+}
+
+/**
+ * Where a history entry or a note came from: the machine and git branch the CLI ran on. Entries
+ * written without the headers (the web app, jobs, Backlog.md refreshes) carry null instead.
+ */
+export const EntrySource = z.object({
+  machine: z.string().nullable(),
+  branch: z.string().nullable(),
+});
+export type EntrySource = z.output<typeof EntrySource>;
+
+// ---------------------------------------------------------------------------
 // Tasks
 // ---------------------------------------------------------------------------
 
@@ -387,6 +504,20 @@ export const Task = z.object({
   blocks: z.array(RelatedTask.nullable()).optional(),
   /** M5: at least one blocker is open (not Done or Canceled). Display only: status changes are never refused. */
   blocked: z.boolean().optional(),
+  // M6 fields are optional in the type, so shapes built before M6 (fixtures, fakes) stay valid.
+  // Servers from M6 on always send them; read a missing list as [] and a missing text or meta as null.
+  /** M6: acceptance criteria, by number. */
+  criteria: z.array(WorkItem).optional(),
+  /** M6: definition-of-done items, by number. New tasks start with the project's defaultDoneItems. */
+  doneItems: z.array(WorkItem).optional(),
+  /** M6: the implementation plan, Markdown; null when none. */
+  plan: z.string().nullable().optional(),
+  /** M6: who last wrote the plan and when; null without a plan. */
+  planMeta: WorkTextMeta.nullable().optional(),
+  /** M6: the final summary, Markdown; null when none. */
+  finalSummary: z.string().nullable().optional(),
+  /** M6: who last wrote the final summary and when; null without one. */
+  finalSummaryMeta: WorkTextMeta.nullable().optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 });
@@ -422,6 +553,12 @@ export const TaskListItem = Task.pick({
   commentCount: z.number().int().nonnegative().optional(),
   /** M5: the parent's key for subtasks (nesting in the list, hiding on the board); null for top-level tasks. */
   parentKey: TaskKey.nullable().optional(),
+  /** M6: acceptance criteria counts; missing reads as no criteria (total 0). */
+  criteriaProgress: WorkItemProgress.optional(),
+  /** M6: done item counts; missing reads as none (total 0). */
+  doneProgress: WorkItemProgress.optional(),
+  /** M6: the task has a final summary (the peek opens on it). Missing reads as false. */
+  hasFinalSummary: z.boolean().optional(),
 });
 export type TaskListItem = z.output<typeof TaskListItem>;
 
@@ -650,11 +787,61 @@ export const ActivityTaskRef = z.object({
 });
 export type ActivityTaskRef = z.output<typeof ActivityTaskRef>;
 
+/** The prefix of a work-item change: criterion.checked, doneItem.waived, ... */
+export const WORK_ITEM_CHANGE_PREFIXES = {
+  criterion: 'criterion',
+  done: 'doneItem',
+} as const satisfies Record<WorkItemKind, string>;
+
+/** What can happen to a criterion or done item. Each one is a change kind of its own. */
+export const WORK_ITEM_OPERATIONS = [
+  'added',
+  'edited',
+  'moved',
+  'removed',
+  'checked',
+  'unchecked',
+  'waived',
+  'unwaived',
+] as const;
+export type WorkItemOperation = (typeof WORK_ITEM_OPERATIONS)[number];
+
+/**
+ * M6: the eight changes of one item list. Every change carries the item's text at the time, so the
+ * entry reads right after a reorder ("checked criterion 2: Refunds post a ledger entry").
+ *   added      number: where it went in (the end, unless moved in the same write).
+ *   edited     number, text: the new text; from: the old text.
+ *   moved      text; from and to: the numbers before and after.
+ *   removed    number: the number it had.
+ *   checked, unchecked, unwaived: number.
+ *   waived     number, reason.
+ */
+function workItemChanges<P extends string>(prefix: P) {
+  const at = { number: z.number().int().positive(), text: z.string() };
+  return [
+    z.object({ field: z.literal(`${prefix}.added` as `${P}.added`), ...at }),
+    z.object({ field: z.literal(`${prefix}.edited` as `${P}.edited`), ...at, from: z.string() }),
+    z.object({
+      field: z.literal(`${prefix}.moved` as `${P}.moved`),
+      text: z.string(),
+      from: z.number().int().positive(),
+      to: z.number().int().positive(),
+    }),
+    z.object({ field: z.literal(`${prefix}.removed` as `${P}.removed`), ...at }),
+    z.object({ field: z.literal(`${prefix}.checked` as `${P}.checked`), ...at }),
+    z.object({ field: z.literal(`${prefix}.unchecked` as `${P}.unchecked`), ...at }),
+    z.object({ field: z.literal(`${prefix}.waived` as `${P}.waived`), ...at, reason: z.string() }),
+    z.object({ field: z.literal(`${prefix}.unwaived` as `${P}.unwaived`), ...at }),
+  ] as const;
+}
+
 /**
  * One field change. The API resolves the assignee, milestone and cycle to references; the
  * database row stores ids, and core resolves them when reading. M5 adds labels, dueDate, blockedBy
  * and parent; labels and blockedBy record the whole list before and after (sorted by name and by
- * key), so the UI diffs them for "added payouts, removed backend".
+ * key), so the UI diffs them for "added payouts, removed backend". M6 adds the eight item changes
+ * of criteria (criterion.*) and done items (doneItem.*), and plan and finalSummary with the text
+ * before and after.
  */
 export const ActivityChange = z.discriminatedUnion('field', [
   z.object({ field: z.literal('title'), from: z.string().nullable(), to: z.string().nullable() }),
@@ -673,8 +860,21 @@ export const ActivityChange = z.discriminatedUnion('field', [
   z.object({ field: z.literal('dueDate'), from: CalendarDate.nullable(), to: CalendarDate.nullable() }),
   z.object({ field: z.literal('blockedBy'), from: z.array(ActivityTaskRef), to: z.array(ActivityTaskRef) }),
   z.object({ field: z.literal('parent'), from: ActivityTaskRef.nullable(), to: ActivityTaskRef.nullable() }),
+  // M6
+  ...workItemChanges(WORK_ITEM_CHANGE_PREFIXES.criterion),
+  ...workItemChanges(WORK_ITEM_CHANGE_PREFIXES.done),
+  z.object({ field: z.literal('plan'), from: z.string().nullable(), to: z.string().nullable() }),
+  z.object({ field: z.literal('finalSummary'), from: z.string().nullable(), to: z.string().nullable() }),
 ]);
 export type ActivityChange = z.output<typeof ActivityChange>;
+
+/** M6: every change field of the work record, for clients that group them. */
+export const WORK_RECORD_CHANGE_FIELDS = [
+  ...WORK_ITEM_OPERATIONS.map((operation) => `${WORK_ITEM_CHANGE_PREFIXES.criterion}.${operation}` as const),
+  ...WORK_ITEM_OPERATIONS.map((operation) => `${WORK_ITEM_CHANGE_PREFIXES.done}.${operation}` as const),
+  'plan',
+  'finalSummary',
+] as const;
 
 export const Activity = z.object({
   id: RowId,
@@ -703,6 +903,8 @@ export const Activity = z.object({
    * dueDate, blockedBy and parent too). Empty otherwise.
    */
   backlogFields: z.array(z.string()).optional(),
+  /** M6: the machine and branch the CLI sent; null when neither was set. Missing reads as null. */
+  source: EntrySource.nullable().optional(),
   createdAt: Timestamp,
 });
 export type Activity = z.output<typeof Activity>;
@@ -741,6 +943,14 @@ export type ProjectActivity = z.output<typeof ProjectActivity>;
 /** Longest comment body in characters, after trimming. */
 export const MAX_COMMENT_LENGTH = 20_000;
 
+/**
+ * M6: comment, or note: a work note written while working ("Migration written and tested"). Notes
+ * show quietly in the timeline and notify only the people they mention.
+ */
+export const COMMENT_KINDS = ['comment', 'note'] as const;
+export const CommentKind = z.enum(COMMENT_KINDS);
+export type CommentKind = z.infer<typeof CommentKind>;
+
 export const Comment = z.object({
   id: CommentId,
   taskKey: TaskKey,
@@ -755,18 +965,49 @@ export const Comment = z.object({
   body: z.string().nullable(),
   /** Members the body mentions, in order of first mention. Empty once deleted. */
   mentions: z.array(UserRef),
+  // M6 fields are optional in the type, so shapes built before M6 stay valid; servers send them.
+  /** M6: comment or note. Missing reads as comment. */
+  kind: CommentKind.optional(),
+  /** M6: the machine and branch the CLI sent; null when neither was set. Missing reads as null. */
+  source: EntrySource.nullable().optional(),
   createdAt: Timestamp,
   editedAt: Timestamp.nullable(),
   deletedAt: Timestamp.nullable(),
 });
 export type Comment = z.output<typeof Comment>;
 
-/** One entry of a task's history: activity and comments in one list, oldest first. */
+/**
+ * One entry of a task's history: activity, comments and (M6) notes in one list, oldest first. A
+ * note is a Comment with kind note.
+ */
 export const TimelineItem = z.discriminatedUnion('kind', [
   Activity.extend({ kind: z.literal('activity') }),
   Comment.extend({ kind: z.literal('comment') }),
+  Comment.extend({ kind: z.literal('note') }),
 ]);
 export type TimelineItem = z.output<typeof TimelineItem>;
+
+/**
+ * M6: what GET /tasks/{key}/timeline lists. all: everything. comments: comments only. notes: work
+ * notes only. history: activity entries only.
+ */
+export const TIMELINE_FILTERS = ['all', 'comments', 'notes', 'history'] as const;
+export const TimelineFilter = z.enum(TIMELINE_FILTERS);
+export type TimelineFilter = z.infer<typeof TimelineFilter>;
+
+/** M6: the size of each timeline filter, whatever `show` is. Deleted comments and notes count. */
+export const TimelineCounts = z
+  .object({
+    all: z.number().int().nonnegative(),
+    comments: z.number().int().nonnegative(),
+    notes: z.number().int().nonnegative(),
+    history: z.number().int().nonnegative(),
+  })
+  .refine((counts) => counts.all === counts.comments + counts.notes + counts.history, {
+    message: 'all is the sum of comments, notes and history',
+    path: ['all'],
+  });
+export type TimelineCounts = z.output<typeof TimelineCounts>;
 
 // ---------------------------------------------------------------------------
 // Members
@@ -1419,7 +1660,11 @@ export type CycleList = z.output<typeof CycleList>;
 export const CommentList = z.object({ items: z.array(Comment) });
 export type CommentList = z.output<typeof CommentList>;
 
-export const Timeline = z.object({ items: z.array(TimelineItem) });
+export const Timeline = z.object({
+  items: z.array(TimelineItem),
+  /** M6: the four filter counts. Optional in the type so older shapes stay valid; servers send them. */
+  counts: TimelineCounts.optional(),
+});
 export type Timeline = z.output<typeof Timeline>;
 
 // ---------------------------------------------------------------------------
@@ -1791,3 +2036,62 @@ export const BacklogWebhookSecret = z.object({
   secret: z.string().min(1),
 });
 export type BacklogWebhookSecret = z.output<typeof BacklogWebhookSecret>;
+
+// ---------------------------------------------------------------------------
+// Backlog.md export (M6): GET /projects/{project}/backlog/export
+// ---------------------------------------------------------------------------
+
+/**
+ * The folders under the Backlog.md folder that an export owns: tasks in tasks/, milestones in
+ * milestones/, and the legacy completed/ folder, which an export only prunes. The CLI writes and
+ * prunes only these.
+ */
+export const BACKLOG_EXPORT_FOLDERS = ['tasks', 'completed', 'milestones'] as const;
+export const BACKLOG_EXPORT_PREFIXES = ['tasks/', 'completed/', 'milestones/'] as const;
+export const BacklogExportPrefix = z.enum(BACKLOG_EXPORT_PREFIXES);
+export type BacklogExportPrefix = z.infer<typeof BacklogExportPrefix>;
+
+/**
+ * A file path of an export, relative to the Backlog.md folder: inside one of the owned folders,
+ * forward slashes, no `.` or `..` parts, no leading slash. Clients write files only at such paths.
+ */
+export const BacklogExportPath = z
+  .string()
+  .min(1)
+  .max(500)
+  .refine((path) => !path.startsWith('/') && !path.includes('\\') && !/\p{Cc}/u.test(path), {
+    message: 'Use a relative path with forward slashes',
+  })
+  .refine((path) => path.split('/').every((part) => part !== '' && part !== '.' && part !== '..'), {
+    message: 'Use a plain path without empty, . or .. parts',
+  })
+  .refine((path) => BACKLOG_EXPORT_PREFIXES.some((prefix) => path.startsWith(prefix)), {
+    message: `Write under ${BACKLOG_EXPORT_PREFIXES.join(', ')}`,
+  });
+
+export const BacklogExportFile = z.object({
+  path: BacklogExportPath,
+  /** The whole file, UTF-8 text with \n line ends. */
+  content: z.string(),
+});
+export type BacklogExportFile = z.output<typeof BacklogExportFile>;
+
+/**
+ * A project written out as Backlog.md files, for native projects and projects switched to Zamu
+ * (a project that still mirrors answers 409 PROJECT_MIRRORED). Task files that Zamu no longer has
+ * are the client's to remove: every file under removedPrefixes that is not in `files`.
+ */
+export const BacklogExport = z
+  .object({
+    project: ProjectKey,
+    /** The Backlog.md file format the files target, e.g. "backlog.md 1". */
+    format: z.string(),
+    generatedAt: Timestamp,
+    files: z.array(BacklogExportFile),
+    removedPrefixes: z.array(BacklogExportPrefix),
+  })
+  .refine((value) => new Set(value.files.map((file) => file.path)).size === value.files.length, {
+    message: 'Each path appears once',
+    path: ['files'],
+  });
+export type BacklogExport = z.output<typeof BacklogExport>;

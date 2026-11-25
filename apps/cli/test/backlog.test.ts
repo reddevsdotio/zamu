@@ -6,7 +6,7 @@
 //
 // Jobs go to a recording queue; the worker is simulated by writing the source row (refresh --wait).
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type CliData, type CliResultName, parseCliOutput } from '@zamu/contracts';
@@ -589,5 +589,96 @@ describe('help', () => {
     expect(refresh.stdout).toContain('--wait');
     const show = await agent(['tasks', 'show', '--help']);
     expect(show.stdout).toContain('Backlog.md id like BACK-786.1');
+  });
+});
+
+// Runs after 'Backlog.md mirror errors', which detaches MIRR: BACK still mirrors, MIRR is owned by Zamu.
+describe('the work record and Backlog.md (M6)', () => {
+  const guidelines =
+    '<!-- BACKLOG.MD GUIDELINES START -->\nUse backlog task edit.\n<!-- BACKLOG.MD GUIDELINES END -->';
+
+  it('work-record writes and notes on a mirrored task exit 6 with the file to change', async () => {
+    const check = expectFailure(
+      await agent(['tasks', 'update', 'BACK-12', '--project', 'BACK', '--check-ac', '1', '--json']),
+      6,
+      'TASK_MIRRORED',
+    );
+    expect(check.hint).toMatch(/^backlog task edit /);
+    expectFailure(
+      await agent(['notes', 'add', 'BACK-12', '--project', 'BACK', 'A note', '--json']),
+      6,
+      'TASK_MIRRORED',
+    );
+    const human = await agent(['tasks', 'update', 'BACK-12', '--project', 'BACK', '--plan', 'x']);
+    expect(human.code).toBe(6);
+    expect(human.stderr).toMatch(/^error: .*\(task_mirrored\)\.\n/);
+    expect(human.stderr).toContain('still allowed here: comments (zamu comments add BACK-12)');
+  });
+
+  it('zamu tasks show prints the record of a mirrored task as read-only', async () => {
+    const human = await agent(['tasks', 'show', 'BACK-786']);
+    expect(human.code, human.stderr).toBe(0);
+    expect(human.stdout).toContain(
+      [
+        'Acceptance criteria  1 of 2 settled · from Backlog.md, read-only',
+        '  [x] 1  Tasks appear with their Backlog.md numbers',
+        '  [ ] 2  A push refreshes the project within seconds',
+      ].join('\n'),
+    );
+    expect(human.stdout).toMatch(/\nPlan {2}by Backlog\.md, [^\n]+\n {4}1\. Parse the folder\n/);
+  });
+
+  it('zamu backlog export refuses a project that still mirrors (exit 6)', async () => {
+    const requests: string[] = [];
+    const fetch = (request: Request) => {
+      requests.push(request.url);
+      return handle(request);
+    };
+    const refused = expectFailure(
+      await agent(['backlog', 'export', '--project', 'BACK', '--dir', join(home, 'out'), '--json'], {
+        fetch,
+      }),
+      6,
+      'PROJECT_MIRRORED',
+    );
+    expect(refused.detail).toContain('still mirrors Backlog.md');
+    expect(requests).toHaveLength(1);
+    await expect(stat(join(home, 'out'))).rejects.toThrow();
+  });
+
+  it('zamu backlog export writes a switched project with its Backlog.md ids', async () => {
+    const repo = await clone('mirr-export', MIRR_REPOSITORY);
+    await mkdir(join(repo, 'backlog'), { recursive: true });
+    await writeFile(join(repo, 'backlog', 'config.yml'), 'task_prefix: "back"\n');
+    const result = await agent(['backlog', 'export', '--project', 'MIRR', '--json'], { cwd: repo });
+    const data = parsed(result, 'backlog.export');
+    expect(result.stderr).toBe('');
+    expect(
+      data.files.map((file) => file.path).filter((path) => path.startsWith('tasks/back-786 - ')),
+    ).toHaveLength(1);
+    expect(data.files.every((file) => file.action === 'created')).toBe(true);
+  });
+
+  it('zamu agents keeps the Backlog.md guidelines and the mirrored wording on a mirrored project', async () => {
+    const repo = await clone('agents-mirror', 'https://gitlab.com/reddevs/elsewhere');
+    await writeFile(join(repo, 'AGENTS.md'), `${guidelines}\n`);
+    const out = parsed(await agent(['agents', '--project', 'BACK', '--json'], { cwd: repo }), 'agents');
+    expect(out).toMatchObject({ action: 'updated', project: 'BACK', replacedBacklogBlock: false });
+    expect(out.block).toContain('BACK mirrors Backlog.md, so the task files own title');
+    expect(out.block).toContain('`zamu backlog refresh --wait`');
+    const text = await readFile(join(repo, 'AGENTS.md'), 'utf8');
+    expect(text).toBe(`${guidelines}\n\n${out.block}\n`);
+  });
+
+  it('zamu agents replaces the Backlog.md guidelines on a switched project and says the files are a copy', async () => {
+    const repo = await clone('agents-switched', 'https://gitlab.com/reddevs/elsewhere');
+    await writeFile(join(repo, 'AGENTS.md'), `# Rules\n\n${guidelines}\n`);
+    const out = parsed(await agent(['agents', '--project', 'MIRR', '--json'], { cwd: repo }), 'agents');
+    expect(out).toMatchObject({ action: 'updated', project: 'MIRR', replacedBacklogBlock: true });
+    expect(out.block).toContain('are a copy written by `zamu backlog export`');
+    expect(out.block).not.toContain('mirrors Backlog.md');
+    const text = await readFile(join(repo, 'AGENTS.md'), 'utf8');
+    expect(text).not.toContain('BACKLOG.MD GUIDELINES');
+    expect(text).toContain('The `backlog` CLI is only for documents and decisions, never for tasks.');
   });
 });

@@ -10,6 +10,7 @@ import {
 import { act, configure, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Task } from '@zamu/contracts';
+import { ana, claudeDev, workItemFixtures } from '@zamu/contracts/testing/fixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeApi, type FakeApi } from '~/features/tasks/fake-api';
 import { readTaskNavigation } from '~/features/views';
@@ -17,7 +18,8 @@ import { UIProvider } from '~/ui';
 import { PeekHost } from './PeekHost';
 import { closePeek, openPeek } from './store';
 
-// The peek (frames 067–070) over a stand-in list, against the in-memory /api/v1 client.
+// The peek (frames 067–070; M6 frame 023 for the work record) over a stand-in list, against the
+// in-memory /api/v1 client.
 
 configure({ asyncUtilTimeout: 5000 });
 vi.setConfig({ testTimeout: 30_000 });
@@ -149,6 +151,47 @@ describe('peek', () => {
       returnTo: '/p/PAY',
     });
     expect(screen.queryByRole('region', { name: /^Peek: / })).not.toBeInTheDocument();
+  });
+
+  it('shows both work-record counts as chips and opens on the final summary', async () => {
+    const task = fake().tasks[0] as Task;
+    Object.assign(task, {
+      criteria: [workItemFixtures.checked, workItemFixtures.open, workItemFixtures.waived],
+      doneItems: [
+        { ...workItemFixtures.checked, text: 'Tests pass' },
+        { ...workItemFixtures.checked, number: 2 },
+      ],
+      finalSummary: 'Failed payouts now retry on a backoff schedule.',
+      finalSummaryMeta: { author: claudeDev, onBehalfOf: ana, origin: 'app', at: '2026-10-22T18:00:00.000Z' },
+    });
+    renderApp();
+    await screen.findByText('List');
+    act(() => openPeek({ key: 'PAY-1', keys: ['PAY-1'], from: 'List' }));
+    const panel = await screen.findByRole('region', { name: 'Peek: PAY-1' });
+    await within(panel).findByRole('heading', { name: /Task number 1/ });
+    // Checked of total; the waived one counts as settled, not as checked.
+    const criteria = within(panel).getByRole('img', { name: '1 of 3 criteria checked, 1 waived' });
+    expect(criteria).toHaveTextContent('1 of 3 criteria');
+    expect(criteria).not.toHaveAttribute('data-complete');
+    const done = within(panel).getByRole('img', { name: 'All 2 done items checked' });
+    expect(done).toHaveTextContent('2 of 2 done items');
+    expect(done).toHaveAttribute('data-complete', 'true');
+    // The summary in place of the description, with who wrote it.
+    const summary = within(panel).getByRole('region', { name: 'Summary' });
+    expect(summary).toHaveTextContent('Failed payouts now retry on a backoff schedule.');
+    expect(summary).toHaveTextContent('claude-dev for Ana');
+    expect(within(panel).queryByText('First line.')).not.toBeInTheDocument();
+  });
+
+  it('shows no count chips and the description for a task without a work record', async () => {
+    renderApp();
+    await screen.findByText('List');
+    act(() => openPeek({ key: 'PAY-1', keys: ['PAY-1'], from: 'List' }));
+    const panel = await screen.findByRole('region', { name: 'Peek: PAY-1' });
+    await within(panel).findByRole('heading', { name: /Task number 1/ });
+    expect(within(panel).queryByRole('img', { name: /criteri|done item/ })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole('region', { name: 'Summary' })).not.toBeInTheDocument();
+    expect(within(panel).getByText('First line.')).toBeInTheDocument();
   });
 
   it('is read-only in mirrored projects and says so', async () => {

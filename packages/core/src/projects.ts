@@ -1,6 +1,7 @@
 // Projects: list with open counts, create, update, delete, and the milestone and cycle switches.
 // M3: project shapes carry their Backlog.md source summary. While a source is active the key is
 // fixed, milestones stay on and the repository cannot point elsewhere; clearing it pauses the mirror.
+// M6: the done items every new task starts with (defaultDoneItems), set by owners and admins.
 import {
   BacklogProblem,
   CreateProjectInput,
@@ -132,6 +133,7 @@ export function toProject(
     repository: row.repository,
     backlog,
     locked: lockedProjectFields(backlog),
+    defaultDoneItems: row.defaultDoneItems ?? [],
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
@@ -334,6 +336,9 @@ export async function createProject(
  * milestones cannot be turned off (ProjectMirrored). The repository cannot point at another
  * repository; clearing it is allowed and pauses the source (REPOSITORY_CLEARED_ERROR), and adding
  * one back to a cleared project clears that error for the mirror engine to resume.
+ *
+ * M6: defaultDoneItems replaces the done items new tasks start with ([] clears them). Owners and
+ * admins only (project.defaults); tasks that exist keep theirs.
  */
 export async function updateProject(
   ctx: ProjectContext,
@@ -383,6 +388,13 @@ export async function updateProject(
       }
       if (parsed.usesCycles !== undefined && parsed.usesCycles !== current.usesCycles) {
         changes.usesCycles = parsed.usesCycles;
+      }
+      if (parsed.defaultDoneItems !== undefined) {
+        authorize(actor, 'project.defaults', { type: 'project', projectId: current.id });
+        const before = current.defaultDoneItems ?? [];
+        const after = parsed.defaultDoneItems;
+        const same = before.length === after.length && before.every((text, index) => text === after[index]);
+        if (!same) changes.defaultDoneItems = after;
       }
       if (parsed.repository !== undefined) {
         const repo = repositoryColumns(parsed.repository);

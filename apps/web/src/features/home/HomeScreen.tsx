@@ -387,6 +387,7 @@ export function HomeScreen({ search }: HomeScreenProps) {
                               <HomeRow
                                 item={item}
                                 tab={tab}
+                                group={view.group.key}
                                 viewerId={viewerId}
                                 now={now}
                                 focused={focused}

@@ -191,7 +191,7 @@ describe('New webhook secret', () => {
           canRefresh
           onRefresh={vi.fn()}
           onOpenWebhook={vi.fn()}
-          onDetach={vi.fn()}
+          onSwitch={vi.fn()}
           onUseAnotherConnection={vi.fn()}
         />
       </QueryClientProvider>,
@@ -199,6 +199,6 @@ describe('New webhook secret', () => {
     const history = screen.getByRole('region', { name: 'History' });
     expect(history).toHaveTextContent('Ana Ruiz issued a new webhook secret');
     expect(within(history).getAllByRole('listitem')).toHaveLength(1);
-    expect(history).not.toHaveTextContent('detached Payments');
+    expect(history).not.toHaveTextContent('switched Payments');
   });
 });

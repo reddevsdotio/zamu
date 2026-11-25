@@ -1,5 +1,6 @@
 // Backlog.md mirror engine (M3-06): detection, preview, refresh (plan, then apply), mappings,
-// hide and restore, detach, webhook acceptance and the refresh and poll jobs.
+// hide and restore, detach, webhook acceptance and the refresh and poll jobs. M6: the work record
+// fill, the switch to Zamu (check and confirm) and the export.
 export {
   type ApplyInput,
   type ApplyResult,
@@ -7,7 +8,9 @@ export {
   type BacklogSourceRow,
   releaseBacklogLabels,
 } from './apply';
+export { exportBacklog } from './export';
 export { backlogDueDate, backlogLabelNames, leastUsedLabelColor } from './fields';
+export { diffItems, sameItems } from './items';
 export {
   FALLBACK_PRIORITY,
   FALLBACK_STATUS,
@@ -45,6 +48,7 @@ export {
   type BacklogSettingsContext,
   backlogWebhookUrl,
   detachBacklog,
+  detachSource,
   getBacklogWebhookInfo,
   refreshBacklogNow,
   reissueBacklogWebhookSecret,
@@ -63,4 +67,11 @@ export {
   startBacklog,
 } from './setup';
 export { backlogStatus, getBacklogSettingsStatus, getBacklogStatus } from './status';
+export {
+  type BacklogSwitchCheck,
+  type BacklogSwitchFailure,
+  type BacklogSwitchResult,
+  checkBacklogSwitch,
+  switchBacklogToZamu,
+} from './switch';
 export { acceptBacklogWebhook, type BacklogWebhookDecision, type WebhookContext } from './webhook';

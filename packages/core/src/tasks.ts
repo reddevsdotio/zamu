@@ -3,6 +3,8 @@
 // Backlog.md owns locked (TASK_MIRRORED), and hide while their file is gone from the default branch.
 // M5: labels, due dates, blockers and parents (see labels.ts and relations.ts for their rules),
 // list filters and orderings over them, and bulk changes of native tasks.
+// M6: the work record (criteria and done items in criteria.ts, plan and final summary on the row),
+// the project's default done items on create, the ifStatus precondition, and the finishing rule.
 import {
   ASSIGNEE_AGENTS,
   ASSIGNEE_ME,
@@ -21,6 +23,7 @@ import {
   GetTaskInput,
   ListTasksInput,
   MAX_TASK_LABELS,
+  MAX_WORK_ITEMS,
   OPEN_TASK_STATUSES,
   type Priority,
   parseBacklogId,
@@ -42,10 +45,26 @@ import {
   type TaskSort,
   type TaskStatus,
   UpdateTaskInput,
+  type WorkItemKind,
+  type WorkTextMeta,
 } from '@zamu/contracts';
 import { type DbOrTx, schema, type Tx } from '@zamu/db';
 import { createProvider, hostnameOf } from '@zamu/git-providers';
-import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, type SQL, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  type SQL,
+  sql,
+} from 'drizzle-orm';
 import { z } from 'zod';
 import {
   compareLabelNames,
@@ -58,6 +77,27 @@ import {
 import { type Actor, authorize } from './authz';
 import type { DbContext, GitContext } from './context';
 import {
+  FINISHING_STATUSES,
+  finishingRuleApplies,
+  hasItemOperations,
+  type ItemOperations,
+  type ItemPlan,
+  itemOperationsOf,
+  itemsOfKind,
+  loadTaskItemRows,
+  OpenItems,
+  openItemsByTask,
+  openItemsError,
+  openItemsOf,
+  planItemOperations,
+  progressFor,
+  type TaskItemRow,
+  toWorkItems,
+  WORK_ITEM_LIST_KINDS,
+  workItemProgressOf,
+  writeItemPlan,
+} from './criteria';
+import {
   addCalendarDays,
   type ClockContext,
   type CycleRow,
@@ -68,6 +108,7 @@ import {
 import { Invalid, NotFound, ProjectMirrored, parseInput, TaskChanged, TaskMirrored } from './errors';
 import {
   type BacklogSourceRow,
+  backlogEditCommand,
   backlogFilePath,
   findProjectByKey,
   findTask,
@@ -104,7 +145,7 @@ import {
   taskKeysById,
 } from './relations';
 
-const { comment, cycle, gitConnection, milestone, project, task, taskLabel, user } = schema;
+const { activity, comment, cycle, gitConnection, milestone, project, task, taskLabel, user } = schema;
 type TaskInsert = typeof task.$inferInsert;
 
 /**
@@ -338,6 +379,8 @@ async function toTask(db: DbOrTx, projectRow: ProjectRow, row: TaskRow, view: Ta
     : null;
   const labels = (await labelsOfTasks(db, [row.id])).get(row.id) ?? [];
   const relations = await loadTaskRelations(db, projectRow, row);
+  const items = await toWorkItems(db, await loadTaskItemRows(db, [row.id]), sourceMirrors(source));
+  const meta = await workTextMeta(db, row);
   return Task.parse({
     id: row.id,
     key: formatTaskKey(projectRow.key, row.number, row.keySuffix),
@@ -361,9 +404,78 @@ async function toTask(db: DbOrTx, projectRow: ProjectRow, row: TaskRow, view: Ta
     labels,
     dueDate: row.dueDate,
     ...relations,
+    criteria: items.criteria,
+    doneItems: items.doneItems,
+    plan: row.plan,
+    planMeta: meta.plan,
+    finalSummary: row.finalSummary,
+    finalSummaryMeta: meta.finalSummary,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
+}
+
+/** The two Markdown texts of the work record, as activity changes name them. */
+const WORK_TEXT_FIELDS = ['plan', 'finalSummary'] as const;
+
+/**
+ * M6: who last wrote the plan and the final summary, and when: the latest activity entry that
+ * changed the field (null while the field is empty). A mirrored task whose text came in with the
+ * upgrade, before any refresh recorded it, reads as written by Backlog.md at its last update.
+ */
+async function workTextMeta(
+  db: DbOrTx,
+  row: TaskRow,
+): Promise<Record<(typeof WORK_TEXT_FIELDS)[number], z.input<typeof WorkTextMeta> | null>> {
+  const result: Record<(typeof WORK_TEXT_FIELDS)[number], z.input<typeof WorkTextMeta> | null> = {
+    plan: null,
+    finalSummary: null,
+  };
+  const found = new Map<
+    string,
+    { actorId: string | null; onBehalfOfId: string | null; origin: 'app' | 'backlog'; createdAt: Date }
+  >();
+  // Sequential: toTask runs inside transactions, where queries share one connection.
+  for (const field of WORK_TEXT_FIELDS) {
+    if (row[field] === null) continue;
+    const [entry] = await db
+      .select({
+        actorId: activity.actorId,
+        onBehalfOfId: activity.onBehalfOfId,
+        origin: activity.origin,
+        createdAt: activity.createdAt,
+      })
+      .from(activity)
+      .where(
+        and(eq(activity.taskId, row.id), sql`${activity.changes} @> ${JSON.stringify([{ field }])}::jsonb`),
+      )
+      .orderBy(desc(activity.createdAt), desc(activity.id))
+      .limit(1);
+    if (entry) found.set(field, entry);
+  }
+  const users = await loadUsers(
+    db,
+    [...found.values()].flatMap((entry) => [entry.actorId, entry.onBehalfOfId].filter((id) => id !== null)),
+  );
+  const ref = (id: string | null) => {
+    const user = id ? users.get(id) : undefined;
+    return user ? userRef(user) : null;
+  };
+  for (const field of WORK_TEXT_FIELDS) {
+    if (row[field] === null) continue;
+    const entry = found.get(field);
+    if (entry) {
+      result[field] = {
+        author: ref(entry.actorId),
+        onBehalfOf: ref(entry.onBehalfOfId),
+        origin: entry.origin,
+        at: entry.createdAt,
+      };
+    } else if (row.backlogId) {
+      result[field] = { author: null, onBehalfOf: null, origin: 'backlog', at: row.updatedAt };
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -394,10 +506,17 @@ type BoardCursor = z.infer<typeof BoardCursor>;
 type SortCursor = z.infer<typeof SortCursor>;
 type Cursor = z.infer<typeof Cursor>;
 
+/** A task row as lists read it: without the plan and final summary texts (M6), which rows don't show. */
+type ListTaskRow = Omit<TaskRow, 'plan' | 'finalSummary'>;
+
+const { plan: _plan, finalSummary: _finalSummary, ...listTaskColumns } = getTableColumns(task);
+
 /** What a page query selects per row: the task, its project, and timestamps as text for cursors. */
 interface ListRow {
-  task: TaskRow;
+  task: ListTaskRow;
   project: { id: string; key: string; name: string };
+  /** M6: the task has a final summary. */
+  hasFinalSummary: boolean;
   updatedAtText: string;
   createdAtText: string;
 }
@@ -730,8 +849,9 @@ export async function listTasks(
   const [rows, countRows] = await Promise.all([
     db
       .select({
-        task,
+        task: listTaskColumns,
         project: { id: project.id, key: project.key, name: project.name },
+        hasFinalSummary: sql<boolean>`${task.finalSummary} is not null`,
         updatedAtText: sql<string>`${task.updatedAt}::text`,
         createdAtText: sql<string>`${task.createdAt}::text`,
       })
@@ -770,11 +890,11 @@ export async function listTasks(
 /**
  * Tasks as list rows, with everything a row shows. A fixed number of queries for the whole set
  * (users, milestones, cycles, mirrors, comment counts, labels, blockers, subtask progress, parent
- * keys), whatever its size.
+ * keys, M6 criteria and done item counts), whatever its size.
  */
 async function toListItems(
   db: DbOrTx,
-  rows: Pick<ListRow, 'task' | 'project'>[],
+  rows: Pick<ListRow, 'task' | 'project' | 'hasFinalSummary'>[],
   today: string,
   options: { inTransaction?: boolean } = {},
 ): Promise<z.input<typeof TaskListItem>[]> {
@@ -805,13 +925,14 @@ async function toListItems(
         db,
         rows.flatMap((row) => (row.task.parentId ? [row.task.parentId] : [])),
       ),
+    () => workItemProgressOf(db, ids),
   ] as const;
   // A transaction has one connection: run its reads one after the other.
-  const [users, refs, mirrored, comments, labels, blocked, progress, parentKeys] = await runReads(
+  const [users, refs, mirrored, comments, labels, blocked, progress, parentKeys, items] = await runReads(
     reads,
     options.inTransaction === true,
   );
-  return rows.map(({ task: row, project: projectRef }) => ({
+  return rows.map(({ task: row, project: projectRef, hasFinalSummary }) => ({
     id: row.id,
     key: formatTaskKey(projectRef.key, row.number, row.keySuffix),
     number: row.number,
@@ -834,6 +955,9 @@ async function toListItems(
     blocked: blocked.has(row.id),
     subtaskProgress: progress.get(row.id) ?? { done: 0, total: 0 },
     parentKey: row.parentId ? (parentKeys.get(row.parentId) ?? null) : null,
+    criteriaProgress: progressFor(items, row.id).criteria,
+    doneProgress: progressFor(items, row.id).done,
+    hasFinalSummary,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }));
@@ -1085,6 +1209,11 @@ function asProjectTask(row: TaskRow): ProjectTask {
  * makes it a subtask (same project, the parent top level), which takes the parent's assignee when
  * no assignee is sent (an explicit null leaves it unassigned); `blockedBy` lists tasks of the same
  * project it waits on (a new task can't close a loop: nothing waits on it yet).
+ *
+ * M6: `criteria` and `doneItems` start the work record, numbered in order; the project's default
+ * done items come first unless `skipDefaultDoneItems` (a given item equal to a default one is not
+ * added twice). At most MAX_WORK_ITEMS per list, defaults included. `plan` sets the plan. The
+ * task.created entry lists each item added and the plan.
  */
 export async function createTask(
   ctx: TaskContext,
@@ -1118,6 +1247,7 @@ export async function createTask(
     const cycleRow = (await resolveCycle(tx, ctx, projectRow, parsed.cycle)) ?? null;
     const blockers = await resolveProjectTasks(tx, projectRow, parsed.blockedBy ?? [], 'blockedBy');
     const labelRows = await findOrCreateLabels(tx, labelScope(projectRow), parsed.labels ?? []);
+    const doneTexts = initialDoneItems(projectRow, parsed.doneItems ?? [], parsed.skipDefaultDoneItems);
 
     const [counter] = await tx
       .update(project)
@@ -1129,6 +1259,7 @@ export async function createTask(
 
     const description = parsed.description ? parsed.description : null;
     const dueDate = parsed.dueDate ?? null;
+    const plan = parsed.plan ? parsed.plan : null;
     const [row] = await tx
       .insert(task)
       .values({
@@ -1147,9 +1278,15 @@ export async function createTask(
         rank,
         dueDate,
         parentId: parentRow?.id ?? null,
+        plan,
       })
       .returning();
     if (!row) throw new Error('task insert returned no row');
+    const itemPlans = [
+      planItemOperations('criterion', [], { add: parsed.criteria ?? [] }, actor.userId),
+      planItemOperations('done', [], { add: doneTexts }, actor.userId),
+    ];
+    for (const itemPlan of itemPlans) await writeItemPlan(tx, row.id, [], itemPlan);
     await setTaskLabels(
       tx,
       row.id,
@@ -1180,6 +1317,8 @@ export async function createTask(
     if (blockers.length > 0) {
       changes.push({ field: 'blockedBy', from: [], to: storedBlockers(projectRow, blockers) });
     }
+    if (plan !== null) changes.push({ field: 'plan', from: null, to: plan });
+    for (const itemPlan of itemPlans) changes.push(...itemPlan.changes);
     await recordActivity(tx, actor, {
       projectId: projectRow.id,
       taskId: row.id,
@@ -1191,8 +1330,34 @@ export async function createTask(
   });
 }
 
-/** The fields one task write changes: UpdateTaskInput without the key and the precondition. */
-type TaskPatch = Omit<UpdateTaskInput, 'key' | 'project' | 'ifUpdatedAt'>;
+/**
+ * M6: the done items a new task starts with: the project's defaults (unless skipped), then the
+ * given ones that are not a default already. Invalid past MAX_WORK_ITEMS.
+ */
+function initialDoneItems(
+  projectRow: ProjectRow,
+  given: string[],
+  skipDefaults: boolean | undefined,
+): string[] {
+  const defaults = skipDefaults
+    ? []
+    : (projectRow.defaultDoneItems ?? [])
+        .filter((text): text is string => typeof text === 'string')
+        .map((text) => text.trim())
+        .filter((text) => text !== '');
+  const known = new Set(defaults);
+  const texts = [...defaults, ...given.filter((text) => !known.has(text))];
+  if (texts.length > MAX_WORK_ITEMS) {
+    throw invalidField(
+      'doneItems',
+      `A task holds ${MAX_WORK_ITEMS} done items or fewer; ${projectRow.key} adds ${defaults.length} default ones, so send ${Math.max(0, MAX_WORK_ITEMS - defaults.length)} or fewer, or skip the defaults`,
+    );
+  }
+  return texts;
+}
+
+/** The fields one task write changes: UpdateTaskInput without the key and the preconditions. */
+type TaskPatch = Omit<UpdateTaskInput, 'key' | 'project' | 'ifUpdatedAt' | 'ifStatus'>;
 
 /** Whether applying `patch` needs the project lock: rank changes, cycles, blockers and parents. */
 function patchNeedsProjectLock(patch: TaskPatch): boolean {
@@ -1295,6 +1460,21 @@ async function applyTaskPatch(
     }
   }
 
+  // M6: the plan and the final summary. '' clears like null.
+  for (const field of WORK_TEXT_FIELDS) {
+    const value = patch[field];
+    if (value === undefined) continue;
+    const next = value ? value : null;
+    if (next !== current[field]) {
+      set[field] = next;
+      changes.push({ field, from: current[field], to: next });
+    }
+  }
+  const itemOps: Record<WorkItemKind, ItemOperations> = {
+    criterion: itemOperationsOf(patch, 'criterion'),
+    done: itemOperationsOf(patch, 'done'),
+  };
+
   // M5 fields: work out what changes first, so a mirrored task is refused before anything is written.
   const currentLabels =
     patch.labels || patch.addLabels || patch.removeLabels ? await loadTaskLabelRows(tx, current.id) : [];
@@ -1340,11 +1520,37 @@ async function applyTaskPatch(
       ),
     });
   }
+  // M6: any item operation on a mirrored task is refused, even one that would change nothing.
+  if (hasItemOperations(itemOps.criterion)) locked.push({ field: 'criteria', ops: itemOps.criterion });
+  if (hasItemOperations(itemOps.done)) locked.push({ field: 'doneItems', ops: itemOps.done });
   const [owned] = locked;
   if (owned) {
     const source = await loadBacklogSource(tx, projectRow.id);
     if (sourceMirrors(source)) {
       throw await taskMirrored(tx, projectRow, current, source as BacklogSourceRow, owned);
+    }
+  }
+
+  // M6: plan the item operations, then apply the finishing rule to the lists as they will be.
+  const finishing = finishingRuleApplies(actor, current.status, set.status);
+  const itemsTouched = hasItemOperations(itemOps.criterion) || hasItemOperations(itemOps.done);
+  let itemRows: TaskItemRow[] = [];
+  const itemPlans: ItemPlan[] = [];
+  if (itemsTouched || finishing) {
+    itemRows = await loadTaskItemRows(tx, [current.id]);
+    for (const kind of WORK_ITEM_LIST_KINDS) {
+      itemPlans.push(planItemOperations(kind, itemsOfKind(itemRows, kind), itemOps[kind], actor.userId));
+    }
+  }
+  if (finishing && set.status) {
+    const [criteria, done] = itemPlans;
+    const open = openItemsOf({ criterion: criteria?.items ?? [], done: done?.items ?? [] });
+    if (open.length > 0) {
+      throw openItemsError(
+        formatTaskKey(projectRow.key, current.number, current.keySuffix),
+        set.status,
+        open,
+      );
     }
   }
 
@@ -1393,6 +1599,12 @@ async function applyTaskPatch(
       to: storedBlockers(projectRow, after),
     });
   }
+  if (itemsTouched) {
+    for (const itemPlan of itemPlans) {
+      await writeItemPlan(tx, current.id, itemsOfKind(itemRows, itemPlan.kind), itemPlan);
+      changes.push(...itemPlan.changes);
+    }
+  }
 
   const status = set.status ?? current.status;
   if (patch.position) {
@@ -1401,7 +1613,7 @@ async function applyTaskPatch(
     set.rank = await topRank(tx, projectRow.id, status, current.id);
   }
 
-  // Label and blocker changes live in other tables; they still make the task updated.
+  // Label, blocker and item changes live in other tables; they still make the task updated.
   if (Object.keys(set).length === 0 && changes.length > 0) set.updatedAt = new Date();
   if (Object.keys(set).length === 0) return current;
 
@@ -1465,13 +1677,17 @@ async function resolveProjectTasksById(
  *   SubtaskDepth) or clears the parent; addBlockers and removeBlockers change what the task waits
  *   on (same project; a loop fails with DependencyLoop). Each records the whole list before and
  *   after.
+ * - M6: ifStatus fails with TaskChanged when the stored status differs (nothing is written). Item
+ *   operations (criteria.ts), plan and finalSummary change the work record; on a mirrored task
+ *   each fails with TaskMirrored. An agent moving the task to In review or Done while an item is
+ *   open after this request's operations fails with OpenItems; people are never refused.
  */
 export async function updateTask(
   ctx: TaskContext,
   actor: Actor,
   input: z.input<typeof UpdateTaskInput>,
 ): Promise<Task> {
-  const { key, project: narrow, ifUpdatedAt, ...patch } = parseInput(UpdateTaskInput, input);
+  const { key, project: narrow, ifUpdatedAt, ifStatus, ...patch } = parseInput(UpdateTaskInput, input);
   const view = viewOf(ctx);
   return ctx.db.transaction(async (tx) => {
     // Rank changes may renumber the column, ending a cycle moves tasks under the project lock, and
@@ -1493,6 +1709,13 @@ export async function updateTask(
         .where(eq(task.id, current.id));
       if (check?.stale) throw new TaskChanged(await toTask(tx, projectRow, current, view));
     }
+    if (ifStatus && ifStatus !== current.status) {
+      const taskKey = formatTaskKey(projectRow.key, current.number, current.keySuffix);
+      throw new TaskChanged(
+        await toTask(tx, projectRow, current, view),
+        `${taskKey} is in ${TASK_STATUS_LABELS[current.status]} now, not ${TASK_STATUS_LABELS[ifStatus]}`,
+      );
+    }
 
     const row = await applyTaskPatch(tx, ctx, actor, projectRow, current, patch);
     return toTask(tx, projectRow, row, view);
@@ -1508,6 +1731,9 @@ export async function updateTask(
  * - Labels resolve by name per project (missing ones are created); a status change puts each task
  *   at the top of its new column.
  * - Locks: projects, then tasks, each in id order, so concurrent bulk changes can't deadlock.
+ * - M6: an agent moving tasks to In review or Done fails with OpenItems when any of them has an
+ *   open item; the issues name each refused task (path keys.<index>), and openItems lists the
+ *   items when only one task is refused. Nothing changes then.
  * Returns every task as a list row, in the order of the keys sent.
  */
 export async function bulkUpdateTasks(
@@ -1560,6 +1786,7 @@ export async function bulkUpdateTasks(
       .orderBy(asc(task.id))
       .for('update');
     const taskById = new Map(lockedTasks.map((row) => [row.id, row]));
+    await assertBulkMayFinish(tx, actor, hits, lockedTasks, patch.status);
 
     // Resolve the assignee once; applyTaskPatch then compares ids.
     const assignee = await resolveAssignee(tx, actor, patch.assignee);
@@ -1578,15 +1805,53 @@ export async function bulkUpdateTasks(
 
     const rows = hits.map((hit) => {
       const projectRow = projectById.get(hit.project.id) as ProjectRow;
+      const row = updated.get(hit.task.id) as TaskRow;
       return {
-        task: updated.get(hit.task.id) as TaskRow,
+        task: row,
         project: { id: projectRow.id, key: projectRow.key, name: projectRow.name },
+        hasFinalSummary: row.finalSummary !== null,
       };
     });
     return TaskBulkResult.parse({
       items: await toListItems(tx, rows, todayIn(ctx), { inTransaction: true }),
     });
   });
+}
+
+/** M6: the finishing rule for a bulk status change (see bulkUpdateTasks). */
+async function assertBulkMayFinish(
+  tx: Tx,
+  actor: Actor,
+  hits: { project: ProjectRow; task: TaskRow }[],
+  lockedTasks: TaskRow[],
+  status: TaskStatus | undefined,
+): Promise<void> {
+  if (actor.kind !== 'agent' || !status || !FINISHING_STATUSES.has(status)) return;
+  const moving = lockedTasks.filter((row) => row.status !== status).map((row) => row.id);
+  const open = await openItemsByTask(tx, moving);
+  if (open.size === 0) return;
+  const refused = hits.flatMap((hit, index) => {
+    const items = open.get(hit.task.id);
+    return items
+      ? [{ index, key: formatTaskKey(hit.project.key, hit.task.number, hit.task.keySuffix), items }]
+      : [];
+  });
+  const seen = new Set<string>();
+  const unique = refused.filter((entry) => !seen.has(entry.key) && seen.add(entry.key));
+  const target = status === 'done' ? 'Done' : 'In review';
+  const issues = unique.map((entry) => {
+    const single = openItemsError(entry.key, status, entry.items);
+    return { path: `keys.${entry.index}`, message: single.message };
+  });
+  const [first] = unique;
+  if (unique.length === 1 && first) {
+    throw new OpenItems(openItemsError(first.key, status, first.items).message, first.items, { issues });
+  }
+  throw new OpenItems(
+    `${unique.map((entry) => entry.key).join(', ')} have open items, so no task moved to ${target}. Check or waive them first.`,
+    [],
+    { issues },
+  );
 }
 
 /** The first field of a bulk change Backlog.md owns, for TaskMirrored; undefined for cycle only. */
@@ -1623,21 +1888,30 @@ const OWNED_FIELD_LABELS: Record<TaskOwnedField, string> = {
   labels: 'labels',
   dueDate: 'due date',
   blockedBy: 'blockers',
+  criteria: 'criteria',
+  doneItems: 'done items',
+  plan: 'plan',
+  finalSummary: 'final summary',
   parent: 'parent',
 };
 
-/** A change updateTask can make to a field of the task row (everything but the backlog marker). */
-type RowChange = Exclude<StoredChange, { field: 'backlog' | 'labels' | 'blockedBy' | 'parent' }>;
+/** A change updateTask can make to a field of the task row (M6: plan and finalSummary included). */
+type RowChange = Exclude<
+  Extract<StoredChange, { field: TaskOwnedField | 'cycle' }>,
+  { field: 'labels' | 'blockedBy' | 'parent' }
+>;
 
 /**
  * A change to a field Backlog.md owns, as the lock check sees it before anything is written:
- * label names, blocker task ids and the parent task id for the M5 relations.
+ * label names, blocker task ids and the parent task id for the M5 relations, and the item
+ * operations of a list for M6.
  */
 type LockedChange =
   | RowChange
   | { field: 'labels'; to: string[] }
   | { field: 'blockedBy'; to: string[] }
-  | { field: 'parent'; to: string | null };
+  | { field: 'parent'; to: string | null }
+  | { field: 'criteria' | 'doneItems'; ops: ItemOperations };
 
 /** True for changes to fields Backlog.md owns (every task field but cycle). */
 function isOwnedChange(change: StoredChange): change is RowChange {
@@ -1730,7 +2004,43 @@ async function editArguments(
     case 'parent':
       // Backlog.md's CLI has no flag for the parent.
       return { text: 'Change parent_task_id in the task file and push' };
+    case 'plan':
+    case 'finalSummary': {
+      const [flag, name] = change.field === 'plan' ? ['--plan', 'plan'] : ['--final-summary', 'summary'];
+      if (!change.to) return { text: `Remove the ${name} from the task file and push` };
+      const short = change.to.length <= 80 && !change.to.includes('\n');
+      return { flags: `${flag} ${short ? shellWord(change.to) : `"<${name}>"`}` };
+    }
+    case 'criteria':
+    case 'doneItems':
+      return itemEditArguments(change.field, change.ops);
   }
+}
+
+/** Backlog.md's `task edit` flags for item operations; waive, unwaive, edit and move have none. */
+const ITEM_FLAGS = {
+  criteria: { add: '--ac', check: '--check-ac', uncheck: '--uncheck-ac', remove: '--remove-ac' },
+  doneItems: { add: '--dod', check: '--check-dod', uncheck: '--uncheck-dod', remove: '--remove-dod' },
+} as const;
+
+function itemEditArguments(
+  field: 'criteria' | 'doneItems',
+  ops: ItemOperations,
+): { flags: string } | { text: string } {
+  const unflagged = [ops.waive, ops.unwaive, ops.edit, ops.move].some((list) => (list?.length ?? 0) > 0);
+  if (unflagged) {
+    const name = field === 'criteria' ? 'acceptance criteria' : 'definition of done';
+    return { text: `Change the ${name} in the task file and push` };
+  }
+  const flags = ITEM_FLAGS[field];
+  return {
+    flags: [
+      ...(ops.add ?? []).map((text) => `${flags.add} ${shellWord(text)}`),
+      ...(ops.check ?? []).map((number) => `${flags.check} ${number}`),
+      ...(ops.uncheck ?? []).map((number) => `${flags.uncheck} ${number}`),
+      ...(ops.remove ?? []).map((number) => `${flags.remove} ${number}`),
+    ].join(' '),
+  };
 }
 
 /** A `backlog task edit` (or `backlog draft edit`) hint for `change` on the task with `backlogId`. */
@@ -1738,15 +2048,11 @@ async function taskEditHint(
   tx: Tx,
   source: BacklogSourceRow,
   row: TaskRow,
-  backlogId: string,
   change: LockedChange,
 ): Promise<string> {
-  const parts = parseBacklogId(backlogId);
-  const id = parts ? formatTaskKey('', parts.number, parts.suffix).slice(1) : backlogId;
-  const block = BacklogBlock.safeParse(row.backlogData ?? {});
-  const command = block.success && block.data.kind === 'draft' ? 'draft' : 'task';
+  const command = backlogEditCommand(row);
   const args = await editArguments(tx, source, change);
-  return 'flags' in args ? `backlog ${command} edit ${id} ${args.flags}` : args.text;
+  return 'flags' in args && command ? `${command} ${args.flags}` : 'text' in args ? args.text : '';
 }
 
 /** TaskMirrored for `change` on a task of a mirrored project, with field, file, Backlog.md id and hint. */
@@ -1759,7 +2065,7 @@ async function taskMirrored(
 ): Promise<TaskMirrored> {
   const key = formatTaskKey(projectRow.key, row.number, row.keySuffix);
   const file = await backlogFilePath(tx, source, { taskId: row.id });
-  const hint = row.backlogId ? await taskEditHint(tx, source, row, row.backlogId, change) : undefined;
+  const hint = row.backlogId ? await taskEditHint(tx, source, row, change) : undefined;
   return new TaskMirrored(
     `${key} is mirrored from Backlog.md, so its ${OWNED_FIELD_LABELS[change.field as TaskOwnedField]} can't change here`,
     {
