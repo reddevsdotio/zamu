@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>M6 harness</title>
+<script src="../support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<style>body{margin:0}</style>
+</helmet>
+<div>
+<sc-if value="{{ isTask }}" hint-placeholder-val="{{ false }}"><dc-import name="Task" theme="{{ theme }}" state="{{ state }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ isMarks }}" hint-placeholder-val="{{ false }}"><dc-import name="Marks" theme="{{ theme }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ isSet }}" hint-placeholder-val="{{ false }}"><dc-import name="Settings" theme="{{ theme }}" state="{{ state }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ isT7 }}" hint-placeholder-val="{{ false }}"><dc-import name="M7Task" theme="{{ theme }}" state="{{ state }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ isHome }}" hint-placeholder-val="{{ false }}"><dc-import name="M7Home" theme="{{ theme }}" state="{{ state }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ isS7 }}" hint-placeholder-val="{{ false }}"><dc-import name="M7Settings" theme="{{ theme }}" state="{{ state }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ isL7 }}" hint-placeholder-val="{{ false }}"><dc-import name="M7List" theme="{{ theme }}" state="{{ state }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ isK7 }}" hint-placeholder-val="{{ false }}"><dc-import name="M7Marks" theme="{{ theme }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ isPlan }}" hint-placeholder-val="{{ false }}"><dc-import name="M8Plan" theme="{{ theme }}" state="{{ state }}" hint-size="1440px,900px"></dc-import></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    // #<file>-<theme>-<state>
+    const h = (window.location.hash || '#task-light-review').slice(1).split('-');
+    const f = h[0];
+    return { theme: h[1] || 'light', state: h[2] || 'review', isTask: f === 'task', isMarks: f === 'marks', isSet: f === 'set', isT7: f === 't7', isHome: f === 'home', isS7: f === 's7', isL7: f === 'l7', isK7: f === 'k7', isPlan: f === 'plan' };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>M7 · Pull requests, archive, check again</title>
+<script src="../support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas" />
+<style>
+body{margin:0;background:#ecebe7;font-family:system-ui,sans-serif}
+a{color:#1a1a1a}a:hover{color:#2a78d6}
+.cv-hd{padding:48px 56px 8px}
+.cv-t{font:600 26px/1.2 system-ui,sans-serif;color:#1a1a1a}
+.cv-d{margin-top:10px;max-width:980px;font:14px/1.55 system-ui,sans-serif;color:rgba(0,0,0,.62)}
+.cv-sec{padding:36px 56px 28px;border-bottom:1px solid rgba(0,0,0,.08)}
+.cv-sh{display:flex;align-items:baseline;gap:12px;margin:0 0 18px}
+.cv-n{font:600 12px ui-monospace,Menlo,monospace;padding:4px 8px;background:#1a1a1a;color:#fff;border-radius:4px}
+.cv-st{font:600 20px/1.2 system-ui,sans-serif;color:#1a1a1a}
+.cv-sd{font:14px/1.4 system-ui,sans-serif;color:rgba(0,0,0,.55)}
+.cv-rows{display:flex;flex-direction:column;gap:28px}
+.cv-row{display:flex;gap:28px;align-items:flex-start}
+.fr{display:flex;flex-direction:column;gap:8px;flex:none}
+.fcap{font:500 12px system-ui,sans-serif;color:rgba(0,0,0,.55)}
+.card{background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}
+.w1440{width:1440px;height:900px}.w1280{width:1280px;height:820px}
+</style>
+</helmet>
+<div class="cv-hd" data-screen-label="M7 intro">
+<div class="cv-t">M7 · Pull requests, archived tasks and check-again dates</div>
+<div class="cv-d">Second of three releases. Pull requests link to tasks and move their status, finished tasks are archived, and a task can wait for a day. Same direction, tokens and sample data as before: no token was added. Light row above dark row in each section.</div>
+</div>
+<sc-for list="{{ sections }}" as="sec" hint-placeholder-count="2">
+<section class="cv-sec" id="{{ sec.id }}">
+<div class="cv-sh"><span class="cv-n">{{ sec.n }}</span><span class="cv-st">{{ sec.title }}</span><span class="cv-sd">{{ sec.sub }}</span></div>
+<div class="cv-rows">
+<sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+<div class="cv-row">
+<sc-for list="{{ sec.frames }}" as="f" hint-placeholder-count="2">
+<div class="fr">
+<span class="fcap">{{ f.cap }} · {{ th.id }}</span>
+<div class="{{ f.box }}">
+<sc-if value="{{ f.isT7 }}" hint-placeholder-val="{{ false }}"><dc-import name="M7Task" theme="{{ th.id }}" state="{{ f.state }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ f.isHome }}" hint-placeholder-val="{{ false }}"><dc-import name="M7Home" theme="{{ th.id }}" state="{{ f.state }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ f.isS7 }}" hint-placeholder-val="{{ false }}"><dc-import name="M7Settings" theme="{{ th.id }}" state="{{ f.state }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ f.isL7 }}" hint-placeholder-val="{{ false }}"><dc-import name="M7List" theme="{{ th.id }}" state="{{ f.state }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ f.isK7 }}" hint-placeholder-val="{{ false }}"><dc-import name="M7Marks" theme="{{ th.id }}" hint-size="1440px,900px"></dc-import></sc-if>
+</div>
+</div>
+</sc-for>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-for>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    const F = (comp, state, cap) => ({ state, cap, box: 'card ' + (/1280$/.test(state) ? 'w1280' : 'w1440'), isT7: comp === 'T', isHome: comp === 'H', isS7: comp === 'S', isL7: comp === 'L', isK7: comp === 'K', isPlan: comp === 'P' });
+    const sections = [
+      { id: 'm7-1', n: '1', title: 'Pull requests on a task', sub: 'One open request; four requests in every state; a task with only a branch.', frames: [F('T', 'pr', 'PAY-142, one open request'), F('T', 'prall', 'Merged, open, draft and closed'), F('T', 'branch', 'A branch, no request yet')] },
+      { id: 'm7-2', n: '2', title: 'Linking by hand', sub: 'Pasting an address: recognised, not a request, and a request from another repository.', frames: [F('T', 'link', 'Recognised'), F('T', 'linkbad', 'Not a request address'), F('T', 'linkother', 'Another repository, refused')] },
+      { id: 'm7-3', n: '3', title: 'Merged with open criteria', sub: 'A merge closes the task even with criteria open. The task says so, history says why, and Home lists it.', frames: [F('T', 'merged', 'PAY-150, history of the status changes'), F('H', 'mine', 'Home, Mine'), F('H', 'everyone', 'Home, Everyone')] },
+      { id: 'm7-4', n: '4', title: 'Project settings, Repository', sub: 'No repository; linked with the webhook not set up; healthy; last event failed; closing on merge switched off; loading.', frames: [F('S', 'reponone', 'No repository'), F('S', 'reposetup', 'Webhook not set up'), F('S', 'repook', 'Healthy'), F('S', 'repobad', 'Last event failed'), F('S', 'repooff', 'Closing on merge off'), F('S', 'repoloading', 'Loading the status')] },
+      { id: 'm7-5', n: '5', title: 'Archived tasks', sub: 'The setting off and on; the list filtered to Archived; archiving three tasks by hand and the Undo toast; search mixing live and archived tasks; an archived task.', frames: [F('S', 'archoff', 'Setting off'), F('S', 'archon', 'Setting on, 14 days'), F('L', 'archived', 'List, Archived shown'), F('L', 'multi', 'Three selected'), F('L', 'toast', 'Archived, Undo'), F('L', 'search', 'Search results'), F('T', 'archived', 'Archived task, Restore')] },
+      { id: 'm7-6', n: '6', title: 'Check-again date', sub: 'The picker with its reason; a waiting task; the day has come. Home lists it under “Check again” (section 3).', frames: [F('T', 'chk', 'Picker'), F('T', 'chkset', 'Waiting until Dec 3'), F('T', 'chkdue', 'Check again: today')] },
+      { id: 'm7-7', n: '7', title: 'Markers', sub: 'Pull-request and check-again markers on rows, cards and the peek; Display options and filters; waiting tasks dimmed and hidden on a board.', frames: [F('K', '', 'Rows, cards, Display options, peek')] }
+    ];
+    return { sections, themes: [{ id: 'light' }, { id: 'dark' }] };
+  }
+}
+</script>
+</body>
+</html>

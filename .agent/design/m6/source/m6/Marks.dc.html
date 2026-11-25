@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Criteria progress on rows, cards and the peek</title>
+<script src="../support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="stylesheet" href="../r2/margin.css" />
+<link rel="stylesheet" href="../r2/screens.css" />
+<link rel="stylesheet" href="./m6.css" />
+<style>
+body{margin:0}
+.sheet .row{height:38px}
+.sheet .card{width:auto}
+.sheet .peek .task-title{font-size:22px;margin:0}
+.sheet .chips .tg.focus{box-shadow:var(--focus)}
+</style>
+</helmet>
+<div class="{{ rootCls }}" data-screen-label="Criteria progress markers">
+
+<div class="sheet-sec">
+<div class="sheet-t">List rows, with “Criteria” switched on in Display options</div>
+<div class="listbox">
+<div class="row sel"><span class="pri h"></span><span class="key">PAY-142</span><span class="st rev"></span><span class="row-t">Retry failed payouts with exponential backoff</span><span class="row-r"><span class="lb"><span class="lbd c6"></span>payouts</span><span class="subp"><span class="ring p75"></span>3/4</span><span class="critp"><span class="cbx"></span>4/6</span><span class="due">Nov 7</span><span class="av agent av-cd">cd</span><span class="row-upd">2h</span></span></div>
+<div class="row"><span class="pri blank"></span><span class="key">PAY-150</span><span class="st done"></span><span class="row-t">Payout report export</span><span class="row-r"><span class="lb"><span class="lbd c1"></span>billing</span><span class="critp"><span class="cbx full"><span class="check"></span></span>5/5</span><span class="due quiet">Nov 3</span><span class="av agent av-cd">cd</span><span class="row-upd">1d</span></span></div>
+<div class="row"><span class="pri blank"></span><span class="key">PAY-146</span><span class="st prog"></span><span class="row-t">Alert on-call after the 8th attempt</span><span class="row-r"><span class="critp"><span class="cbx"></span>0/3</span><span class="av agent av-cd">cd</span><span class="row-upd">4h</span></span></div>
+<div class="row"><span class="pri blank"></span><span class="key">PAY-131</span><span class="st todo"></span><span class="row-t">Rotate the bank API certificate</span><span class="row-r"><span class="lb"><span class="lbd c4"></span>ops</span><span class="av av-tf">TF</span><span class="row-upd">3d</span></span></div>
+<div class="row"><span class="pri u">!</span><span class="key">PAY-158</span><span class="st prog"></span><span class="row-t">Merchants in Belgium and the Netherlands see the payout fee twice on the monthly statement when a payout was retried</span><span class="row-r"><span class="blk">Blocked</span><span class="lb"><span class="lbd c8"></span>customer-facing</span><span class="critp"><span class="cbx"></span>2/7</span><span class="due over">2 days overdue</span><span class="av av-ana">AR</span><span class="row-upd">20m</span></span></div>
+</div>
+<div class="sheet-cap">Off by default. With it on, the marker sits after subtasks and before the due date. A task without criteria shows nothing (PAY-131). When every criterion is checked or waived the box fills and shows a tick, so progress never depends on colour alone.</div>
+</div>
+
+<div class="sheet-sec">
+<div class="sheet-t">Display options</div>
+<div class="pop" style="width:360px">
+<div class="pop-sec">
+<div class="pop-h">Shown on rows</div>
+<div class="chips"><span class="tg on">Priority</span><span class="tg on">Labels</span><span class="tg on">Subtasks</span><span class="tg on focus">Criteria</span><span class="tg on">Due date</span><span class="tg on">Assignee</span><span class="tg">Milestone</span><span class="tg">Cycle</span><span class="tg on">Updated</span></div>
+</div>
+<div class="pop-foot"><span>Saved for you on this list</span><span class="link">Reset</span></div>
+</div>
+<div class="sheet-cap">One more chip in the existing “Shown on rows” and “Shown on cards” groups. Nothing else in Display options changes.</div>
+</div>
+
+<div class="sheet-sec">
+<div class="sheet-t">Board cards</div>
+<div class="lane">
+<div class="card sel"><span class="av agent av-cd card-av">cd</span><div class="card-t has-av">Retry failed payouts with exponential backoff</div><div class="card-m"><span class="pri h"></span><span class="key">PAY-142</span><span class="lb"><span class="lbd c6"></span>payouts</span><span class="spacer"></span><span class="subp"><span class="ring p75"></span>3/4</span><span class="critp"><span class="cbx"></span>4/6</span><span class="due">Nov 7</span></div></div>
+<div class="card"><span class="av agent av-cd card-av">cd</span><div class="card-t has-av">Payout report export</div><div class="card-m"><span class="key">PAY-150</span><span class="lb"><span class="lbd c1"></span>billing</span><span class="spacer"></span><span class="critp"><span class="cbx full"><span class="check"></span></span>5/5</span></div></div>
+<div class="card"><span class="av av-tf card-av">TF</span><div class="card-t has-av">Rotate the bank API certificate</div><div class="card-m"><span class="key">PAY-131</span><span class="lb"><span class="lbd c4"></span>ops</span></div></div>
+</div>
+<div class="sheet-cap">Same marker, same place in the order: after subtasks, before the due date. Off by default on cards too.</div>
+</div>
+
+<div class="sheet-sec">
+<div class="sheet-t">Peek</div>
+<div class="peek">
+<div class="peek-hd"><span class="st rev"></span><span class="key">PAY-142</span><span class="spacer"></span><span class="btn sm ghost">Open<span class="kbd">↵</span></span><span class="btn icon sm">×</span></div>
+<div class="peek-b">
+<h2 class="task-title">Retry failed payouts with exponential backoff</h2>
+<div class="peek-props"><span class="propbtn set"><span class="st rev"></span>In review</span><span class="propbtn set"><span class="av agent av-cd">cd</span>claude-dev</span><span class="propbtn set"><span class="cbx"></span>4 of 6 criteria</span><span class="propbtn set"><span class="cbx full"><span class="check"></span></span>2 of 2 done items</span><span class="propbtn set">Nov 7</span></div>
+<div class="sh" style="margin:2px 0 0"><span>Summary</span><span class="spacer"></span><span class="muted">claude-dev for Ana, 2 h ago</span></div>
+<div class="desc" style="font-size:14px"><p>Failed payouts now retry on a backoff schedule from 1 minute to 6 hours, eight attempts at most, and on-call is alerted once after the last one.</p></div>
+</div>
+</div>
+<div class="sheet-cap">The peek always shows both counts. When a task has a final summary the peek opens on it, in place of the description.</div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{
+  "theme": { "editor": "enum", "options": ["light", "dark"], "default": "light" }
+}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { rootCls: 'sheet ' + (this.props.theme ?? 'light') };
+  }
+}
+</script>
+</body>
+</html>

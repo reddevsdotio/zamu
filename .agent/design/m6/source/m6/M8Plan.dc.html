@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Milestone with waves and gates</title>
+<script src="../support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="stylesheet" href="../r2/margin.css" />
+<link rel="stylesheet" href="../r2/screens.css" />
+<link rel="stylesheet" href="./m6.css" />
+<link rel="stylesheet" href="./m7.css" />
+<link rel="stylesheet" href="./m8.css" />
+<script src="../r2/data.js"></script>
+<style>
+body{margin:0}
+.page .list{flex:1;min-height:0;overflow:hidden}
+.ms-row .dl-ico{margin-left:3px}
+.ms-row .cnt{color:var(--text-2);font-size:var(--fs-sm);font-variant-numeric:tabular-nums}
+.ms-row .ms-st{justify-self:end}
+.page-hd .crumbs{display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:var(--fs-sm)}
+.page-hd .row2{display:flex;align-items:flex-end;gap:24px}
+.page-hd .row2 .page-d{flex:1}
+.page-stats{display:flex;gap:26px}
+.page-hd{padding-top:20px;padding-bottom:12px}
+.gate .glyph-warn{width:12px;height:12px;font-size:8.5px;margin:0}
+.skel-row{display:flex;align-items:center;gap:12px;height:44px;padding:0 18px;border-bottom:1px solid var(--line-soft)}
+</style>
+</helmet>
+<div class="{{ rootClass }}" data-screen-label="Milestone with waves and gates">
+<dc-import name="Side" project="PAY" view="Milestones" theme="{{ theme }}" hint-size="236px,900px"></dc-import>
+<main class="main">
+<header class="vh">
+<div class="crumb"><span class="tile c6">P</span><span class="crumb-proj">Payments</span><span class="crumb-sep">/</span><span class="crumb-page">Milestones</span><sc-if value="{{ isPage }}" hint-placeholder-val="{{ true }}"><span class="crumb-sep">/</span><span class="crumb-page" style="color:var(--text)">{{ msName }}</span></sc-if></div>
+<span class="spacer"></span>
+<sc-if value="{{ isList }}" hint-placeholder-val="{{ false }}"><span class="btn ghost">New milestone</span></sc-if>
+<span class="btn primary">New task<span class="kbd">C</span></span>
+</header>
+<div class="page">
+
+<sc-if value="{{ isList }}" hint-placeholder-val="{{ false }}">
+<div class="page-hd"><div class="page-t">Milestones</div><div class="page-meta"><span>4 open</span><span>2 completed</span></div></div>
+<div class="ms-row hd"><span></span><span>Milestone</span><span>Progress</span><span>Target</span><span>Tasks</span><span></span></div>
+<sc-for list="{{ milestones }}" as="m" hint-placeholder-count="4">
+<div class="{{ m.cls }}"><span class="dl-ico"></span><span class="ms-n"><b>{{ m.n }}</b><span class="{{ m.wvCls }}"><sc-if value="{{ m.bad }}" hint-placeholder-val="{{ false }}"><span class="glyph-warn" style="width:12px;height:12px;font-size:8.5px;margin:0">!</span></sc-if><sc-if value="{{ m.ok }}" hint-placeholder-val="{{ false }}"><span class="check"></span></sc-if>{{ m.wv }}</span></span><span class="ms-prog"><span class="{{ m.bar }}"></span>{{ m.pct }}</span><span class="{{ m.dateCls }}">{{ m.date }}</span><span class="cnt">{{ m.cnt }}</span><span class="ms-st"><span class="{{ m.pillCls }}">{{ m.pill }}</span></span></div>
+</sc-for>
+<div class="grp"><span class="tri"></span><span>Completed</span><span class="col-count">2</span></div>
+</sc-if>
+
+<sc-if value="{{ isPage }}" hint-placeholder-val="{{ true }}">
+<div class="page-hd">
+<div class="crumbs"><span class="dl-ico"></span><span>Milestone</span><span class="{{ msPillCls }}">{{ msPill }}</span></div>
+<div class="page-t">{{ msName }}</div>
+<div class="row2">
+<div class="page-d">{{ msDesc }}</div>
+<div class="page-stats"><sc-for list="{{ stats }}" as="st" hint-placeholder-count="3"><div class="stat"><b>{{ st.b }}</b><span>{{ st.s }}</span></div></sc-for></div>
+</div>
+<div class="page-meta">
+<span class="{{ barCls }}"></span><span>{{ pct }}</span><span>Target {{ target }}</span>
+<span class="spacer"></span>
+<sc-if value="{{ plFile }}" hint-placeholder-val="{{ true }}"><span class="pl">Plan<code>plans/payouts-v2.html</code><span class="btn sm">Copy</span></span></sc-if>
+<sc-if value="{{ plWeb }}" hint-placeholder-val="{{ false }}"><span class="pl">Plan<span class="link">wiki.northwind.dev/plans/refunds ↗</span><span class="btn sm">Copy</span></span></sc-if>
+<sc-if value="{{ plNone }}" hint-placeholder-val="{{ false }}"><span class="pl none">+ Add a link to the plan</span></sc-if>
+</div>
+</div>
+
+<sc-if value="{{ stopped }}" hint-placeholder-val="{{ false }}"><div class="stopline"><span class="glyph-warn">!</span><span><b>The gate of W3 · Screens failed.</b> <span class="sm">The plan stops here: W4 and W5 stay locked until it passes.</span></span><span class="link">Go to the gate</span></div></sc-if>
+<sc-if value="{{ allPassed }}" hint-placeholder-val="{{ false }}"><div class="okline"><span class="check"></span><span>All five gates passed. Two tasks outside the waves are still open.</span></div></sc-if>
+
+<sc-if value="{{ isLoading }}" hint-placeholder-val="{{ false }}">
+<div class="waves"><div class="skel-row"><span class="skel w12"></span><span class="skel w30"></span></div><div class="skel-row"><span class="skel w12"></span><span class="skel w45"></span></div><div class="skel-row"><span class="skel w12"></span><span class="skel w20"></span></div><div class="skel-row"><span class="skel w12"></span><span class="skel w30"></span></div></div>
+</sc-if>
+<sc-if value="{{ isError }}" hint-placeholder-val="{{ false }}">
+<div style="padding:16px 18px"><div class="err"><span>Couldn’t load the waves of this milestone.</span><span class="btn sm ghost">Try again</span></div></div>
+</sc-if>
+
+<sc-if value="{{ noWaves }}" hint-placeholder-val="{{ false }}">
+<div class="list">
+<sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
+<div class="grp"><span class="tri down"></span><span class="{{ g.st }}"></span><span>{{ g.name }}</span><span class="col-count">{{ g.count }}</span><sc-if value="{{ g.first }}" hint-placeholder-val="{{ false }}"><span class="spacer"></span><span class="link" style="font-size:var(--fs-sm);font-weight:500">+ Add waves</span></sc-if></div>
+<sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3"><div class="row"><span class="pri blank"></span><span class="key">{{ r.key }}</span><span class="{{ r.st }}"></span><span class="row-t">{{ r.title }}</span><span class="row-r"><span class="{{ r.av }}">{{ r.avI }}</span></span></div></sc-for>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ hasWaves }}" hint-placeholder-val="{{ true }}">
+<div class="waves">
+<sc-if value="{{ foldPassed }}" hint-placeholder-val="{{ false }}"><div class="wave-hd"><span class="tri"></span><span class="wave-n">W1–7</span><span class="wave-t" style="font-weight:500;color:var(--text-2)">7 waves, all passed</span><span class="wave-c">41 tasks</span><span class="spacer"></span><span class="gate passed"><span class="check"></span>7 gates passed</span></div></sc-if>
+<sc-for list="{{ waves }}" as="w" hint-placeholder-count="5">
+<div class="{{ w.hdCls }}"><span class="{{ w.tri }}"></span><span class="wave-n">{{ w.n }}</span>
+<sc-if value="{{ w.named }}" hint-placeholder-val="{{ true }}"><span class="wave-t">{{ w.name }}</span></sc-if>
+<sc-if value="{{ w.renaming }}" hint-placeholder-val="{{ false }}"><span class="input focus"><span>{{ w.name }}</span><span class="caretbar"></span></span></sc-if>
+<span class="wave-c"><span class="{{ w.bar }}"></span>{{ w.cnt }}</span><span class="spacer"></span>
+<sc-if value="{{ w.grip }}" hint-placeholder-val="{{ false }}"><span class="grip"></span><span class="btn icon sm">···</span></sc-if>
+<span class="{{ w.gateCls }}"><sc-if value="{{ w.gPassed }}" hint-placeholder-val="{{ false }}"><span class="check"></span></sc-if><sc-if value="{{ w.gFailed }}" hint-placeholder-val="{{ false }}"><span class="glyph-warn">!</span></sc-if><sc-if value="{{ w.gLocked }}" hint-placeholder-val="{{ false }}"><span class="lock"></span></sc-if>{{ w.gateTxt }}</span></div>
+<sc-if value="{{ w.open }}" hint-placeholder-val="{{ false }}">
+<div class="wave-b">
+<sc-if value="{{ w.dropTop }}" hint-placeholder-val="{{ false }}"><div class="drop"></div></sc-if>
+<sc-for list="{{ w.rows }}" as="r" hint-placeholder-count="4"><div class="{{ r.cls }}"><span class="key">{{ r.key }}</span><span class="{{ r.st }}"></span><span class="row-t">{{ r.title }}</span><span class="row-r"><sc-if value="{{ r.locked }}" hint-placeholder-val="{{ false }}"><span class="lock" style="color:var(--text-3)"></span></sc-if><span class="{{ r.av }}">{{ r.avI }}</span></span></div></sc-for>
+<sc-if value="{{ w.hasMore }}" hint-placeholder-val="{{ false }}"><div class="more-l">{{ w.moreTxt }}</div></sc-if>
+<sc-if value="{{ w.hasGate }}" hint-placeholder-val="{{ true }}">
+<div class="{{ w.gbCls }}"><span class="ico-gate"></span>
+<div class="t"><div class="t-h"><b>Gate</b><sc-if value="{{ w.gHasWho }}" hint-placeholder-val="{{ false }}"><span>{{ w.gWho }}</span></sc-if></div>
+<div class="t-d">{{ w.gDesc }}</div>
+<sc-if value="{{ w.gHasNote }}" hint-placeholder-val="{{ false }}"><div class="t-n"><sc-for list="{{ w.gNote }}" as="p" hint-placeholder-count="1"><p>{{ p.t }}</p></sc-for></div></sc-if>
+<sc-if value="{{ w.gMore }}" hint-placeholder-val="{{ false }}"><div class="more-l" style="padding:0">Show the whole note</div></sc-if>
+</div>
+<sc-if value="{{ w.gActs }}" hint-placeholder-val="{{ false }}"><div class="acts" style="align-items:center"><sc-if value="{{ w.gWait }}" hint-placeholder-val="{{ false }}"><span class="muted" style="font-size:var(--fs-xs);margin-right:4px">{{ w.gWaitTxt }}</span></sc-if><span class="btn sm ghost">Fail</span><span class="{{ w.passCls }}">Pass<span class="kbd">G</span></span></div></sc-if>
+<sc-if value="{{ w.gRedo }}" hint-placeholder-val="{{ false }}"><div class="acts"><span class="btn sm ghost">Record again<span class="kbd">G</span></span></div></sc-if>
+<sc-if value="{{ w.gPop }}" hint-placeholder-val="{{ false }}">
+<div class="pop menu gate-pop">
+<div class="menu-h">Gate of W3 · Screens</div>
+<div style="padding:2px 6px 8px"><span class="seg" style="display:inline-flex"><span class="seg-i on">Passed</span><span class="seg-i">Failed</span></span></div>
+<div class="field"><span class="flabel">Note</span><span class="input focus"><span>All 6 tasks are done. Checks pass (2,611 tests). Walked the payout page, the admin panel and the statement in light and dark at 1440 and 1024.<span style="display:inline-block;width:1.5px;height:15px;background:var(--accent);vertical-align:-3px;margin-left:1px"></span></span></span><span class="help">The note stays with the gate. W4 unlocks as soon as this passes.</span></div>
+<div class="menu-foot"><span><span class="kbd">⌘↵</span>record</span><span><span class="kbd">Esc</span>cancel</span></div>
+</div>
+</sc-if>
+</div>
+</sc-if>
+</div>
+</sc-if>
+</sc-for>
+
+<sc-if value="{{ showLoose }}" hint-placeholder-val="{{ true }}">
+<div class="wave-hd"><span class="{{ looseTri }}"></span><span class="wave-t" style="font-weight:500;color:var(--text-2)">Not in a wave</span><span class="wave-c">2 tasks</span><span class="spacer"></span><span class="gate lockd">No gate. These never hold a wave up.</span></div>
+<sc-if value="{{ looseOpen }}" hint-placeholder-val="{{ false }}">
+<div class="wave-b">
+<div class="row"><span class="key">PAY-158</span><span class="st prog"></span><span class="row-t">Payout fee shows twice on the monthly statement</span><span class="row-r"><span class="av av-ana">AR</span></span></div>
+<div class="row"><span class="key">PAY-166</span><span class="st todo"></span><span class="row-t">Ask the provider for the new settlement file format</span><span class="row-r"><span class="av av-ana">AR</span></span></div>
+</div>
+</sc-if>
+</sc-if>
+<sc-if value="{{ adding }}" hint-placeholder-val="{{ false }}"><div class="wave-add"><span class="col-add">+</span><span class="wave-n">W6</span><span class="input focus"><span>Follow-up after the first week</span><span class="caretbar"></span></span><span class="kbd">↵</span></div></sc-if>
+<sc-if value="{{ canAdd }}" hint-placeholder-val="{{ true }}"><div class="wave-add"><span class="col-add">+</span>Add a wave</div></sc-if>
+</div>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{ moving }}" hint-placeholder-val="{{ false }}"><div class="toast"><span>Moving PAY-173 to W4</span><span class="kbd" style="background:oklch(1 0 0 / 0.16);color:var(--bg)">⌥↓</span><span class="kbd" style="background:oklch(1 0 0 / 0.16);color:var(--bg)">⌥↑</span><span style="opacity:.75">Esc cancels</span></div></sc-if>
+</div>
+</main>
+
+<sc-if value="{{ lockDlg }}" hint-placeholder-val="{{ false }}">
+<div class="scrim"></div>
+<div class="dlg lk">
+<div class="dlg-b">
+<div class="dlg-t">W4 is still locked</div>
+<div class="dlg-msg">The gate of W3 · Screens hasn’t passed yet. Starting PAY-174 now works ahead of the plan, and its result may have to be redone.</div>
+</div>
+<div class="dlg-ft"><span class="muted">Agents can’t start tasks in a locked wave.</span><span class="spacer"></span><span class="btn ghost">Cancel</span><span class="btn primary">Start anyway<span class="kbd">⌘↵</span></span></div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{
+  "theme": { "editor": "enum", "options": ["light", "dark"], "default": "light" },
+  "state": { "editor": "enum", "options": ["waves", "waves1280", "gate", "failed", "allpassed", "edit", "locked", "nowaves", "mslist", "long", "loading", "error"], "default": "waves" }
+}'>
+class Component extends DCLogic {
+  componentDidMount() {
+    if (!window.PM) { const i = setInterval(() => { if (window.PM) { clearInterval(i); this.forceUpdate(); } }, 30); }
+  }
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const s = this.props.state ?? 'waves';
+    const AV = { ana: ['av av-ana', 'AR'], tf: ['av av-tf', 'TF'], cd: ['av agent av-cd', 'cd'], rb: ['av agent av-rb', 'rb'] };
+    const T = (key, st, title, w, o) => { o = o || {}; return { key, st: 'st ' + st, title, av: AV[w][0], avI: AV[w][1], locked: !!o.locked, cls: 'row' + (o.locked ? ' locked' : '') + (o.drag ? ' drag' : '') + (o.hover ? ' hover' : '') }; };
+    const W3 = (drag) => [T('PAY-168', 'done', 'Payout page: attempts and next run', 'cd'), T('PAY-169', 'done', 'Admin panel: retry a payout by hand', 'cd'), T('PAY-170', 'done', 'Statement: the “Payout failed” state', 'rb'),
+      T('PAY-171', 'done', 'Alert preview in the project settings', 'cd'), T('PAY-172', 'prog', 'Empty and error states for the retry list', 'cd'), T('PAY-173', 'todo', 'Retry button wraps at 1024px', 'cd', { drag })];
+    const W4 = (locked) => [T('PAY-174', 'todo', 'End to end: a payout recovers on attempt 3', 'cd', { locked, hover: s === 'locked' }), T('PAY-175', 'todo', 'End to end: eight failures raise one alert', 'cd', { locked }), T('PAY-176', 'todo', 'End to end: a canceled payout stops retrying', 'rb', { locked })];
+    const W5 = (st) => [T('PAY-177', st, 'Changelog and upgrade notes', 'cd'), T('PAY-178', st, 'Tag 2.9.0 and watch the first day', 'ana')];
+    const P = (t) => ({ t });
+    const mk = (n, name, cnt, bar, state, o) => { o = o || {}; const open = !!o.open; return {
+      n, name, cnt, bar: 'bar ' + bar, open, tri: 'tri' + (open ? ' down' : ''), named: !o.renaming, renaming: !!o.renaming, grip: !!o.grip,
+      hdCls: 'wave-hd' + (o.cur ? ' cur' : '') + (state === 'locked' ? ' locked' : '') + (o.hover ? ' hover' : ''),
+      gateCls: 'gate' + (state === 'passed' ? ' passed' : state === 'failed' ? ' failed' : state === 'locked' ? ' lockd' : ''),
+      gPassed: state === 'passed', gFailed: state === 'failed', gLocked: state === 'locked',
+      gateTxt: state === 'passed' ? 'Gate passed' : state === 'failed' ? 'Gate failed' : state === 'locked' ? (o.lockTxt || 'Locked') : 'Gate open',
+      rows: o.rows || [], dropTop: !!o.dropTop, hasMore: !!o.more, moreTxt: o.more || '',
+      hasGate: open && !o.noGate, gbCls: 'gatebox' + (state === 'failed' ? ' failed' : ''), gDesc: o.desc || '', gHasWho: !!o.who, gWho: o.who || '',
+      gHasNote: !!o.note, gNote: (o.note || []).map(P), gMore: !!o.noteMore, gActs: state === 'open' && open && !o.noActs, passCls: 'btn sm primary' + (o.pop ? ' hover' : '') + (o.wait ? ' disabled' : ''), gWait: !!o.wait, gWaitTxt: o.wait || '', gRedo: state === 'failed' && open, gPop: !!o.pop }; };
+    const D3 = 'All checks pass, and a walkthrough of the payout page, the admin panel and the statement in light and dark finds nothing broken.';
+    let waves = [], foldPassed = false, showLoose = true, looseOpen = false, adding = false, canAdd = true;
+    const w1 = mk('W1', 'Data and contracts', '3 of 3', 'p100', 'passed'), w2 = mk('W2', 'Core and API', '5 of 5', 'p100', 'passed');
+    const w4l = mk('W4', 'End-to-end tests', '0 of 3', '', 'locked', { lockTxt: 'Locked until W3 passes' }), w5l = mk('W5', 'Release', '0 of 2', '', 'locked', { lockTxt: 'Locked' });
+    if (s === 'waves' || s === 'waves1280' || s === 'gate') {
+      const all = s === 'gate';
+      waves = [w1, w2, mk('W3', 'Screens', all ? '6 of 6' : '4 of 6', all ? 'p100' : 'p64', 'open', { open: true, cur: true, rows: all ? W3().map((r) => ({ ...r, st: 'st done' })) : W3(), desc: D3, pop: all, wait: all ? '' : 'Pass unlocks when the 2 open tasks are done' }), w4l, w5l];
+    } else if (s === 'failed') {
+      waves = [w1, w2, mk('W3', 'Screens', '5 of 6', 'p80', 'failed', { open: true, cur: true, rows: W3().slice(4), more: '4 done tasks · Show', desc: D3, who: 'claude-dev for Ana, 20 min ago',
+        note: ['Checks pass. The walkthrough found the retry button wrapping onto two lines on the payout page at 1024px, in both themes.', 'Logged as PAY-173 in this wave. Everything else looked right.'] }), w4l, w5l];
+    } else if (s === 'allpassed') {
+      waves = [w1, w2, mk('W3', 'Screens', '6 of 6', 'p100', 'passed'), mk('W4', 'End-to-end tests', '3 of 3', 'p100', 'passed'),
+        mk('W5', 'Release', '2 of 2', 'p100', 'passed', { open: true, rows: W5('done'), desc: '2.9.0 is tagged, the changelog is published and the first day shows no new payout errors.', who: 'Ana Ruiz, yesterday', note: ['Tagged on Dec 10. 3,104 payouts on day one, 41 retried, 40 recovered, 1 closed account.'] })];
+      looseOpen = true;
+    } else if (s === 'edit') {
+      waves = [w1, w2, mk('W3', 'Screens', '4 of 6', 'p64', 'open', { open: true, cur: true, rows: W3(true), noGate: true, hover: true, grip: true }),
+        mk('W4', 'End-to-end tests', '0 of 3', '', 'locked', { open: true, rows: W4(true), dropTop: true, noGate: true, lockTxt: 'Locked until W3 passes' }),
+        mk('W5', 'Release and first week', '0 of 2', '', 'locked', { renaming: true, lockTxt: 'Locked' })];
+      looseOpen = true; adding = true; canAdd = false;
+    } else if (s === 'locked') {
+      waves = [w1, w2, mk('W3', 'Screens', '4 of 6', 'p64', 'open', { cur: true }), mk('W4', 'End-to-end tests', '0 of 3', '', 'locked', { open: true, rows: W4(true), noGate: true, lockTxt: 'Locked until W3 passes' }), w5l];
+    } else if (s === 'long') {
+      foldPassed = true;
+      const many = ['Refund request form: validation', 'Refund request form: partial amounts', 'Refund list: filters by status and date', 'Refund detail: timeline of attempts', 'Refund emails: four templates', 'Admin panel: approve and reject'].map((t, i) => T('PAY-' + (201 + i), i < 4 ? 'done' : i === 4 ? 'prog' : 'todo', t, i % 3 === 2 ? 'rb' : 'cd'));
+      waves = [mk('W8', 'Refund screens', '19 of 30', 'p64', 'open', { open: true, cur: true, rows: many, more: '24 more tasks in this wave · Show all', noActs: true,
+        desc: 'All checks pass, every refund screen is walked in light and dark at 1440 and 1024, and support has tried the admin panel on staging.', who: 'Last result: failed, claude-dev for Ana, 2 days ago',
+        note: ['Checks pass (3,412 tests). The walkthrough covered the request form, the list, the detail page and the four emails.', 'Three problems. The partial-amount field accepts a refund larger than the payout when the currency has no minor unit (JPY, KRW). The list loses its filters when you come back from a detail page. The rejection email says “your payout” where it means “your refund”.'], noteMore: true }),
+        mk('W9', 'Refunds through the provider', '0 of 6', '', 'locked', { lockTxt: 'Locked until W8 passes' }), mk('W10', 'End-to-end tests', '0 of 5', '', 'locked', { lockTxt: 'Locked' }),
+        mk('W11', 'Support training and docs', '0 of 4', '', 'locked', { lockTxt: 'Locked' }), mk('W12', 'Release', '0 of 2', '', 'locked', { lockTxt: 'Locked' })];
+    }
+    const MS = (n, wv, kind, bar, pct, date, over, cnt, pill, pc, sel) => ({ n, wv, wvCls: 'ms-wv' + (kind === 'bad' ? ' bad' : kind === 'ok' ? ' ok' : ''), bad: kind === 'bad', ok: kind === 'ok', bar: 'bar ' + bar, pct, date, dateCls: 'ms-date' + (over ? ' over' : ''), cnt, pill, pillCls: 'pill' + (pc ? ' ' + pc : ''), cls: 'ms-row' + (sel ? ' sel' : '') });
+    const milestones = [MS('Payouts v2', 'Wave 3 of 5 · gate open', '', 'p64', '64%', 'Dec 12', false, '12 of 19', 'Active', 'acc', true), MS('Refunds', 'Gate failed in wave 8 of 12', 'bad', 'p60', '58%', 'Jan 30', false, '60 of 104', 'Active', 'acc'),
+      MS('Statements redesign', 'All 4 gates passed · 1 task open', 'ok', 'p80', '93%', 'Nov 28', false, '14 of 15', 'Active', 'acc'), MS('Provider migration', 'No waves', '', 'p25', '25%', 'No date', false, '3 of 12', 'Planned', '')];
+    const isList = s === 'mslist', isRefunds = s === 'long' || s === 'allpassed' && false;
+    const noWaves = s === 'nowaves';
+    const groups = [{ name: 'In progress', st: 'st prog', count: '2', first: true, rows: [T('PAY-181', 'prog', 'Map the old provider’s error codes to ours', 'tf'), T('PAY-182', 'prog', 'Dual-write payouts to both providers', 'cd')] },
+      { name: 'Todo', st: 'st todo', count: '7', first: false, rows: [T('PAY-183', 'todo', 'Shadow-compare a week of payouts', 'cd'), T('PAY-184', 'todo', 'Cut over one merchant', 'tf'), T('PAY-185', 'todo', 'Cut over everyone', 'tf'), T('PAY-186', 'todo', 'Remove the old provider client', 'cd')] }];
+    return {
+      rootClass: 'app ' + theme + (s === 'waves1280' ? ' w1280' : ''), theme, isList, isPage: !isList,
+      msName: s === 'long' ? 'Refunds' : noWaves ? 'Provider migration' : 'Payouts v2',
+      msDesc: s === 'long' ? 'Merchants can refund a payout in full or in part, and support can approve or reject it.' : noWaves ? 'Move payouts from the old provider to the new one without a merchant noticing.' : 'Failed payouts retry by themselves, support can step in by hand, and merchants see what happened.',
+      stats: s === 'long' ? [{ b: '104', s: 'tasks' }, { b: '60', s: 'done' }, { b: '12', s: 'waves' }] : noWaves ? [{ b: '12', s: 'tasks' }, { b: '3', s: 'done' }] : s === 'allpassed' ? [{ b: '21', s: 'tasks' }, { b: '19', s: 'done' }, { b: '5', s: 'waves' }] : [{ b: '21', s: 'tasks' }, { b: '12', s: 'done' }, { b: '5', s: 'waves' }],
+      barCls: 'bar ' + (s === 'allpassed' ? 'p100' : noWaves ? 'p25' : 'p64'), pct: s === 'allpassed' ? '90%' : noWaves ? '25%' : s === 'long' ? '58%' : '64%', target: s === 'long' ? 'Jan 30' : noWaves ? 'not set' : 'Dec 12',
+      plFile: !noWaves && s !== 'long', plWeb: s === 'long', plNone: noWaves,
+      stopped: s === 'failed', allPassed: s === 'allpassed', isLoading: s === 'loading', isError: s === 'error', noWaves, groups,
+      hasWaves: !isList && !noWaves && s !== 'loading' && s !== 'error', waves, foldPassed, showLoose: s !== 'long', looseTri: 'tri' + (looseOpen ? ' down' : ''), looseOpen, adding, canAdd,
+      moving: s === 'edit', lockDlg: s === 'locked', milestones, msPill: noWaves ? 'Planned' : 'Active', msPillCls: noWaves ? 'pill' : 'pill acc'
+    };
+  }
+}
+</script>
+</body>
+</html>

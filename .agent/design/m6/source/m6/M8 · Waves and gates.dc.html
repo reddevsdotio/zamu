@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>M8 · Waves and gates</title>
+<script src="../support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas" />
+<style>
+body{margin:0;background:#ecebe7;font-family:system-ui,sans-serif}
+a{color:#1a1a1a}a:hover{color:#2a78d6}
+.cv-hd{padding:48px 56px 8px}
+.cv-t{font:600 26px/1.2 system-ui,sans-serif;color:#1a1a1a}
+.cv-d{margin-top:10px;max-width:980px;font:14px/1.55 system-ui,sans-serif;color:rgba(0,0,0,.62)}
+.cv-sec{padding:36px 56px 28px;border-bottom:1px solid rgba(0,0,0,.08)}
+.cv-sh{display:flex;align-items:baseline;gap:12px;margin:0 0 18px}
+.cv-n{font:600 12px ui-monospace,Menlo,monospace;padding:4px 8px;background:#1a1a1a;color:#fff;border-radius:4px}
+.cv-st{font:600 20px/1.2 system-ui,sans-serif;color:#1a1a1a}
+.cv-sd{font:14px/1.4 system-ui,sans-serif;color:rgba(0,0,0,.55)}
+.cv-rows{display:flex;flex-direction:column;gap:28px}
+.cv-row{display:flex;gap:28px;align-items:flex-start}
+.fr{display:flex;flex-direction:column;gap:8px;flex:none}
+.fcap{font:500 12px system-ui,sans-serif;color:rgba(0,0,0,.55)}
+.card{background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}
+.w1440{width:1440px;height:900px}.w1280{width:1280px;height:820px}
+</style>
+</helmet>
+<div class="cv-hd" data-screen-label="M8 intro">
+<div class="cv-t">M8 · Waves and gates on a milestone</div>
+<div class="cv-d">Third of three releases. A milestone holds ordered waves, each closed by a gate, and a link to its plan. The plan document itself stays outside the app. No token was added. Light row above dark row in each section.</div>
+</div>
+<sc-for list="{{ sections }}" as="sec" hint-placeholder-count="2">
+<section class="cv-sec" id="{{ sec.id }}">
+<div class="cv-sh"><span class="cv-n">{{ sec.n }}</span><span class="cv-st">{{ sec.title }}</span><span class="cv-sd">{{ sec.sub }}</span></div>
+<div class="cv-rows">
+<sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+<div class="cv-row">
+<sc-for list="{{ sec.frames }}" as="f" hint-placeholder-count="2">
+<div class="fr">
+<span class="fcap">{{ f.cap }} · {{ th.id }}</span>
+<div class="{{ f.box }}">
+<sc-if value="{{ f.isPlan }}" hint-placeholder-val="{{ false }}"><dc-import name="M8Plan" theme="{{ th.id }}" state="{{ f.state }}" hint-size="1440px,900px"></dc-import></sc-if>
+</div>
+</div>
+</sc-for>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-for>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    const F = (comp, state, cap) => ({ state, cap, box: 'card ' + (/1280$/.test(state) ? 'w1280' : 'w1440'), isT7: comp === 'T', isHome: comp === 'H', isS7: comp === 'S', isL7: comp === 'L', isK7: comp === 'K', isPlan: comp === 'P' });
+    const sections = [
+      { id: 'm8-1', n: '1', title: 'Milestone with waves', sub: 'Five waves: two passed, the third in progress with its gate open, two locked. The plan link sits in the header. Also at 1280.', frames: [F('P', 'waves', 'Payouts v2'), F('P', 'waves1280', 'Same at 1280')] },
+      { id: 'm8-2', n: '2', title: 'Gates', sub: 'Recording a result; a failed gate, which stops the plan; every gate passed.', frames: [F('P', 'gate', 'Recording a result'), F('P', 'failed', 'Gate failed'), F('P', 'allpassed', 'All gates passed')] },
+      { id: 'm8-3', n: '3', title: 'Editing waves, and a locked wave', sub: 'Moving a task to another wave by drag or keyboard, renaming a wave, adding one, the “Not in a wave” group. Starting a task in a locked wave warns a person.', frames: [F('P', 'edit', 'Move, rename, add'), F('P', 'locked', 'Starting a task in a locked wave')] },
+      { id: 'm8-4', n: '4', title: 'Without waves, and the milestone list', sub: 'A milestone without waves looks as it does today, with one quiet way in. The list says where each milestone stands.', frames: [F('P', 'nowaves', 'No waves, no plan link'), F('P', 'mslist', 'Milestone list')] },
+      { id: 'm8-5', n: '5', title: 'Long content, loading, error', sub: '12 waves with the passed ones folded, a wave of 30 tasks, a gate note of several paragraphs; the waves loading; the request failed.', frames: [F('P', 'long', '12 waves'), F('P', 'loading', 'Loading'), F('P', 'error', 'Error')] }
+    ];
+    return { sections, themes: [{ id: 'light' }, { id: 'dark' }] };
+  }
+}
+</script>
+</body>
+</html>

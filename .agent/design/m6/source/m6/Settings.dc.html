@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Project settings: task defaults and the switch to Zamu</title>
+<script src="../support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="stylesheet" href="../r2/margin.css" />
+<link rel="stylesheet" href="../r2/screens.css" />
+<link rel="stylesheet" href="./m6.css" />
+<script src="../r2/data.js"></script>
+<style>
+body{margin:0}
+.lbl-empty{padding:34px 20px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.lbl-empty .empty-t{font-size:20px}
+.lbl-empty .empty-d{max-width:400px}
+.set-p{color:var(--text-2);line-height:1.55;font-size:var(--fs-md);max-width:640px;text-wrap:pretty}
+.pr-skel{display:flex;align-items:center;gap:12px;height:36px;padding:0 12px;border-bottom:1px solid var(--line-soft)}
+.pr-skel:last-child{border-bottom:0}
+</style>
+</helmet>
+<div class="{{ rootClass }}" data-screen-label="Project settings">
+<dc-import name="Side" project="{{ projKey }}" view="Settings" theme="{{ theme }}" hint-size="236px,900px"></dc-import>
+<main class="main">
+<header class="vh">
+<div class="crumb"><span class="{{ tileCls }}">{{ projI }}</span><span class="crumb-proj">{{ projName }}</span><span class="crumb-sep">/</span><span class="crumb-page">Settings</span></div>
+<span class="spacer"></span>
+<sc-if value="{{ syncing }}" hint-placeholder-val="{{ false }}"><span class="sync"><span class="dot"></span><b>Backlog.md</b>synced 38 min ago</span><span class="btn ghost">Refresh</span></sc-if>
+</header>
+<div class="setg">
+<nav class="set-nav">
+<div class="sec">Project</div>
+<sc-for list="{{ nav }}" as="n" hint-placeholder-count="6"><div class="{{ n.cls }}"><span class="nav-n">{{ n.n }}</span></div></sc-for>
+</nav>
+<div class="set-c">
+<div class="set-col">
+
+<sc-if value="{{ isDod }}" hint-placeholder-val="{{ false }}">
+<div class="set-t">Task defaults</div>
+<div class="set-d">What every new task in Payments starts with.</div>
+<div class="set-sec">
+<div class="set-sec-t">Definition of done</div>
+<div class="set-p">The checks every task must pass before it is finished, whatever the task is about. New tasks start with these items; tasks that already exist keep theirs. An agent can leave them out when a task changes no code.</div>
+<sc-if value="{{ dodEmpty }}" hint-placeholder-val="{{ false }}">
+<div class="dod-tbl"><div class="lbl-empty"><div class="empty-t serif">No default items</div><div class="empty-d">Add the checks you would otherwise repeat on every task, such as “Tests and lint pass”.</div><div class="empty-a"><span class="btn primary">Add an item</span></div></div></div>
+</sc-if>
+<sc-if value="{{ dodList }}" hint-placeholder-val="{{ true }}">
+<div class="dod-tbl">
+<div class="dod-row"><span class="grip"></span><span class="t">Tests and lint pass</span><span class="acts"></span></div>
+<sc-if value="{{ dodView }}" hint-placeholder-val="{{ true }}"><div class="dod-row hover"><span class="grip"></span><span class="t">Changelog has a line</span><span class="acts"><span class="btn sm">Edit</span><span class="btn icon sm">×</span></span></div></sc-if>
+<sc-if value="{{ dodEdit }}" hint-placeholder-val="{{ false }}"><div class="dod-row"><span class="grip"></span><span class="input focus"><span>Changelog has a line under Unreleased</span><span class="caretbar"></span></span><span class="acts"><span class="btn sm ghost">Cancel</span><span class="btn sm primary">Save<span class="kbd">↵</span></span></span></div></sc-if>
+<div class="dod-row"><span class="grip"></span><span class="t">Docs updated when behaviour changes</span><span class="acts"></span></div>
+<div class="add-l"><span class="col-add">+</span>Add an item</div>
+</div>
+<div class="help">Applies to tasks created from now on. 40 open tasks keep the items they have.</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ isSync }}" hint-placeholder-val="{{ false }}">
+<div class="set-t">Backlog.md</div>
+<div class="set-d">Harbor copies its tasks from the task files in a git repository. They are read-only here.</div>
+<div class="kv">
+<span class="k">Repository</span><span class="v"><code>gitlab.com/northwind/harbor</code></span>
+<span class="k">Folder and branch</span><span class="v"><code>backlog/</code><span class="muted" style="font-weight:400">on</span><code>main</code></span>
+<span class="k">Last sync</span><span class="v"><span class="dot"></span>38 min ago<span class="muted" style="font-weight:400">· 364 tasks</span></span>
+<span class="k">Webhook</span><span class="v">Receiving pushes</span>
+</div>
+<div class="set-sec">
+<div class="set-sec-t">Switch to Zamu</div>
+<div class="sw-card">
+<div class="t"><b>Make Zamu the owner of these tasks</b><span>From then on tasks are edited here and through the CLI, and the files are no longer read. Task numbers, comments and history stay as they are. This can’t be undone.</span></div>
+<span class="{{ swBtnCls }}">Switch to Zamu…</span>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isAfter }}" hint-placeholder-val="{{ false }}">
+<div class="set-t">Backlog.md</div>
+<div class="owned"><span class="check"></span><span>Owned by Zamu since Nov 30</span><span class="spacer"></span><span class="sm">Switched by Ana Ruiz. The task files are no longer read.</span></div>
+<div class="set-sec">
+<div class="set-sec-t">Keep a copy as files</div>
+<div class="set-p">This command writes Harbor back out as Backlog.md task files, into the folder you run it from. Use it to keep a copy in the repository, or to leave Zamu.</div>
+<div class="cmd"><code>zamu backlog export --project HBR</code><span class="btn sm ghost">Copy</span></div>
+<div class="help">The copy is as fresh as the last time the command ran. Edits made to the exported files are not read back.</div>
+</div>
+<div class="set-sec">
+<div class="set-sec-t">Repository</div>
+<div class="kv"><span class="k">Still linked</span><span class="v"><code>gitlab.com/northwind/harbor</code></span></div>
+</div>
+</sc-if>
+
+</div>
+
+
+</div>
+</div>
+</main>
+<sc-if value="{{ isDlg }}" hint-placeholder-val="{{ false }}">
+<div class="scrim"></div>
+<div class="dlg swi">
+<div class="dlg-b">
+<div class="dlg-t">Switch Harbor to Zamu</div>
+<div class="dlg-msg">Zamu stops reading the task files in <code style="font-family:var(--code);font-size:12.5px">backlog/</code>. All 364 tasks keep their numbers, comments and history and become editable here.</div>
+
+<sc-if value="{{ chkLoading }}" hint-placeholder-val="{{ false }}">
+<div class="flabel">Checking open merge requests on GitLab…</div>
+<div class="pr-list"><div class="pr-skel"><span class="skel w12"></span><span class="skel w45"></span></div><div class="pr-skel"><span class="skel w12"></span><span class="skel w60"></span></div><div class="pr-skel"><span class="skel w12"></span><span class="skel w30"></span></div></div>
+</sc-if>
+<sc-if value="{{ chkNone }}" hint-placeholder-val="{{ false }}">
+<div class="pr-ok"><span class="check"></span>No open merge request changes the task files. Nothing will be lost.</div>
+</sc-if>
+<sc-if value="{{ chkSome }}" hint-placeholder-val="{{ false }}">
+<div class="lose"><span class="glyph-warn">!</span><span>{{ loseTxt }}</span></div>
+<div class="pr-list">
+<sc-for list="{{ prs }}" as="p" hint-placeholder-count="3"><div class="pr"><span class="num">{{ p.num }}</span><span class="row-t">{{ p.title }}</span><span class="{{ p.av }}">{{ p.avI }}</span><span class="br">{{ p.branch }}</span></div></sc-for>
+<sc-if value="{{ prMore }}" hint-placeholder-val="{{ false }}"><div class="pr-more"><span>35 more</span><span class="spacer"></span><span class="link">Open the list on GitLab ↗</span></div></sc-if>
+</div>
+</sc-if>
+<sc-if value="{{ chkErr }}" hint-placeholder-val="{{ false }}">
+<div class="err"><span>Couldn’t reach GitLab to check for open merge requests.</span><span class="btn sm ghost">Try again</span></div>
+<div class="help">The switch stays locked until the check works, so no edit is lost without you seeing it first.</div>
+</sc-if>
+
+<div class="field"><span class="flabel">Type HBR to confirm</span><span class="{{ inCls }}"><sc-if value="{{ typed }}" hint-placeholder-val="{{ false }}"><span>HBR</span><span class="caretbar"></span></sc-if><sc-if value="{{ notTyped }}" hint-placeholder-val="{{ true }}"><span class="ph">HBR</span></sc-if></span></div>
+</div>
+<div class="dlg-ft"><span class="muted">This can’t be undone.</span><span class="spacer"></span><span class="btn ghost">Cancel</span><span class="{{ goCls }}">Switch to Zamu</span></div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{
+  "theme": { "editor": "enum", "options": ["light", "dark"], "default": "light" },
+  "state": { "editor": "enum", "options": ["dodempty", "dod", "dodedit", "swbefore", "swloading", "swnone", "swthree", "swconfirm", "swforty", "swerror", "swafter"], "default": "dod" }
+}'>
+class Component extends DCLogic {
+  componentDidMount() {
+    if (!window.PM) { const i = setInterval(() => { if (window.PM) { clearInterval(i); this.forceUpdate(); } }, 30); }
+  }
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const s = this.props.state ?? 'dod';
+    const isDod = s.indexOf('dod') === 0;
+    const isAfter = s === 'swafter';
+    const isSync = !isDod && !isAfter;
+    const isDlg = isSync && s !== 'swbefore';
+    const harbor = !isDod;
+    const navNames = isDod ? ['General', 'Labels', 'Task defaults', 'Members', 'Agents', 'Integrations'] : isAfter ? ['General', 'Labels', 'Task defaults', 'Members', 'Agents', 'Backlog.md'] : ['General', 'Labels', 'Members', 'Agents', 'Backlog.md sync'];
+    const onName = isDod ? 'Task defaults' : isAfter ? 'Backlog.md' : 'Backlog.md sync';
+    const nav = navNames.map((n) => ({ n, cls: 'nav-i' + (n === onName ? ' on' : '') }));
+    const PR = (num, title, w, branch) => ({ num, title, branch, av: w === 'cd' ? 'av agent av-cd' : w === 'tf' ? 'av av-tf' : 'av av-ana', avI: w === 'cd' ? 'cd' : w === 'tf' ? 'TF' : 'AR' });
+    const three = [PR('!214', 'Close the i18n tasks that shipped in 2.8', 'cd', 'chore/close-i18n-tasks'), PR('!209', 'Split the offline cache task into three', 'tf', 'feat/offline-cache'), PR('!201', 'Backlog cleanup: archive done tasks from October', 'ana', 'chore/backlog-cleanup')];
+    const forty = three.concat([PR('!198', 'Savings goals: acceptance criteria for the last two subtasks', 'cd', 'feat/savings-goals'), PR('!197', 'Trends verification notes', 'cd', 'feat/trends-verification')]);
+    const many = s === 'swforty';
+    const typed = s === 'swconfirm' || s === 'swnone';
+    const locked = s === 'swloading' || s === 'swerror';
+    return {
+      rootClass: 'app ' + theme, theme, projKey: harbor ? 'HBR' : 'PAY', projName: harbor ? 'Harbor' : 'Payments', projI: harbor ? 'H' : 'P', tileCls: harbor ? 'tile c1' : 'tile c6',
+      nav, isDod, isSync, isAfter, isDlg, syncing: isSync,
+      dodEmpty: s === 'dodempty', dodList: s === 'dod' || s === 'dodedit', dodView: s === 'dod', dodEdit: s === 'dodedit',
+      swBtnCls: 'btn ghost' + (isDlg ? ' on' : ''),
+      chkLoading: s === 'swloading', chkNone: s === 'swnone', chkSome: s === 'swthree' || s === 'swconfirm' || many, chkErr: s === 'swerror',
+      prs: many ? forty : three, prMore: many,
+      loseTxt: many ? '40 open merge requests change task files. Their task edits will be lost. Merge or close them first, or redo the edits in Zamu afterwards.' : '3 open merge requests change task files. Their task edits will be lost. Merge or close them first, or redo the edits in Zamu afterwards.',
+      typed, notTyped: !typed, inCls: 'input' + (typed ? ' focus' : locked ? ' dis' : ''),
+      goCls: 'btn danger' + (typed ? '' : ' disabled')
+    };
+  }
+}
+</script>
+</body>
+</html>

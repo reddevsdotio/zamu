@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="utf-8" />
+<script src="../support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="stylesheet" href="../r2/margin.css" />
+<script src="../r2/data.js"></script>
+</helmet>
+<aside class="side" data-screen-label="Sidebar" style="height:100%;position:relative">
+<div class="anchor">
+<div class="{{ wsCls }}" style="flex:1"><span class="ws-logo">N</span><span class="nav-l nav-n">Northwind Labs</span><span class="nav-l caret">▾</span></div>
+<sc-if value="{{ wsOpen }}">
+<div class="pop below menu" style="width:248px">
+<div class="menu-h">Workspaces</div>
+<div class="menu-i on"><span class="ws-logo">N</span><span class="nav-n">Northwind Labs</span><span class="chk"><span class="check"></span></span></div>
+<div class="menu-i"><span class="ws-logo" style="background:var(--lb5)">S</span><span class="nav-n">Side projects</span></div>
+<div class="menu-sep"></div>
+<div class="menu-i"><span class="ico ico-gear"></span>Workspace settings</div>
+<div class="menu-i"><span class="ico ico-plus"></span>Invite people</div>
+<div class="menu-i"><span class="ico ico-plus"></span>Create workspace</div>
+</div>
+</sc-if>
+</div>
+<div class="cmdk"><span class="ico ico-search"></span><span class="nav-l nav-n">Search or jump to</span><span class="nav-l kbd">⌘K</span></div>
+<div class="{{ homeCls }}"><span class="ico ico-home"></span><span class="nav-l nav-n">Home</span><span class="nav-l nav-count hot">8</span></div>
+<div class="sec">Projects</div>
+<sc-for list="{{ projects }}" as="p" hint-placeholder-count="6">
+<div class="{{ p.cls }}"><span class="{{ p.tile }}">{{ p.initial }}</span><span class="nav-l nav-n">{{ p.name }}</span><span class="nav-l nav-count">{{ p.open }}</span></div>
+<sc-if value="{{ p.expanded }}"><sc-for list="{{ p.views }}" as="v"><div class="{{ v.cls }}"><span class="nav-l nav-n">{{ v.name }}</span></div></sc-for></sc-if>
+</sc-for>
+<div class="side-foot">
+<div class="nav-i"><span class="ico ico-gear"></span><span class="nav-l nav-n">Workspace settings</span></div>
+<div class="anchor">
+<div class="{{ userCls }}" style="flex:1"><span class="av av-ana lg">AR</span><span class="nav-l nav-n">Ana Ruiz</span></div>
+<sc-if value="{{ userOpen }}">
+<div class="pop menu" style="left:0;bottom:calc(100% + 8px);width:260px">
+<div class="menu-i" style="min-height:48px"><span class="av av-ana xl">AR</span><span style="display:flex;flex-direction:column"><b style="font-weight:600">Ana Ruiz</b><span class="sm">ana@northwind.dev</span></span></div>
+<div class="menu-sep"></div>
+<div class="menu-i" style="justify-content:space-between"><span>Theme</span><span class="seg"><span class="seg-i">System</span><span class="{{ lightCls }}">Light</span><span class="{{ darkCls }}">Dark</span></span></div>
+<div class="menu-i on">My API keys</div>
+<div class="menu-i">Keyboard shortcuts<span class="kbd">?</span></div>
+<div class="menu-sep"></div>
+<div class="menu-i">Sign out</div>
+</div>
+</sc-if>
+</div>
+</div>
+</aside>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{
+  "project": { "editor": "text", "default": "HBR" },
+  "view": { "editor": "text", "default": "Board" },
+  "home": { "editor": "boolean", "default": false },
+  "menu": { "editor": "enum", "options": ["", "ws", "user"], "default": "" },
+  "theme": { "editor": "enum", "options": ["light", "dark"], "default": "light" }
+}'>
+class Component extends DCLogic {
+  componentDidMount() {
+    if (!window.PM) { const i = setInterval(() => { if (window.PM) { clearInterval(i); this.forceUpdate(); } }, 30); }
+  }
+  renderVals() {
+    const P = window.PM;
+    const home = this.props.home === true || this.props.home === 'true';
+    const menu = this.props.menu || '';
+    const dark = this.props.theme === 'dark';
+    return {
+      projects: P ? P.side(home ? '' : (this.props.project ?? 'HBR'), this.props.view ?? 'Board') : [],
+      homeCls: 'nav-i' + (home ? ' on' : ''), wsOpen: menu === 'ws', userOpen: menu === 'user',
+      wsCls: 'ws' + (menu === 'ws' ? ' on' : ''), userCls: 'nav-i' + (menu === 'user' ? ' on' : ''),
+      lightCls: dark ? 'seg-i' : 'seg-i on', darkCls: dark ? 'seg-i on' : 'seg-i'
+    };
+  }
+}
+</script>
+</body>
+</html>
