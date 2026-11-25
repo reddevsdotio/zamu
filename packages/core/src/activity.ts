@@ -1,11 +1,13 @@
 // Activity: one row per task change, written in the transaction of the change. M3 adds the
 // origin (app or a Backlog.md refresh), the commit a refresh read, and project-level rows. M5 adds
-// labels, dueDate, blockedBy and parent changes.
+// labels, dueDate, blockedBy and parent changes. M6 adds the work record changes (criteria, done
+// items, plan, final summary) and the machine and branch the CLI sent with the change.
 import {
   type Activity,
   type ActivityChange,
   ActivityList,
   type ActivityOrigin,
+  type EntrySource,
   formatTaskKey,
   ListTaskActivityInput,
   type Priority,
@@ -14,6 +16,7 @@ import {
   type ProjectActivityType,
   type TaskActivityType,
   type TaskStatus,
+  WORK_RECORD_CHANGE_FIELDS,
 } from '@zamu/contracts';
 import { type DbOrTx, schema, type Tx } from '@zamu/db';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -64,7 +67,17 @@ export type StoredChange =
   | { field: 'labels'; from: StoredLabelRef[]; to: StoredLabelRef[] }
   | { field: 'dueDate'; from: string | null; to: string | null }
   | { field: 'blockedBy'; from: StoredTaskRef[]; to: StoredTaskRef[] }
-  | { field: 'parent'; from: StoredTaskRef | null; to: StoredTaskRef | null };
+  | { field: 'parent'; from: StoredTaskRef | null; to: StoredTaskRef | null }
+  | StoredWorkRecordChange;
+
+/**
+ * M6: a change of a criterion or done item (criterion.checked, doneItem.waived, ...) or of the plan
+ * or final summary. Stored in the contract's shape: they hold numbers and text, nothing to resolve.
+ */
+export type StoredWorkRecordChange = Extract<
+  ActivityChange,
+  { field: (typeof WORK_RECORD_CHANGE_FIELDS)[number] }
+>;
 
 /** Fields of StoredChange that map to an ActivityChange of the contract. */
 const CONTRACT_FIELDS = new Set<string>([
@@ -79,6 +92,7 @@ const CONTRACT_FIELDS = new Set<string>([
   'dueDate',
   'blockedBy',
   'parent',
+  ...WORK_RECORD_CHANGE_FIELDS,
 ]);
 
 /** Orders labels as stored changes and task shapes list them: by name ignoring case, then by name. */
@@ -186,7 +200,20 @@ function activityValues(actor: Actor | null, entry: AnyEntry | AnySystemEntry) {
     changes: isProject ? detailsToChanges(entry.details) : entry.changes,
     origin,
     originRef: entry.originRef ?? null,
+    // M6: what the CLI sent (x-zamu-machine, x-zamu-branch); the web app and jobs send neither.
+    machine: actor?.source?.machine ?? null,
+    branch: actor?.source?.branch ?? null,
   };
+}
+
+/**
+ * M6: the source of an activity row or comment: null when neither machine nor branch was sent.
+ * Rows selected without the two columns (some home and dashboard reads) read as null too.
+ */
+export function entrySourceOf(row: { machine?: string | null; branch?: string | null }): EntrySource | null {
+  const machine = row.machine ?? null;
+  const branch = row.branch ?? null;
+  return machine === null && branch === null ? null : { machine, branch };
 }
 
 /**
@@ -386,6 +413,7 @@ export async function toActivities(db: DbOrTx, taskKey: string, rows: ActivityRo
         backlogFields: changes.flatMap((change) =>
           change.field === 'backlog' && Array.isArray(change.to) ? change.to.map(String) : [],
         ),
+        source: entrySourceOf(row),
         createdAt: row.createdAt,
       };
     }),

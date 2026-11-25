@@ -151,7 +151,10 @@ describe('timeline', () => {
 
   it('returns an empty list for a task without history', async () => {
     const { key } = await newTask();
-    expect(await listTaskTimeline(ctx, world.ownerActor, { key })).toEqual({ items: [] });
+    expect(await listTaskTimeline(ctx, world.ownerActor, { key })).toEqual({
+      items: [],
+      counts: { all: 0, comments: 0, notes: 0, history: 0 },
+    });
   });
 
   it('honours key scope and workspaces', async () => {
