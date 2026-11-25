@@ -3,6 +3,7 @@ import { ORPCError } from '@orpc/client';
 import {
   ActivityList,
   ASSIGNEE_ME,
+  CreateCommentInput,
   CreateTaskInput,
   FILTER_NONE,
   GetTaskInput,
@@ -13,8 +14,10 @@ import {
   TASK_STATUSES,
   type Task,
   Timeline,
+  type TimelineCounts,
   type TimelineItem,
   UpdateTaskInput,
+  type WorkItem,
 } from '@zamu/contracts';
 import type { ApiClient } from '../client';
 import { type CommandContext, emit } from '../context';
@@ -25,26 +28,42 @@ import {
   cycleStateLabel,
   fields,
   formatTime,
+  indentBody,
+  itemLines,
+  itemProgress,
   milestoneStatusLabel,
   priorityLabel,
   statusLabel,
   table,
   timelineText,
+  workTextByline,
 } from '../format';
 import { requireProject, resolveProject } from '../project';
+import { queueBehind } from '../queue';
 import { resolveLabelIds } from './labels';
+import { noteSummary, postNote } from './notes';
 import {
   isNone,
   normalizeChoice,
   normalizeCycle,
   parseInput,
-  readText,
   resolveAssignee,
   resolveMilestone,
   type TaskRef,
   taskRef,
   withTaskRef,
 } from './shared';
+import {
+  type CreateWorkOptions,
+  checkStdinFlags,
+  createWorkFields,
+  resolveWaives,
+  stdinReader,
+  touchesItems,
+  type UpdateWorkOptions,
+  updateWorkFields,
+  type WaiveToken,
+} from './work';
 
 // Kept here for callers that imported them from this module in M1.
 export { collectList, normalizeChoice, resolveAssignee } from './shared';
@@ -113,9 +132,46 @@ function taskSummary(context: CommandContext, verb: string, task: Task): string 
       ...(progress && progress.total > 0
         ? [['Subtasks', `${progress.done} of ${progress.total} done`] as [string, string]]
         : []),
+      ...workProgressEntries(task),
     ],
     style,
   )}`;
+}
+
+/** "Criteria  4 of 6 settled (1 waived)" and the same for done items, for lists that have items. */
+function workProgressEntries(task: Pick<Task, 'criteria' | 'doneItems'>): [string, string][] {
+  const entries: [string, string][] = [];
+  if (task.criteria?.length) entries.push(['Criteria', itemProgress(task.criteria)]);
+  if (task.doneItems?.length) entries.push(['Done items', itemProgress(task.doneItems)]);
+  return entries;
+}
+
+/** A titled list of items: "Acceptance criteria  4 of 6 settled" then a line per item. */
+function itemSection(context: CommandContext, title: string, items: readonly WorkItem[]): string {
+  const { style } = context;
+  const locked = items.some((item) => item.locked) ? style.dim(' · from Backlog.md, read-only') : '';
+  return `\n${style.bold(title)}  ${style.dim(itemProgress(items))}${locked}\n${itemLines(items, style)}\n`;
+}
+
+/** The two item lists, for the lists that have items. */
+function itemSections(context: CommandContext, task: Pick<Task, 'criteria' | 'doneItems'>): string {
+  return [
+    task.criteria?.length ? itemSection(context, 'Acceptance criteria', task.criteria) : '',
+    task.doneItems?.length ? itemSection(context, 'Definition of done', task.doneItems) : '',
+  ].join('');
+}
+
+/** A titled Markdown text (plan, final summary) with who wrote it, indented under the title. */
+function textSection(
+  context: CommandContext,
+  title: string,
+  text: string | null | undefined,
+  meta: Task['planMeta'],
+): string {
+  if (!text?.trim()) return '';
+  const { style } = context;
+  const byline = workTextByline(meta);
+  return `\n${style.bold(title)}${byline ? `  ${style.dim(byline)}` : ''}\n${indentBody(text)}\n`;
 }
 
 /**
@@ -311,14 +367,30 @@ export async function listTasks(context: CommandContext, options: ListOptions): 
  * The task's timeline. A server older than M2 has no /timeline route: fall back to the activity
  * list so zamu tasks show still works there.
  */
-async function loadTimeline(client: ApiClient, input: GetTaskInput): Promise<TimelineItem[]> {
+async function loadTimeline(
+  client: ApiClient,
+  input: GetTaskInput,
+): Promise<{ items: TimelineItem[]; counts?: TimelineCounts }> {
   try {
-    return Timeline.parse(await client.tasks.timeline(input)).items;
+    const timeline = Timeline.parse(await client.tasks.timeline(input));
+    return { items: timeline.items, ...(timeline.counts ? { counts: timeline.counts } : {}) };
   } catch (error) {
     if (!(error instanceof ORPCError) || error.status !== 404) throw error;
     const activity = ActivityList.parse(await client.tasks.activity(input)).items;
-    return activity.map((entry) => ({ ...entry, kind: 'activity' as const }));
+    return { items: activity.map((entry) => ({ ...entry, kind: 'activity' as const })) };
   }
+}
+
+/** "History · 4 notes · 2 comments · 9 changes": the timeline heading with its counts. */
+function historyHeading(counts: TimelineCounts | undefined): string {
+  if (!counts) return 'History';
+  const part = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+  return [
+    'History',
+    part(counts.notes, 'note', 'notes'),
+    part(counts.comments, 'comment', 'comments'),
+    part(counts.history, 'change', 'changes'),
+  ].join(' · ');
 }
 
 /** "Subtasks  1 of 2 done" then one line per subtask, canceled ones included. */
@@ -340,13 +412,15 @@ export async function showTask(
   const ref = await taskRef(context, key, options.project);
   parseInput(GetTaskInput, ref);
   const client = await context.client();
-  const [task, timeline] = await withTaskRef(context, ref, (r) => {
+  const [task, loaded] = await withTaskRef(context, ref, (r) => {
     const input = parseInput(GetTaskInput, r);
     return Promise.all([client.tasks.get(input), loadTimeline(client, input)]);
   });
+  const timeline = loaded.items;
   const activity = timeline.filter((item) => item.kind === 'activity');
+  const counts = loaded.counts ? { timelineCounts: loaded.counts } : {};
 
-  emit(context, 'tasks.show', { task, activity, timeline }, (data) => {
+  emit(context, 'tasks.show', { task, activity, timeline, ...counts }, (data) => {
     const { style } = context;
     const t = data.task;
     const createdBy = t.createdOnBehalfOf
@@ -364,6 +438,7 @@ export async function showTask(
           ...subtaskEntries(t),
           ...relatedEntries('Blocked by', t.blockedBy ?? []),
           ...relatedEntries('Blocks', t.blocks ?? []),
+          ...workProgressEntries(t),
           ['Project', `${t.project.key}  ${t.project.name}`],
           ...backlogFields(t),
           ['Created', `${formatTime(t.createdAt)} by ${createdBy}`],
@@ -372,9 +447,13 @@ export async function showTask(
         style,
       ),
     ];
+    // As on the task page: the summary first, then the description, the lists and the plan.
+    parts.push(textSection(context, 'Final summary', t.finalSummary, t.finalSummaryMeta));
     if (t.description?.trim()) parts.push(`\n${t.description.replace(/\s+$/, '')}\n`);
+    parts.push(itemSections(context, t));
+    parts.push(textSection(context, 'Plan', t.plan, t.planMeta));
     const history = timelineText(data.timeline ?? [], style);
-    if (history) parts.push(`\n${style.dim('History')}\n`, history);
+    if (history) parts.push(`\n${style.dim(historyHeading(data.timelineCounts))}\n`, history);
     return parts.join('');
   });
 }
@@ -383,7 +462,7 @@ export async function showTask(
 // zamu tasks create
 // ---------------------------------------------------------------------------
 
-export interface CreateOptions {
+export interface CreateOptions extends CreateWorkOptions {
   project?: string;
   description?: string;
   priority?: string;
@@ -403,14 +482,14 @@ export async function createTask(
   options: CreateOptions,
 ): Promise<void> {
   const milestoneNone = options.milestone !== undefined && isNone(options.milestone);
+  checkStdinFlags(options);
+  const read = stdinReader(context);
   const project = await requireProject(context, options.project);
   context.target = { ...context.target, project };
   const draft = {
     project,
     title: titleWords.join(' '),
-    ...(options.description !== undefined
-      ? { description: await readText(context, options.description) }
-      : {}),
+    ...(options.description !== undefined ? { description: await read(options.description) } : {}),
     ...(options.priority !== undefined ? { priority: normalizeChoice(options.priority) } : {}),
     ...(options.status !== undefined ? { status: normalizeChoice(options.status) } : {}),
     ...(options.cycle !== undefined ? { cycle: cycleValue(options.cycle) } : {}),
@@ -418,6 +497,7 @@ export async function createTask(
     ...(options.due !== undefined ? { dueDate: valueOrNull(options.due) } : {}),
     ...(options.parent !== undefined ? { parent: valueOrNull(options.parent) } : {}),
     ...(options.blockedBy?.length ? { blockedBy: options.blockedBy } : {}),
+    ...(await createWorkFields(options, read)),
   };
   const checked = parseInput(CreateTaskInput, draft);
   const client = await context.client();
@@ -435,14 +515,19 @@ export async function createTask(
     ...(milestone ? { milestone } : {}),
   });
   const task = await client.tasks.create(input);
-  emit(context, 'tasks.create', task, (data) => taskSummary(context, 'Created', data));
+  emit(
+    context,
+    'tasks.create',
+    task,
+    (data) => `${taskSummary(context, 'Created', data)}${itemSections(context, data)}`,
+  );
 }
 
 // ---------------------------------------------------------------------------
 // zamu tasks update
 // ---------------------------------------------------------------------------
 
-export interface UpdateOptions {
+export interface UpdateOptions extends UpdateWorkOptions {
   project?: string;
   status?: string;
   priority?: string;
@@ -458,6 +543,12 @@ export interface UpdateOptions {
   parent?: string;
   blockedBy?: string[];
   unblock?: string[];
+  /** --waive-ac, --waive-dod and --reason in typed order (all three hold the same list). */
+  waiveAc?: WaiveToken[];
+  waiveDod?: WaiveToken[];
+  reason?: WaiveToken[];
+  /** --append-notes: a work note written after the update; repeated ones join into one note. */
+  appendNotes?: string[];
 }
 
 export async function updateTask(
@@ -468,14 +559,19 @@ export async function updateTask(
   if (options.assignee !== undefined && options.unassign) {
     throw usageError('Use either --assignee or --unassign, not both.');
   }
+  checkStdinFlags(options);
+  const read = stdinReader(context);
+  const waives = resolveWaives(options.waiveAc ?? options.waiveDod ?? options.reason ?? []);
   const milestoneNone = options.milestone !== undefined && isNone(options.milestone);
   const ref = await taskRef(context, key, options.project);
+  const work = await updateWorkFields(options, waives, read);
+  const notes = options.appendNotes?.length
+    ? (await Promise.all(options.appendNotes.map(read))).join('\n\n')
+    : undefined;
   const draft = {
     ...ref,
     ...(options.title !== undefined ? { title: options.title } : {}),
-    ...(options.description !== undefined
-      ? { description: await readText(context, options.description) }
-      : {}),
+    ...(options.description !== undefined ? { description: await read(options.description) } : {}),
     ...(options.status !== undefined ? { status: normalizeChoice(options.status) } : {}),
     ...(options.priority !== undefined ? { priority: normalizeChoice(options.priority) } : {}),
     ...(options.unassign ? { assignee: null } : {}),
@@ -487,13 +583,27 @@ export async function updateTask(
     ...(options.parent !== undefined ? { parent: valueOrNull(options.parent) } : {}),
     ...(options.blockedBy?.length ? { addBlockers: options.blockedBy } : {}),
     ...(options.unblock?.length ? { removeBlockers: options.unblock } : {}),
+    ...work,
   };
-  // `me` and null stand in for names still to be resolved, so "change at least one field" passes.
-  parseInput(UpdateTaskInput, {
-    ...draft,
+  if (typeof draft.status === 'string') context.target = { ...context.target, status: draft.status };
+  const changes = Object.keys(draft).some((name) => name !== 'key' && name !== 'project');
+  const stub = {
     ...(options.assignee !== undefined ? { assignee: ASSIGNEE_ME } : {}),
     ...(options.milestone !== undefined ? { milestone: null } : {}),
-  });
+  };
+
+  // Only --append-notes: the note is the whole command.
+  if (notes !== undefined && !changes && Object.keys(stub).length === 0) {
+    parseInput(CreateCommentInput, { ...ref, body: notes, kind: 'note' });
+    const client = await context.client();
+    const note = await postNote(context, client, ref, notes);
+    emit(context, 'notes.add', note, (data) => noteSummary(context, data));
+    return;
+  }
+  if (notes !== undefined) parseInput(CreateCommentInput, { ...ref, body: notes, kind: 'note' });
+
+  // `me` and null stand in for names still to be resolved, so "change at least one field" passes.
+  parseInput(UpdateTaskInput, { ...draft, ...stub });
   const client = await context.client();
   const assignee =
     options.assignee === undefined
@@ -523,6 +633,19 @@ export async function updateTask(
         ...(milestone ? { milestone } : {}),
       }),
     ),
+  ).catch((error: unknown) =>
+    // Offline queue (M6): an update queued because the server didn't answer queues its note behind it.
+    notes === undefined
+      ? Promise.reject(error)
+      : queueBehind(error, 'comments.create', { ...target, body: notes, kind: 'note' }),
   );
-  emit(context, 'tasks.update', task, (data) => taskSummary(context, 'Updated', data));
+  // The note goes after the update, so a refused update writes no note.
+  const note = notes === undefined ? null : await postNote(context, client, { key: task.key }, notes);
+  emit(context, 'tasks.update', task, (data) =>
+    [
+      taskSummary(context, 'Updated', data),
+      touchesItems(work) ? itemSections(context, data) : '',
+      note ? `\nAdded note ${context.style.bold(note.id)}\n` : '',
+    ].join(''),
+  );
 }

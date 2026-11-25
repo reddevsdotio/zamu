@@ -67,7 +67,10 @@ async function zamu(args: string[], options: RunOptions = {}): Promise<RunResult
 
 /** Runs with ZAMU_URL and ZAMU_KEY set (the way agents in CI call zamu). */
 function as(key: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
-  return zamu(args, { ...options, env: { ZAMU_URL: URL, ZAMU_KEY: key, ...options.env } });
+  return zamu(args, {
+    ...options,
+    env: { ZAMU_URL: URL, ZAMU_KEY: key, ZAMU_MACHINE: 'test-machine', ...options.env },
+  });
 }
 
 function parsed<N extends CliResultName>(result: RunResult, name: N) {
@@ -519,11 +522,11 @@ describe('zamu tasks create and update', () => {
     expect(human.stdout).toMatch(/Assignee\s+Unassigned/);
 
     const show = await as(keys.agent, ['tasks', 'show', created.key]);
-    expect(show.stdout).toMatch(/ {2}claude-dev for Ana Ruiz created the task\n/);
+    expect(show.stdout).toMatch(/ {2}claude-dev for Ana Ruiz created the task( {2}test-machine)?\n/);
     expect(show.stdout).toMatch(
-      / {2}claude-dev for Ana Ruiz renamed it to "Updated title", moved it from Todo to In progress, changed the priority from No priority to Urgent, assigned it to claude-dev\n/,
+      / {2}claude-dev for Ana Ruiz renamed it to "Updated title", moved it from Todo to In progress, changed the priority from No priority to Urgent, assigned it to claude-dev {2}test-machine\n/,
     );
-    expect(show.stdout).toMatch(/ {2}claude-dev for Ana Ruiz unassigned claude-dev\n/);
+    expect(show.stdout).toMatch(/ {2}claude-dev for Ana Ruiz unassigned claude-dev {2}test-machine\n/);
   });
 
   it('maps write errors to exit codes', async () => {
@@ -788,7 +791,7 @@ describe('zamu tasks show timeline', () => {
 
     const human = await as(keys.agent, ['tasks', 'show', 'PAY-1']);
     const out = human.stdout;
-    expect(out).toContain('\nHistory\n');
+    expect(out).toMatch(/\nHistory · 0 notes · 3 comments · \d+ changes\n/);
     expect(out).toMatch(
       /\d{4}-\d{2}-\d{2} \d{2}:\d{2} {2}Ana Ruiz commented {2}[0-9a-f-]{36}\n {4}Should 429 count/,
     );
@@ -876,7 +879,9 @@ describe('zamu comments', () => {
 
     const show = await as(keys.agent, ['tasks', 'show', 'PAY-2']);
     expect(show.stdout).toMatch(/ {2}Comment deleted by claude-dev for Ana Ruiz\n/);
-    expect(show.stdout).toMatch(/claude-dev for Ana Ruiz commented {2}[0-9a-f-]{36}\n {4}Second note/);
+    expect(show.stdout).toMatch(
+      /claude-dev for Ana Ruiz commented {2}[0-9a-f-]{36} {2}test-machine\n {4}Second note/,
+    );
 
     const humanDelete = await as(keys.agent, [
       'comments',
@@ -1282,7 +1287,7 @@ describe('output conventions', () => {
     const help = await zamu(['--help']);
     expect(help.code).toBe(0);
     expect(help.stdout).toContain(
-      'Exit codes: 0 ok, 1 usage, 2 auth, 3 not found, 4 forbidden, 5 server, 6 Backlog.md conflict.',
+      'Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task with open items),\n2 auth, 3 not found, 4 forbidden, 5 server (unreachable, and nothing queued), 6 Backlog.md conflict,\n7 queued',
     );
     const version = await zamu(['--version']);
     expect(version.code).toBe(0);
@@ -1556,8 +1561,9 @@ describe('repository link (M2.1)', () => {
     expect(first).toMatch(
       /^<!-- zamu:start \(written by zamu agents; run it again to update\) -->\n## Tasks: the zamu CLI\n/,
     );
-    expect(first).toContain('Tasks for this repository are in project PAY.');
-    expect(first).toContain('`zamu tasks show PAY-12 --json`');
+    expect(first).toContain('Tasks for this repository are in Zamu, project PAY.');
+    expect(first).toContain('Read `zamu instructions` before you start');
+    expect(out.replacedBacklogBlock).toBe(false);
     expect(first.trimEnd().endsWith('<!-- zamu:end -->')).toBe(true);
 
     const unchanged = await as(keys.agent, ['agents'], { cwd: repo });
@@ -1593,8 +1599,10 @@ describe('repository link (M2.1)', () => {
     const repo = await clone('offline', SSH);
     const printed = await zamu(['agents', '--print'], { cwd: repo });
     expect(printed.code, printed.stderr).toBe(0);
-    expect(printed.stdout).toContain('Pass --project KEY to commands that work on one project.');
-    expect(printed.stdout).toContain('`zamu tasks create "Title" --project KEY --description -`');
+    expect(printed.stdout).toContain('Pass --project KEY to commands that work on one project');
+    expect(printed.stdout).toContain('`zamu instructions`');
+    // Without a server, zamu can't tell how the project relates to Backlog.md: no line about it.
+    expect(printed.stdout).not.toContain('Backlog.md');
     expect(printed.stderr).toBe('');
     const json = parsed(await zamu(['agents', '--print', '--json'], { cwd: repo }), 'agents');
     expect(json.data).toMatchObject({ file: null, action: 'printed', project: null });

@@ -1,8 +1,10 @@
-// zamu agents: writes how to use zamu into AGENTS.md (or CLAUDE.md) between two markers, so coding
-// agents in this repository know the commands. Running it again replaces only that block.
+// zamu agents: writes a short pointer to zamu into AGENTS.md (or CLAUDE.md) between two markers, so
+// coding agents in this repository find the commands. The guidance itself is `zamu instructions`,
+// bundled with the CLI (M6). Running it again replaces only that block. On a project owned by Zamu it
+// also replaces a Backlog.md guidelines block with one line, so agents stop writing task files.
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
-import { ProjectKeyInput } from '@zamu/contracts';
+import { type Project, ProjectKeyInput, ProjectList } from '@zamu/contracts';
 import { envKey, readConfig } from '../config';
 import { type CommandContext, emit } from '../context';
 import { EXIT, toCliError, usageError } from '../errors';
@@ -18,38 +20,57 @@ export const AGENTS_BLOCK_START = '<!-- zamu:start (written by zamu agents; run 
 export const AGENTS_BLOCK_END = '<!-- zamu:end -->';
 const BLOCK = /<!-- zamu:start[^>]*-->[\s\S]*?<!-- zamu:end -->/;
 
-/** The instructions, for the project of this repository when one is known. */
-export function agentsBlock(project: string | null): string {
-  const key = project ?? 'KEY';
-  const task = `${key}-12`;
-  const projectFlag = project ? '' : ' --project KEY';
+/** The block `backlog init` and `backlog agents` write into AGENTS.md and CLAUDE.md. */
+export const BACKLOG_GUIDELINES_START = '<!-- BACKLOG.MD GUIDELINES START -->';
+export const BACKLOG_GUIDELINES_END = '<!-- BACKLOG.MD GUIDELINES END -->';
+const BACKLOG_BLOCK = /<!-- BACKLOG\.MD GUIDELINES START -->[\s\S]*?<!-- BACKLOG\.MD GUIDELINES END -->/;
+
+/** The line that takes the Backlog.md guidelines' place on a project owned by Zamu. */
+export const BACKLOG_REPLACEMENT_LINE =
+  'Tasks for this project are in Zamu: use `zamu` for them (see the zamu block). The `backlog` CLI is only for documents and decisions, never for tasks.';
+
+/**
+ * How the project relates to Backlog.md: it mirrors a folder (the files own the tasks), it is owned
+ * by Zamu (native, or switched from a mirror: `switched`), or unknown (no project, or no server).
+ */
+export type BacklogRelation = 'mirrors' | 'switched' | 'native' | 'unknown';
+
+/** The relation from the project as the server lists it. */
+export function backlogRelation(project: Pick<Project, 'backlog'> | null | undefined): BacklogRelation {
+  if (!project) return 'unknown';
+  const backlog = project.backlog;
+  if (!backlog) return 'native';
+  return backlog.mode === 'mirror' && backlog.detachedAt === null ? 'mirrors' : 'switched';
+}
+
+/** The block: a few lines that point to `zamu instructions`, for the project of this repository. */
+export function agentsBlock(project: string | null, relation: BacklogRelation = 'unknown'): string {
   const intro = project
-    ? `Tasks for this repository are in project ${project}. zamu picks ${project} here, so --project is optional.`
-    : 'Pass --project KEY to commands that work on one project. Run zamu link --project KEY once in a clone so zamu picks it by itself.';
+    ? `Tasks for this repository are in Zamu, project ${project}. zamu picks ${project} here, so --project is optional.`
+    : 'Tasks for this repository are in Zamu. Pass --project KEY to commands that work on one project, or run zamu link --project KEY once in a clone.';
+  const refresh = project ? '`zamu backlog refresh --wait`' : '`zamu backlog refresh --project KEY --wait`';
+  const backlog =
+    relation === 'mirrors'
+      ? [
+          '',
+          `${project} mirrors Backlog.md, so the task files own title, description, status, priority, assignee,`,
+          `milestone and the work record. Change those in the files (or with \`backlog task edit\`), push, then run`,
+          `${refresh}. Comments and cycles still change through zamu.`,
+        ]
+      : relation === 'switched'
+        ? [
+            '',
+            'The Backlog.md task files in this repository are a copy written by `zamu backlog export`. Never edit them by hand.',
+          ]
+        : [];
   return [
     AGENTS_BLOCK_START,
     '## Tasks: the zamu CLI',
     '',
-    `Track work with \`zamu\`, the CLI of the Zamu server. ${intro}`,
+    intro,
+    'Read `zamu instructions` before you start, then `zamu instructions creating`, `working` and `finishing` for each step.',
     'Credentials come from ZAMU_URL and ZAMU_KEY, or from `zamu login`. Never write a key into the repository.',
-    '`zamu whoami` shows who you act as and which project zamu uses here.',
-    '',
-    `- Find work: \`zamu tasks list --mine --status todo --cycle current --json\``,
-    `- Read a task and its history: \`zamu tasks show ${task} --json\``,
-    `- Start it: \`zamu tasks update ${task} --status in_progress\``,
-    `- Report progress or a blocker: \`zamu comments add ${task} "..."\` (\`-\` reads the body from stdin; \`@name\` mentions a member)`,
-    `- Hand it over for review: \`zamu tasks update ${task} --status in_review\``,
-    `- Add a follow-up: \`zamu tasks create "Title"${projectFlag} --description -\``,
-    `- Milestones and cycles: \`zamu milestones list${projectFlag}\`, \`zamu cycles current${projectFlag}\``,
-    `- Split or link work: \`zamu tasks create "Title" --parent ${task}\`, \`zamu tasks update ${task} --blocked-by ${key}-9 --label bug\``,
-    '',
-    'In a project mirrored from Backlog.md, Backlog.md ids work as task keys, and the task files own title,',
-    'description, status, priority, assignee and milestone: change those in the files (or with `backlog task edit`)',
-    `and push, then \`zamu backlog refresh${projectFlag} --wait\`. Comments and cycles still change through zamu.`,
-    '',
-    'Add `--json` to any command for versioned output (`zamu.v1.*`). Exit codes: 0 ok, 1 usage or',
-    'rejected input, 2 not logged in or key refused, 3 not found, 4 outside the key scope or read-only, 5 server,',
-    '6 the change belongs in Backlog.md, or the mirror is paused or detached.',
+    ...backlog,
     AGENTS_BLOCK_END,
   ].join('\n');
 }
@@ -99,13 +120,55 @@ async function blockProject(context: CommandContext, flag: string | undefined): 
   }
 }
 
+/** Whether the server lists the project as mirroring, owned by Zamu, or unknown (no lookup possible). */
+async function projectRelation(context: CommandContext, project: string | null): Promise<BacklogRelation> {
+  if (!project) return 'unknown';
+  const { io } = context;
+  const credentials = Boolean(envKey(io)) || (await readConfig(io).catch(() => null)) !== null;
+  if (!credentials) return 'unknown';
+  try {
+    const client = await context.client();
+    const { items } = ProjectList.parse(await client.projects.list());
+    return backlogRelation(items.find((item) => item.key === project));
+  } catch {
+    return 'unknown';
+  }
+}
+
+/** The file with the zamu block written in and, when asked, the Backlog.md guidelines replaced. */
+export function applyBlock(
+  current: string | null,
+  block: string,
+  replaceBacklog: boolean,
+): { next: string; replacedBacklogBlock: boolean } {
+  if (current === null) return { next: `${block}\n`, replacedBacklogBlock: false };
+  const hasBlock = BLOCK.test(current);
+  const replacedBacklogBlock = replaceBacklog && BACKLOG_BLOCK.test(current);
+  let next = current;
+  if (replacedBacklogBlock) {
+    // The zamu block takes the guidelines' place when the file has none yet.
+    const replacement = hasBlock ? BACKLOG_REPLACEMENT_LINE : `${BACKLOG_REPLACEMENT_LINE}\n\n${block}`;
+    next = next.replace(BACKLOG_BLOCK, () => replacement);
+    if (!hasBlock) return { next, replacedBacklogBlock };
+  }
+  if (hasBlock) next = next.replace(BLOCK, () => block);
+  else next = next.trim() ? `${next.trimEnd()}\n\n${block}\n` : `${block}\n`;
+  return { next, replacedBacklogBlock };
+}
+
 export async function agents(context: CommandContext, options: AgentsOptions): Promise<void> {
   const { io } = context;
   const project = await blockProject(context, options.project);
-  const block = agentsBlock(project);
+  const relation = await projectRelation(context, project);
+  const block = agentsBlock(project, relation);
 
   if (options.print) {
-    emit(context, 'agents', { file: null, action: 'printed', project, block }, (data) => `${data.block}\n`);
+    emit(
+      context,
+      'agents',
+      { file: null, action: 'printed', project, block, replacedBacklogBlock: false },
+      (data) => `${data.block}\n`,
+    );
     return;
   }
 
@@ -114,28 +177,23 @@ export async function agents(context: CommandContext, options: AgentsOptions): P
     if (error.code === 'ENOENT') return null;
     throw usageError(`Cannot read ${path}: ${error.message}`);
   });
-  let next: string;
-  let action: 'created' | 'updated' | 'unchanged';
-  if (current === null) {
-    next = `${block}\n`;
-    action = 'created';
-  } else if (BLOCK.test(current)) {
-    next = current.replace(BLOCK, () => block);
-    action = next === current ? 'unchanged' : 'updated';
-  } else {
-    next = current.trim() ? `${current.trimEnd()}\n\n${block}\n` : `${block}\n`;
-    action = 'updated';
-  }
+  const owned = relation === 'native' || relation === 'switched';
+  const { next, replacedBacklogBlock } = applyBlock(current, block, owned);
+  const action: 'created' | 'updated' | 'unchanged' =
+    current === null ? 'created' : next === current ? 'unchanged' : 'updated';
   if (action !== 'unchanged') {
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, next);
   }
 
   const shown = relative(io.cwd, path) || path;
-  emit(context, 'agents', { file: path, action, project, block }, (data) => {
+  emit(context, 'agents', { file: path, action, project, block, replacedBacklogBlock }, (data) => {
     const named = data.project ? ` for ${data.project}` : '';
+    const replaced = data.replacedBacklogBlock
+      ? 'Replaced the Backlog.md guidelines with a line that says tasks are in Zamu.\n'
+      : '';
     if (data.action === 'created') return `Created ${shown} with zamu instructions${named}.\n`;
-    if (data.action === 'updated') return `Wrote zamu instructions${named} into ${shown}.\n`;
+    if (data.action === 'updated') return `Wrote zamu instructions${named} into ${shown}.\n${replaced}`;
     return `${shown} already has the current zamu instructions.\n`;
   });
 }

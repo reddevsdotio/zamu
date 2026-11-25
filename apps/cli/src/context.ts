@@ -1,4 +1,5 @@
 // State shared by the commands of one invocation, and the single place that prints results.
+import { createHash } from 'node:crypto';
 import { type CliData, type CliResultName, type cliDataSchemas, cliOutput } from '@zamu/contracts';
 import type { z } from 'zod';
 import { type ApiClient, createApiClient } from './client';
@@ -6,6 +7,7 @@ import { resolveCredentials } from './config';
 import type { CliError } from './errors';
 import { createStyle, type Style } from './format';
 import { type CliIo, useColor } from './io';
+import { type RequestSource, requestSource, withSourceHeaders } from './source';
 
 export interface CommandContext {
   io: CliIo;
@@ -14,6 +16,8 @@ export interface CommandContext {
   json: boolean;
   /** Server the command talks to, once known (named in network errors). */
   url?: string;
+  /** A fingerprint of the key in use, once known. The offline queue ties each queued write to it. */
+  keyId?: string;
   /** Client with the resolved credentials (ZAMU_URL / ZAMU_KEY, else the config file). */
   client: () => Promise<ApiClient>;
   /**
@@ -28,9 +32,33 @@ export interface CommandTarget {
   task?: { key: string; project?: string };
   /** The project key, when the command names one. */
   project?: string;
+  /** The status a task update asks for, so an OPEN_ITEMS refusal can repeat the move (M6). */
+  status?: string;
+}
+
+/**
+ * An API client whose requests carry the machine and branch headers (M6). The source is read once
+ * per invocation: pass the promise from an earlier call to reuse it.
+ */
+export async function apiClient(
+  io: CliIo,
+  credentials: { url: string; key: string },
+  source: Promise<RequestSource> = requestSource(io),
+): Promise<ApiClient> {
+  return createApiClient({
+    url: credentials.url,
+    key: credentials.key,
+    fetch: withSourceHeaders(await source, io.fetch),
+  });
+}
+
+/** Names a key without revealing it: the queue stores this, never the key. */
+export function keyFingerprint(key: string): string {
+  return createHash('sha256').update(key).digest('hex').slice(0, 16);
 }
 
 export function createContext(io: CliIo, json: boolean): CommandContext {
+  let source: Promise<RequestSource> | undefined;
   const context: CommandContext = {
     io,
     json,
@@ -38,11 +66,9 @@ export function createContext(io: CliIo, json: boolean): CommandContext {
     client: async () => {
       const credentials = await resolveCredentials(io);
       context.url = credentials.url;
-      return createApiClient({
-        url: credentials.url,
-        key: credentials.key,
-        ...(io.fetch ? { fetch: io.fetch } : {}),
-      });
+      context.keyId = keyFingerprint(credentials.key);
+      source ??= requestSource(io);
+      return apiClient(io, credentials, source);
     },
   };
   return context;

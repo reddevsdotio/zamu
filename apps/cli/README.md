@@ -5,23 +5,29 @@ It talks to the server's REST API at `/api/v1`.
 
 ## Install
 
-From this repository (Node 24):
+With npm (needs Node 24 or later):
+
+```sh
+npm install --global @reddevs/zamu
+zamu --version
+```
+
+With Homebrew:
+
+```sh
+brew install reddevsdotio/tap/zamu
+```
+
+Keep the full name: a bare `brew install zamu` after `brew tap` stops with a trust error on current
+Homebrew. To upgrade, run `npm update --global @reddevs/zamu` or `brew upgrade reddevsdotio/tap/zamu`.
+
+The Docker image also ships the CLI as `zamu`. To run it from a clone of this repository instead:
 
 ```sh
 pnpm install
 pnpm --filter @zamu/cli build
 node apps/cli/dist/index.js --help
 ```
-
-To get a `zamu` command in your shell, add an alias from the repository root:
-
-```sh
-alias zamu="node $PWD/apps/cli/dist/index.js"
-zamu --version
-```
-
-The Docker image also ships the CLI as `zamu`. The package will be published to npm once the product has
-its final name.
 
 ## Log in
 
@@ -41,8 +47,8 @@ To keep the key out of your shell history, pipe it in:
 zamu login --key - --url https://zamu.example.com < key.txt
 ```
 
-`zamu logout` deletes the stored file. `zamu whoami` shows the user, workspace, role, key scope and the
-project zamu uses in the current folder.
+`zamu logout` deletes the stored file. `zamu whoami` shows the user, workspace, role, key scope, the
+project zamu uses in the current folder and the writes waiting in the offline queue.
 
 ### Environment variables
 
@@ -53,6 +59,7 @@ Agents in CI usually skip `zamu login` and set:
 | `ZAMU_URL`     | Server URL. Overrides the stored URL.                                                  |
 | `ZAMU_KEY`     | API key. Overrides the stored key. `ZAMU_API_KEY` (printed by the dev seed) works too. |
 | `ZAMU_PROJECT` | Project key for commands that need one, when `--project` is not given.                 |
+| `ZAMU_MACHINE` | Machine name sent with every request (default: the host name). See below.              |
 | `NO_COLOR`     | Turns colour off. `FORCE_COLOR=1` turns it on when output is piped.                    |
 
 ## Project of the current folder
@@ -82,15 +89,36 @@ exits with code 1 and says how to fix it.
 
 ### Instructions for coding agents
 
-`zamu agents` writes how to use zamu into the repository's `AGENTS.md` (or `CLAUDE.md` when only that
+`zamu instructions` prints how agents work on a task with zamu. The text ships with the CLI, so it
+matches the version installed:
+
+```sh
+zamu instructions                # overview: the work record, the rules, the exit codes
+zamu instructions creating       # search first, then a task with testable criteria
+zamu instructions working        # the plan, a note after each step, checking what is proven
+zamu instructions finishing      # the final summary, In review, the final report
+```
+
+`zamu agents` writes a short block into the repository's `AGENTS.md` (or `CLAUDE.md` when only that
 exists), between `<!-- zamu:start ... -->` and `<!-- zamu:end -->`. It names the folder's project when zamu
-can find it. Run it again after upgrading zamu: it replaces only that block.
+can find it and points agents to `zamu instructions`. Run it again after upgrading zamu: it replaces only
+that block.
 
 ```sh
 zamu agents                      # AGENTS.md, else CLAUDE.md, at the repository root
 zamu agents --file docs/AI.md    # another file
 zamu agents --print              # print the block instead
 ```
+
+What the block says depends on the project:
+- A project that mirrors Backlog.md: the block adds that the task files own the task fields and the work
+  record, and that `zamu backlog refresh --wait` reads them after a push.
+- A project owned by Zamu (never mirrored, or switched from a mirror): when the file holds a Backlog.md
+  guidelines block (between `<!-- BACKLOG.MD GUIDELINES START -->` and `<!-- BACKLOG.MD GUIDELINES END -->`),
+  zamu replaces it, markers included, with one line: tasks are in Zamu, and the `backlog` CLI is only for
+  documents and decisions. `--json` reports it as `replacedBacklogBlock: true`. For a switched project the
+  block also says the Backlog.md task files are a copy written by `zamu backlog export`.
+- When zamu can't ask the server (no key, or no project here), it leaves a Backlog.md block alone.
 
 ## Commands
 
@@ -129,6 +157,16 @@ zamu tasks update PAY-142 --label ui --remove-label bug --due none
 zamu tasks update PAY-150 --blocked-by PAY-142 --unblock PAY-139
 zamu tasks update PAY-151 --parent none                  # back to the top level
 
+zamu tasks create "Retry failed payouts" --ac "A failed payout is retried up to 8 times" --ac "On-call is alerted once"
+zamu tasks create "Retry failed payouts" --dod "Runbook updated" --no-dod-defaults --plan - < plan.md
+zamu tasks update PAY-142 --status in_progress --plan - < plan.md
+zamu tasks update PAY-142 --check-ac 1 --check-ac 2,3 --check-dod 1
+zamu tasks update PAY-142 --waive-ac 5 --reason "Load test replaced by a replay"
+zamu tasks update PAY-142 --ac "Retries stop when the payout is canceled" --remove-ac 3
+zamu tasks update PAY-142 --append-notes "Migration written and tested"
+zamu tasks update PAY-142 --check-ac 6 --final-summary - --status in_review < summary.md
+zamu notes add PAY-142 "Backoff schedule covered by tests"
+
 zamu labels list --project PAY                           # with the number of tasks using each
 zamu labels create --project PAY "Needs design" --color 4
 zamu labels update "needs design" --project PAY --name design --color 7
@@ -156,6 +194,13 @@ zamu backlog status --project PAY                 # where the mirror reads from,
 zamu backlog status --problems                    # every file skipped or read with a warning, unmapped values
 zamu backlog refresh                              # queue a read of the default branch now
 zamu backlog refresh --wait                       # wait for it (up to 5 minutes) and report how it went
+zamu backlog export --project PAY --dry-run       # what the export would write and remove
+zamu backlog export                               # write backlog/tasks and backlog/milestones at the repository root
+
+zamu instructions finishing                       # the guide for finishing a task
+
+zamu queue                                        # writes waiting for the server (offline queue)
+zamu queue drop 3b77132b                          # remove one so it is never sent
 ```
 
 - Project and task keys are case-insensitive (`pay-142` works). Subtasks mirrored from Backlog.md have
@@ -258,6 +303,105 @@ Deadlines · 2
 
 The projects table and the agents follow. An empty group prints one line, `Mentions · none`.
 
+### Work record
+
+A task has acceptance criteria, a definition of done (done items), a plan, work notes and a final
+summary. The flags use the names of the Backlog.md CLI.
+
+| Flag                               | On                 | What it does                                                         |
+| ---------------------------------- | ------------------ | -------------------------------------------------------------------- |
+| `--ac "text"`                      | `create`, `update` | Adds an acceptance criterion at the end. Repeatable.                 |
+| `--check-ac N`, `--uncheck-ac N`   | `update`           | Checks or unchecks criterion N.                                      |
+| `--remove-ac N`                    | `update`           | Removes criterion N; the ones after it move up.                      |
+| `--waive-ac N --reason "text"`     | `update`           | Waives criterion N: it no longer applies, for that reason.           |
+| `--unwaive-ac N`                   | `update`           | Takes the waiver back; the item is open again.                       |
+| `--dod "text"`                     | `create`, `update` | Adds a done item. On `create`, after the project's default ones.     |
+| `--check-dod N`, `--uncheck-dod N` | `update`           | Checks or unchecks done item N.                                      |
+| `--remove-dod N`                   | `update`           | Removes done item N.                                                 |
+| `--waive-dod N --reason "text"`    | `update`           | Waives done item N.                                                  |
+| `--unwaive-dod N`                  | `update`           | Takes the waiver off done item N.                                    |
+| `--no-dod-defaults`                | `create`           | Leaves the project's default done items out.                         |
+| `--plan "text"`                    | `create`, `update` | Sets the plan (Markdown). An empty value clears it on `update`.      |
+| `--final-summary "text"`           | `update`           | Sets the final summary (Markdown). An empty value clears it.         |
+| `--append-notes "text"`            | `update`           | Adds a work note after the update. Repeated ones join into one note. |
+- Numbers are the ones `zamu tasks show` prints. The number flags repeat or take a comma-separated list
+  (`--check-ac 1,2,3`). They refer to the list as it was before the command, and a removal moves the
+  numbers after it up.
+- All the flags of one command go in one request: `--check-ac 3 --final-summary - --status in_review`
+  checks the item, writes the summary and moves the task at once.
+- `--reason` belongs to the waives typed before it: `--waive-ac 4 --waive-ac 5 --reason "..."` waives both
+  with one reason, `--waive-ac 4 --reason "a" --waive-ac 5 --reason "b"` gives each its own. A waive
+  without any `--reason` exits 1 and sends nothing.
+- `-` reads `--plan`, `--final-summary`, `--append-notes` or `--description` from stdin. Only one of them
+  can read stdin per command.
+- Criteria and done items are one line each, up to 500 characters, 50 per list. The plan and the summary
+  take up to 50,000 characters.
+- `zamu notes add PAY-142 "text"` writes a work note, like `--append-notes`. A note is a comment of kind
+  `note`: it shows quietly in the history and notifies only the people it mentions. `--append-notes`
+  alone writes only the note; with other flags the note goes after the update, and a refused update
+  writes no note.
+- `zamu tasks show` prints the final summary, then the description, the criteria and done items with
+  their numbers and states (`[x]` checked, `[ ]` open, `[~]` waived with the reason and who waived it),
+  the plan with who last wrote it, and the history with notes, comments and changes. The history heading
+  counts them: `History · 7 notes · 2 comments · 18 changes`.
+- An agent can't move a task to In review or Done while a criterion or done item is open. zamu prints the
+  open items with the flags that settle each one and exits 1 (`OPEN_ITEMS`, with `openItems` in the
+  `--json` error):
+
+  ```text
+  $ zamu tasks update PAY-142 --status in_review
+  zamu: PAY-142 has open items: criterion 6. Check or waive them before moving it to In review (open_items).
+    criterion 6  The on-call runbook has an entry for exhausted retries
+                 check: --check-ac 6   waive: --waive-ac 6 --reason "..."
+    Check only what is proven and waive the rest with a reason. One command can settle them and move it:
+      zamu tasks update PAY-142 <flags above> --status in_review
+  ```
+
+  A person's key is never refused; the web app asks first.
+- On a task mirrored from Backlog.md the work record is read-only (`[x]` lines marked "from Backlog.md,
+  read-only"). Writing it, or a note, exits 6 with the `backlog task edit` command, as for other fields.
+
+### Offline queue
+
+Every request has 5 seconds to connect and answer. When the server doesn't answer (it is down,
+restarting or unreachable), some writes on a task that already exists wait in a queue instead of failing:
+- `--check-ac`, `--uncheck-ac`, `--waive-ac`, `--unwaive-ac` and the same four with `-dod`;
+- `--status`;
+- `zamu notes add`, `--append-notes` and `zamu comments add`.
+
+zamu prints `Queued: the server didn't answer. It will be sent on your next zamu command.` and exits with
+code 7 (`zamu.v1.queued` with `--json`). Everything else fails with exit code 5 and queues nothing:
+creating a task, every read, and an update that mixes a queueable flag with another one, such as
+`--check-ac 1 --priority high`. The error names the flags that can't wait. A 5xx answer is an error too:
+the server answered.
+- The queue is `$XDG_STATE_HOME/zamu/queue.json` (`~/.local/state/zamu/queue.json`). zamu changes it
+  under a lock file and writes it atomically, so agents running zamu at the same time on one machine never
+  lose an entry.
+- The next command that reaches the same server sends the queue first, oldest first, and reports each
+  write on stderr (`--json` output stays one result): `Sent: PAY-142 check criterion 2 (queued ...)`. A
+  write the server refuses with a 4xx is dropped and reported (`Dropped: ...`). When the server still
+  doesn't answer, or answers 401, 408, 429 or 5xx, the rest wait for the next command.
+- A queued status change is sent only if the task still has the status zamu last saw. When someone moved
+  it meanwhile, the move is dropped (`Skipped: PAY-142 was already moved to Done`); checks and waivers
+  queued with it are still sent. zamu remembers the status of every task the server returned on this
+  machine, in `statuses.json` next to the queue. Without one (zamu never read the task here), a status
+  change is not queued: run `zamu tasks show PAY-142` once the server answers.
+- `zamu queue` lists what waits (`zamu.v1.queue.list`) and `zamu queue drop ID` removes an entry
+  (`zamu.v1.queue.drop`); neither contacts the server. `zamu whoami` shows how many writes still wait for
+  its server (`queued`).
+- A queued write is sent only by a command that uses the key that queued it, so it keeps its author when a
+  person and an agent share a machine. The queue stores a fingerprint of the key, never the key. Writes
+  queued with another key wait, and zamu says how many. The machine and branch are those of the command
+  that sends the write.
+
+### Machine and branch
+
+Every request carries the machine name (`ZAMU_MACHINE`, else the host name) in `x-zamu-machine` and, when
+the folder is in a git repository with a branch checked out, the branch in `x-zamu-branch`. The server
+stores them on history entries and notes, and `zamu tasks show` prints them at the end of each line:
+`build-box · feat/payout-retries`. Names are cut to 100 characters; characters outside ASCII are sent
+percent-encoded.
+
 ### Comments
 
 - Comment bodies are Markdown, up to 20,000 characters. `@agent-name` and `@email` mention workspace
@@ -297,6 +441,32 @@ web). Its tasks keep their Backlog.md numbers: `BACK-786.1` becomes `PAY-786.1`.
   read ends, up to 5 minutes; it exits 0 whatever the read found, so check `state` in the JSON
   (`healthy`, `warnings`, `failed`, `paused`). `outcome` is `queued` without `--wait`, `finished`, or
   `timeout` when no read ended in time (is the worker running?).
+
+### Backlog.md export
+
+`zamu backlog export` writes a project owned by Zamu (never mirrored, or switched from a mirror in the
+project's settings) as Backlog.md files, so the repository keeps a readable copy:
+
+```sh
+zamu backlog export --dry-run                     # list what would change, write nothing
+zamu backlog export                               # backlog/ at the repository root
+zamu backlog export --project PAY --dir docs/backlog
+zamu backlog export --force                       # write over uncommitted changes in the exported folders
+```
+
+- The files come from `GET /api/v1/projects/{key}/backlog/export`. Tasks go to `tasks/`, milestones to
+  `milestones/`. Markdown files under `tasks/`, `completed/` and `milestones/` that the export doesn't have
+  are removed. Nothing else in the folder is written or removed: documents, decisions, drafts,
+  `config.yml` and files that aren't Markdown stay as they are.
+- `--dir` is relative to the current folder; without it zamu uses `backlog` at the repository root (or
+  in the current folder outside a repository).
+- zamu refuses (exit 1) when `tasks/`, `completed/` or `milestones/` have uncommitted changes, untracked
+  files included, and lists them. Commit or discard them, or pass `--force`. `--dry-run` never refuses.
+- The Backlog.md CLI lists nothing without a `config.yml` whose `task_prefix` matches the exported ids.
+  zamu warns on stderr when the file is missing or the prefix differs.
+- A project that still mirrors Backlog.md exits 6 (`PROJECT_MIRRORED`): its files are the source.
+- `--json` prints `zamu.v1.backlog.export`: the project, the folder, `dryRun`, the format the files target
+  and every file with its action (`created`, `updated`, `unchanged`, `removed`).
 
 Human output is a compact table with task keys first. Agents show as "claude-dev for Ana Ruiz": the agent
 and the person responsible for it. Colour is used only when stdout is a terminal.
@@ -339,10 +509,16 @@ Every command takes `--json` and prints one versioned result:
 | `zamu agents`            | `zamu.v1.agents`            |
 | `zamu backlog status`    | `zamu.v1.backlog.status`    |
 | `zamu backlog refresh`   | `zamu.v1.backlog.refresh`   |
+| `zamu backlog export`    | `zamu.v1.backlog.export`    |
+| `zamu notes add`         | `zamu.v1.notes.add`         |
+| `zamu instructions`      | `zamu.v1.instructions`      |
 | `zamu labels list`       | `zamu.v1.labels.list`       |
 | `zamu labels create`     | `zamu.v1.labels.create`     |
 | `zamu labels update`     | `zamu.v1.labels.update`     |
 | `zamu labels delete`     | `zamu.v1.labels.delete`     |
+| `zamu queue`             | `zamu.v1.queue.list`        |
+| `zamu queue drop`        | `zamu.v1.queue.drop`        |
+| a write that was queued  | `zamu.v1.queued`            |
 | any failure              | `zamu.v1.error`             |
 
 The data schemas live in `@zamu/contracts` (`cliDataSchemas`, `parseCliOutput`). Within `v1`, fields are
@@ -351,7 +527,8 @@ indented at a terminal.
 
 With `--json`, failures print `zamu.v1.error` on stdout: an RFC 9457 problem with `code`, `status`,
 `detail`, and `requestId` and `issues` when the server sent them (`field`, `file`, `backlogId` and `hint`
-for the Backlog.md mirror errors, `loop` for `DEPENDENCY_LOOP`). The exit code is still non-zero.
+for the Backlog.md mirror errors, `loop` for `DEPENDENCY_LOOP`, `openItems` for `OPEN_ITEMS`). The exit
+code is still non-zero.
 
 `zamu.v1.projects.delete` is `{ "deleted": "PAY" }`. `zamu.v1.labels.delete` is the label as it was and
 the number of tasks it was on:
@@ -360,20 +537,26 @@ the number of tasks it was on:
 `zamu.v1.backlog.status` holds the first 50 problems unless you pass `--problems`, which reads them all.
 `zamu.v1.backlog.refresh` is the refresh request plus `outcome` and, with `--wait`, the final `status`.
 
-`zamu.v1.tasks.show` keeps `activity` for v1 readers and adds `timeline`: activity and comments in one
-list, oldest first, told apart by `kind` (`activity` or `comment`).
+`zamu.v1.tasks.show` keeps `activity` for v1 readers and adds `timeline`: activity, comments and notes in
+one list, oldest first, told apart by `kind` (`activity`, `comment` or `note`), and `timelineCounts` with
+the size of each filter (`all`, `comments`, `notes`, `history`). The task carries its work record:
+`criteria`, `doneItems`, `plan`, `planMeta`, `finalSummary` and `finalSummaryMeta`.
+
+`zamu tasks update` with `--append-notes` alone prints `zamu.v1.notes.add` (the note); with other flags it
+prints `zamu.v1.tasks.update`. `zamu.v1.agents` adds `replacedBacklogBlock`.
 
 ## Exit codes
 
-| Code | Meaning                                                                                     |
-| ---- | ------------------------------------------------------------------------------------------- |
-| 0    | OK                                                                                          |
-| 1    | Usage: bad arguments, unknown milestone names, or input the server rejected (400, 409, 422) |
-| 2    | Auth: not logged in, or the key was refused (401)                                           |
-| 3    | Not found (404)                                                                             |
-| 4    | Forbidden: the key's scope or access does not allow it, or owners and admins only (403)     |
-| 5    | Server: unreachable, 5xx, or a response this version does not understand                    |
-| 6    | Backlog.md: the change belongs in Backlog.md, or the mirror is paused or detached (409)     |
+| Code | Meaning                                                                                                            |
+| ---- | ------------------------------------------------------------------------------------------------------------------ |
+| 0    | OK                                                                                                                 |
+| 1    | Usage: bad arguments, unknown milestone names, or input the server rejected (400, 409, 422), `OPEN_ITEMS` included |
+| 2    | Auth: not logged in, or the key was refused (401)                                                                  |
+| 3    | Not found (404)                                                                                                    |
+| 4    | Forbidden: the key's scope or access does not allow it, or owners and admins only (403)                            |
+| 5    | Server: unreachable (and nothing queued), 5xx, or a response this version does not understand                      |
+| 6    | Backlog.md: the change belongs in Backlog.md, or the mirror is paused or detached (409)                            |
+| 7    | Queued: the server didn't answer, so the write waits in the offline queue for the next command                     |
 
 ## Development
 

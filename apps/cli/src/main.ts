@@ -1,23 +1,33 @@
 // Command tree and the run loop. main() never exits the process: it returns the exit code, so tests
 // can run any command in-process with a fake CliIo and the API handler as fetch.
+import { CLI_EXIT_QUEUED } from '@zamu/contracts';
 import { Command, CommanderError } from 'commander';
-import pkg from '../package.json' with { type: 'json' };
 import { agents } from './commands/agents';
 import { login, logout, whoami } from './commands/auth';
 import { backlogRefresh, backlogStatus } from './commands/backlog';
+import { backlogExport } from './commands/backlog-export';
 import { addComment, deleteComment, editComment, listComments } from './commands/comments';
 import { createCycle, currentCycle, endCycle, listCycles } from './commands/cycles';
 import { showDashboard } from './commands/dashboard';
+import { instructions } from './commands/instructions';
 import { createLabel, deleteLabel, listLabels, updateLabel } from './commands/labels';
 import { link } from './commands/link';
 import { createMilestone, listMilestones, updateMilestone } from './commands/milestones';
+import { addNote } from './commands/notes';
 import { deleteProject, listProjects } from './commands/projects';
+import { dropQueueEntry, showQueue } from './commands/queue';
 import { collectKeys, collectList } from './commands/shared';
 import { createTask, listTasks, showTask, updateTask } from './commands/tasks';
+import { collectNumbers, collectTexts, waiveCollector } from './commands/work';
 import { type CommandContext, createContext, reportError } from './context';
 import { EXIT, toCliError, usageError } from './errors';
 import type { CliIo } from './io';
 import { describeFailure } from './mirrored';
+import { QueuedWrite, reportQueued, withOfflineQueue } from './queue';
+
+// The build replaces __ZAMU_CLI_VERSION__ with the release version (tsdown.config.ts); from source it is unset.
+declare const __ZAMU_CLI_VERSION__: string | undefined;
+const VERSION = typeof __ZAMU_CLI_VERSION__ === 'string' ? __ZAMU_CLI_VERSION__ : '0.0.0-dev';
 
 const STATUS_HELP = 'backlog, todo, in_progress, in_review, done, canceled';
 const PRIORITY_HELP = 'none, low, medium, high, urgent';
@@ -30,6 +40,7 @@ const COLOR_HELP = 'palette colour, 1 to 9';
 const PROJECT_HELP =
   "project key, e.g. PAY (default: ZAMU_PROJECT, .zamu.json or this clone's linked project)";
 const TASK_KEY_HELP = 'e.g. PAY-142, a subtask key like PAY-786.1, or a Backlog.md id like BACK-786.1';
+const ITEM_NUMBER_HELP = 'number from zamu tasks show; repeatable or comma-separated';
 const TASK_PROJECT_HELP =
   "project to look a Backlog.md id up in (default: ZAMU_PROJECT, .zamu.json or this clone's linked project)";
 
@@ -46,7 +57,7 @@ export function buildProgram(context: CommandContext): Command {
   // Settings set here are copied to every subcommand created afterwards.
   program
     .description('Command-line client for Zamu. Every command takes --json.')
-    .version(pkg.version, '-v, --version')
+    .version(VERSION, '-v, --version')
     .exitOverride()
     .showHelpAfterError(context.json ? false : '(add --help for usage)')
     .configureOutput({
@@ -76,7 +87,18 @@ Subtasks, blockers and parents are tasks of the same project; subtasks go one le
 
 Labels: per project, by name (case-insensitive). zamu tasks create and update create missing ones.
 
-Exit codes: 0 ok, 1 usage, 2 auth, 3 not found, 4 forbidden, 5 server, 6 Backlog.md conflict.`,
+Work record: acceptance criteria (--ac), done items (--dod), the plan and the final summary change
+through zamu tasks create and update, with the flag names of the Backlog.md CLI. zamu notes add writes
+a work note. zamu instructions explains how agents work on a task.
+
+Offline queue: when the server doesn't answer within 5 seconds, checking, unchecking, waiving and
+unwaiving items, a status change, a note and a comment on an existing task are queued in
+$XDG_STATE_HOME/zamu/queue.json (~/.local/state/zamu) and sent by the next command that reaches the
+server. zamu queue lists them; zamu queue drop ID removes one.
+
+Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task with open items),
+2 auth, 3 not found, 4 forbidden, 5 server (unreachable, and nothing queued), 6 Backlog.md conflict,
+7 queued (the server didn't answer; the write waits in the offline queue).`,
     );
 
   const leaf = (command: Command) => command.option('--json', 'print the versioned JSON result (zamu.v1.*)');
@@ -109,11 +131,21 @@ Exit codes: 0 ok, 1 usage, 2 auth, 3 not found, 4 forbidden, 5 server, 6 Backlog
   leaf(
     program
       .command('agents')
-      .description('write zamu usage instructions into AGENTS.md (or CLAUDE.md) between two markers')
+      .description(
+        'write a short zamu block into AGENTS.md (or CLAUDE.md) between two markers; on a project owned by ' +
+          'Zamu it also replaces the Backlog.md guidelines block with one line',
+      )
       .option('--file <path>', 'file to write (default: AGENTS.md, else CLAUDE.md, at the repository root)')
       .option('--project <KEY>', "project to name in the instructions (default: this clone's)")
       .option('--print', 'print the instructions instead of writing a file'),
   ).action((options) => agents(context, options));
+
+  leaf(
+    program
+      .command('instructions')
+      .description('print how to work on tasks with zamu: the overview, or a guide for one step')
+      .argument('[topic]', 'overview (default), creating, working or finishing'),
+  ).action((topic: string | undefined) => instructions(context, topic));
 
   leaf(
     program
@@ -142,6 +174,8 @@ Exit codes: 0 ok, 1 usage, 2 auth, 3 not found, 4 forbidden, 5 server, 6 Backlog
   ).action((key: string, options: { confirm?: string }) => deleteProject(context, key, options));
 
   const tasks = program.command('tasks').description('list, show, create and update tasks');
+  // --waive-ac, --waive-dod and --reason share one list, so a reason pairs with the waives before it.
+  const waives = waiveCollector();
   leaf(
     tasks
       .command('list')
@@ -182,7 +216,10 @@ Exit codes: 0 ok, 1 usage, 2 auth, 3 not found, 4 forbidden, 5 server, 6 Backlog
   leaf(
     tasks
       .command('show')
-      .description('show a task with its history: activity and comments, oldest first')
+      .description(
+        'show a task with its work record (criteria, done items, plan, final summary) and its history: ' +
+          'activity, comments and notes, oldest first',
+      )
       .argument('<TASK-KEY>', TASK_KEY_HELP)
       .option('--project <KEY>', TASK_PROJECT_HELP),
   ).action((key: string, options) => showTask(context, key, options));
@@ -205,7 +242,11 @@ Exit codes: 0 ok, 1 usage, 2 auth, 3 not found, 4 forbidden, 5 server, 6 Backlog
         '--parent <TASK-KEY>',
         "make it a subtask of this task (same project, one level); it takes the parent's assignee unless --assignee is given",
       )
-      .option('--blocked-by <TASK-KEY>', BLOCKER_HELP, collectKeys),
+      .option('--blocked-by <TASK-KEY>', BLOCKER_HELP, collectKeys)
+      .option('--ac <text>', 'add an acceptance criterion (one line); repeatable', collectTexts)
+      .option('--dod <text>', "add a done item after the project's default ones; repeatable", collectTexts)
+      .option('--no-dod-defaults', "leave the project's default done items out")
+      .option('--plan <text>', 'implementation plan, Markdown; "-" reads it from stdin'),
   ).action((title: string[], options) => createTask(context, title, options));
 
   leaf(
@@ -232,8 +273,53 @@ Exit codes: 0 ok, 1 usage, 2 auth, 3 not found, 4 forbidden, 5 server, 6 Backlog
         'make it a subtask of this task (same project, one level); none makes it top level',
       )
       .option('--blocked-by <TASK-KEY>', `add a blocker: ${BLOCKER_HELP}`, collectKeys)
-      .option('--unblock <TASK-KEY>', 'remove a blocker; repeatable or comma-separated', collectKeys),
+      .option('--unblock <TASK-KEY>', 'remove a blocker; repeatable or comma-separated', collectKeys)
+      .option('--ac <text>', 'add an acceptance criterion at the end (one line); repeatable', collectTexts)
+      .option('--check-ac <n>', `check criterion n: ${ITEM_NUMBER_HELP}`, collectNumbers)
+      .option('--uncheck-ac <n>', `uncheck criterion n: ${ITEM_NUMBER_HELP}`, collectNumbers)
+      .option('--remove-ac <n>', `remove criterion n: ${ITEM_NUMBER_HELP}`, collectNumbers)
+      .option('--waive-ac <n>', 'waive criterion n; needs --reason; repeatable', waives.waive('criterion'))
+      .option('--unwaive-ac <n>', `take the waiver off criterion n: ${ITEM_NUMBER_HELP}`, collectNumbers)
+      .option('--dod <text>', 'add a done item at the end (one line); repeatable', collectTexts)
+      .option('--check-dod <n>', `check done item n: ${ITEM_NUMBER_HELP}`, collectNumbers)
+      .option('--uncheck-dod <n>', `uncheck done item n: ${ITEM_NUMBER_HELP}`, collectNumbers)
+      .option('--remove-dod <n>', `remove done item n: ${ITEM_NUMBER_HELP}`, collectNumbers)
+      .option('--waive-dod <n>', 'waive done item n; needs --reason; repeatable', waives.waive('done'))
+      .option('--unwaive-dod <n>', `take the waiver off done item n: ${ITEM_NUMBER_HELP}`, collectNumbers)
+      .option(
+        '--reason <text>',
+        'why the waived items no longer apply (one line); applies to the --waive-ac and --waive-dod before it',
+        waives.reason,
+      )
+      .option('--plan <text>', 'implementation plan, Markdown; "-" reads it from stdin, "" clears it')
+      .option('--final-summary <text>', 'final summary, Markdown; "-" reads it from stdin, "" clears it')
+      .option(
+        '--append-notes <text>',
+        'add a work note after the update; "-" reads it from stdin; repeated ones join into one note',
+        collectTexts,
+      ),
   ).action((key: string, options) => updateTask(context, key, options));
+
+  const notes = program.command('notes').description('work notes on a task (M6)');
+  leaf(
+    notes
+      .command('add')
+      .description('add a work note: what you did, found or tried; it notifies only the people it mentions')
+      .argument('<TASK-KEY>', TASK_KEY_HELP)
+      .argument('<text>', 'Markdown (quote it); "-" reads it from stdin')
+      .option('--project <KEY>', TASK_PROJECT_HELP),
+  ).action((key: string, text: string, options) => addNote(context, key, text, options));
+
+  const queue = program
+    .command('queue')
+    .description('list the writes waiting for the server in the offline queue (no server needed)');
+  leaf(queue).action(() => showQueue(context));
+  leaf(
+    queue
+      .command('drop')
+      .description('remove a queued write so it is never sent')
+      .argument('<ID>', 'id from zamu queue'),
+  ).action((id: string) => dropQueueEntry(context, id));
 
   const labels = program
     .command('labels')
@@ -375,7 +461,7 @@ Exit codes: 0 ok, 1 usage, 2 auth, 3 not found, 4 forbidden, 5 server, 6 Backlog
 
   const backlog = program
     .command('backlog')
-    .description('status and refresh of a project mirrored from Backlog.md');
+    .description('status and refresh of a Backlog.md mirror; export of a project owned by Zamu');
   leaf(
     backlog
       .command('status')
@@ -392,12 +478,26 @@ Exit codes: 0 ok, 1 usage, 2 auth, 3 not found, 4 forbidden, 5 server, 6 Backlog
       .option('--wait', 'wait until the read ends (up to 5 minutes) and report how it went'),
   ).action((options) => backlogRefresh(context, options));
 
+  leaf(
+    backlog
+      .command('export')
+      .description(
+        'write the project as Backlog.md files under tasks/ and milestones/, and remove task and milestone ' +
+          'files it no longer has; documents, decisions, drafts and config.yml stay as they are',
+      )
+      .option('--project <KEY>', PROJECT_HELP)
+      .option('--dir <path>', 'the Backlog.md folder (default: backlog at the repository root)')
+      .option('--dry-run', 'list what would change and write nothing')
+      .option('--force', 'write even when the exported folders have uncommitted changes'),
+  ).action((options) => backlogExport(context, options));
+
   return program;
 }
 
 /** Runs one zamu invocation and returns its exit code. `argv` excludes node and the script path. */
 export async function main(argv: readonly string[], io: CliIo): Promise<number> {
-  const context = createContext(io, wantsJson(argv));
+  // Every server call of the command replays the offline queue first and may queue (M6).
+  const context = withOfflineQueue(createContext(io, wantsJson(argv)));
   const program = buildProgram(context);
   try {
     await program.parseAsync([...argv], { from: 'user' });
@@ -409,6 +509,10 @@ export async function main(argv: readonly string[], io: CliIo): Promise<number> 
       // Commander already printed the message (unless --json); with --json print the envelope.
       if (context.json) reportError(context, usageError(error.message.replace(/^error: /, '')));
       return EXIT.usage;
+    }
+    if (error instanceof QueuedWrite) {
+      reportQueued(context, error);
+      return CLI_EXIT_QUEUED;
     }
     const failure = toCliError(error, context.url);
     await describeFailure(context, failure);
