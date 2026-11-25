@@ -1428,11 +1428,11 @@ describe('M5: labels, due dates, blockers and subtasks', () => {
       title: 'Child',
       parent: parent.key.toLowerCase(),
       blockedBy: [blocker.key],
-      dueDate: '2026-11-20',
+      dueDate: '2099-11-20',
       labels: ['backend', 'payouts'],
     });
     expect(child).toMatchObject({
-      dueDate: '2026-11-20',
+      dueDate: '2099-11-20',
       parent: { key: parent.key, title: 'Parent' },
       assignee: { id: agentId },
       blocked: true,
@@ -1578,13 +1578,13 @@ describe('M5: labels, due dates, blockers and subtasks', () => {
     const two = await newTask({ title: 'Bulk two' });
     const result = await call('POST', '/api/v1/tasks/bulk', {
       auth: key('agent'),
-      body: { keys: [two.key, one.key], status: 'in_review', addLabels: ['bulk'], dueDate: '2026-12-01' },
+      body: { keys: [two.key, one.key], status: 'in_review', addLabels: ['bulk'], dueDate: '2099-12-01' },
     });
     expect(result.status, JSON.stringify(result.body)).toBe(200);
     expect(result.body.items.map((item: { key: string }) => item.key)).toEqual([two.key, one.key]);
     expect(result.body.items[0]).toMatchObject({
       status: 'in_review',
-      dueDate: '2026-12-01',
+      dueDate: '2099-12-01',
       labels: [{ name: 'bulk' }],
     });
     expectProblem(
