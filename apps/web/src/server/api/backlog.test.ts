@@ -459,7 +459,11 @@ describe('POST /api/webhooks/backlog/{webhookId}', () => {
     expect(refresh.status).toBe(409);
     expect(refresh.body.code).toBe('BACKLOG_DETACHED');
     // Detached projects are fully editable.
-    const patched = await call('PATCH', '/api/v1/tasks/BACK-786', { ...agent(), body: { status: 'done' } });
+    // In progress, not Done: the task has an open criterion, and an agent can't finish it with one.
+    const patched = await call('PATCH', '/api/v1/tasks/BACK-786', {
+      ...agent(),
+      body: { status: 'in_progress' },
+    });
     expect(patched.status, JSON.stringify(patched.body)).toBe(200);
   });
 });
