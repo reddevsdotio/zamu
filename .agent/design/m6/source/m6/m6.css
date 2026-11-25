@@ -1,0 +1,121 @@
+/* M6 · work record and the switch to Zamu. Loads after ../r2/margin.css and ../r2/screens.css.
+   No new tokens: every colour, size and radius below comes from the M5 tokens. */
+
+/* ---------- final summary ---------- */
+.sum { display: flex; flex-direction: column; gap: 8px; margin: 2px 0 18px; padding: 14px 16px 6px; border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow-card); }
+.sum-h { display: flex; align-items: center; gap: 8px; color: var(--text-3); font-size: var(--fs-sm); }
+.sum-h b { color: var(--text); font-weight: 600; }
+.sum .desc { font-size: 14px; line-height: 1.58; }
+.sum.ph { box-shadow: none; background: transparent; border: 1.5px dashed var(--line); padding: 12px 14px; color: var(--text-3); font-size: var(--fs-sm); flex-direction: row; align-items: center; }
+
+/* ---------- clipped blocks (description under a summary, long plans) ---------- */
+.clip { position: relative; overflow: hidden; }
+.clip.h2 { max-height: 50px; }
+.clip.h6 { max-height: 150px; }
+.clip::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 28px; background: linear-gradient(transparent, var(--bg)); }
+.more-l { display: flex; align-items: center; gap: 8px; height: 26px; color: var(--accent-text); font-size: var(--fs-sm); font-weight: 500; }
+.more-l .muted { font-weight: 400; }
+
+/* ---------- criteria and definition of done ---------- */
+.mbox.open { overflow: visible; }
+.crit { position: relative; display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--line-soft); font-size: var(--fs-md); line-height: 1.45; }
+.crit:last-child { border-bottom: 0; }
+.crit .n { flex: none; width: 14px; margin-top: 1px; color: var(--text-3); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; text-align: right; }
+.crit .box { margin-top: 2px; }
+.crit-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-wrap: pretty; }
+.crit-t code { font-family: var(--code); font-size: 0.86em; padding: 1px 5px; border-radius: 5px; background: var(--bg-lane); }
+.crit.done .crit-x { color: var(--text-2); }
+.crit.waived .crit-x { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--line); }
+.crit-why { color: var(--text-2); font-size: var(--fs-xs); }
+.crit-why b { font-weight: 600; }
+.crit.hover { background: var(--bg-grp); }
+.crit.focus { box-shadow: var(--focus); border-radius: var(--r-sm); z-index: 1; }
+.crit-acts { flex: none; display: flex; align-items: center; gap: 2px; margin: -3px -4px -3px 0; color: var(--text-3); }
+.crit-acts .grip { margin: 0 6px; }
+.crit .lock { margin-top: 6px; color: var(--text-3); }
+.crit-in { flex: 1; height: 30px; margin: -5px 0; }
+.crit .tag { flex: none; margin-top: 1px; }
+/* Waived is never colour alone: a dashed box with a bar, struck text, and the word "Waived". */
+.box.wv { border-style: dashed; }
+.box.wv::after { content: ""; width: 6px; height: 1.5px; background: var(--text-3); }
+.box.ro { opacity: 0.7; }
+.cbx { flex: none; display: inline-grid; place-items: center; width: 11px; height: 11px; border-radius: 3px; border: 1.5px solid var(--text-3); }
+.cbx.full { background: var(--st-done); border-color: var(--st-done); }
+.cbx .check { width: 6px; height: 3.5px; color: var(--bg); transform: rotate(-45deg) translate(0.5px, -0.5px); }
+.critp { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wv-pop { top: calc(100% + 4px); right: 10px; width: 360px; }
+.wv-pop .field { padding: 2px 6px 8px; }
+
+/* ---------- plan ---------- */
+.plan { color: var(--text); font-size: 14px; line-height: 1.6; }
+.plan ol { margin: 0; padding-left: 22px; }
+.plan li { margin: 3px 0; }
+.plan li.dn { color: var(--text-3); }
+.plan code { font-family: var(--code); font-size: 0.86em; padding: 1px 5px; border-radius: 5px; background: var(--bg-lane); }
+.plan pre { margin: 6px 0 8px; padding: 10px 12px; border-radius: var(--r); background: var(--bg-lane); font-family: var(--code); font-size: 12.5px; line-height: 1.5; white-space: pre; overflow: hidden; }
+
+/* ---------- timeline: work notes, history source ---------- */
+.note { display: flex; flex-direction: column; gap: 3px; padding: 1px 0 2px 12px; border-left: 2px solid var(--line); }
+.note-h { display: flex; align-items: center; gap: 8px; color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
+.note-h b { color: var(--text-2); font-weight: 600; font-size: var(--fs-sm); }
+.note-h .av { width: 16px; height: 16px; font-size: 7.5px; }
+.note-b { color: var(--text-2); font-size: 13.5px; line-height: 1.55; text-wrap: pretty; }
+.note-b code { font-family: var(--code); font-size: 0.86em; padding: 1px 5px; border-radius: 5px; background: var(--bg-lane); }
+.note-tag { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: var(--r-pill); border: 1px solid var(--line); color: var(--text-3); font-size: 10.5px; font-weight: 500; }
+.src { display: inline-flex; align-items: center; gap: 5px; color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
+.src code { font-family: var(--code); font-size: 11px; }
+.ev.hover { background: var(--bg-grp); border-radius: var(--r-sm); margin: -4px -6px; padding: 4px 6px 4px 8px; }
+.act-tg .tab .nav-count { font-size: 10.5px; }
+.composer-ft .sw-l { display: inline-flex; align-items: center; gap: 7px; color: var(--text-2); font-size: var(--fs-sm); font-weight: 500; }
+.composer.note-on { border-color: var(--line); box-shadow: 0 0 0 3px var(--bg-lane); border-left: 2px solid var(--text-3); }
+
+/* ---------- finishing with open items ---------- */
+.dlg.fin { width: 560px; top: 150px; }
+.dlg.fin .dlg-t { font-size: 20px; }
+.dlg.fin .mbox { background: var(--bg); }
+
+/* ---------- compact progress sheet ---------- */
+.sheet { box-sizing: border-box; width: 1440px; height: 900px; padding: 30px 40px; background: var(--bg); color: var(--text); font-family: var(--font); font-size: var(--fs-md); display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 26px 40px; align-content: start; overflow: hidden; }
+.sheet * { box-sizing: border-box; }
+.sheet-sec { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.sheet-sec.full { grid-column: 1 / -1; }
+.sheet-t { font-size: var(--fs-sm); font-weight: 600; color: var(--text-3); }
+.sheet-cap { color: var(--text-3); font-size: var(--fs-xs); line-height: 1.5; }
+.sheet .listbox { border: 1px solid var(--line-soft); border-radius: var(--r); background: var(--bg); overflow: hidden; }
+.sheet .lane { background: var(--bg-lane); border-radius: var(--r-lg); padding: 10px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: start; }
+.sheet .peek { position: relative; top: 0; right: 0; bottom: auto; width: 100%; height: 300px; }
+.sheet .pop { position: relative; }
+
+/* ---------- settings: definition of done, switch to Zamu ---------- */
+.dod-tbl { border: 1px solid var(--line-soft); border-radius: var(--r); background: var(--surface); }
+.dod-row { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--line-soft); }
+.dod-row:last-child { border-bottom: 0; }
+.dod-row .t { flex: 1; min-width: 0; font-weight: 450; }
+.dod-row .acts { display: flex; gap: 2px; color: var(--text-3); }
+.dod-row.hover { background: var(--bg-grp); }
+.dod-row .input { flex: 1; height: 30px; }
+.kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px 14px; align-items: center; font-size: var(--fs-md); }
+.kv .k { color: var(--text-3); font-size: var(--fs-sm); }
+.kv .v { display: flex; align-items: center; gap: 8px; font-weight: 500; min-width: 0; }
+.kv .v code, .cmd code { font-family: var(--code); font-size: 12.5px; }
+.sw-card { display: flex; align-items: center; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.sw-card .t { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sw-card .t b { font-weight: 600; }
+.sw-card .t span { color: var(--text-2); font-size: var(--fs-sm); line-height: 1.5; text-wrap: pretty; }
+.cmd { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 6px 0 14px; border-radius: var(--r); background: var(--bg-lane); }
+.cmd code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlg.swi { width: 600px; top: 110px; }
+.dlg.swi .dlg-t { font-size: 20px; }
+.pr-list { border: 1px solid var(--line-soft); border-radius: var(--r); background: var(--bg); overflow: hidden; position: relative; }
+.pr { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; font-size: var(--fs-sm); }
+.pr:last-child { border-bottom: 0; }
+.pr .num { flex: none; width: 40px; color: var(--text-3); font-weight: 500; font-variant-numeric: tabular-nums; }
+.pr .row-t { font-weight: 450; }
+.pr .br { flex: none; max-width: 180px; overflow: hidden; text-overflow: ellipsis; color: var(--text-3); font-family: var(--code); font-size: 11px; }
+.pr-more { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; color: var(--text-3); font-size: var(--fs-sm); border-top: 1px solid var(--line-soft); }
+.pr-ok { display: flex; align-items: center; gap: 9px; padding: 11px 12px; border-radius: var(--r); background: var(--ok-soft); color: var(--ok); font-size: var(--fs-sm); font-weight: 500; }
+.pr-ok .check { margin: 0 2px 2px; }
+.lose { display: flex; gap: 9px; padding: 10px 12px; border-radius: var(--r); background: var(--danger-soft); color: var(--danger); font-size: var(--fs-sm); line-height: 1.45; font-weight: 500; }
+.glyph-warn { flex: none; display: inline-grid; place-items: center; width: 15px; height: 15px; margin-top: 1px; border-radius: 50%; border: 1.5px solid currentColor; font-size: 10px; font-weight: 800; line-height: 1; }
+.owned { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--r); background: var(--ok-soft); color: var(--ok); font-weight: 500; }
+.owned .sm { color: var(--text-2); font-weight: 400; font-size: var(--fs-sm); }

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Task view: pull requests, archived, check again</title>
+<script src="../support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="stylesheet" href="../r2/margin.css" />
+<link rel="stylesheet" href="../r2/screens.css" />
+<link rel="stylesheet" href="./m6.css" />
+<link rel="stylesheet" href="./m7.css" />
+<script src="../r2/data.js"></script>
+<style>
+body{margin:0}a{color:inherit}a:hover{color:inherit}
+.act-tg{display:flex;gap:2px;margin-left:auto}
+.act-tg .tab{height:24px;font-size:var(--fs-xs);padding:0 8px}
+.props .bar{max-width:64px;min-width:36px}
+.chk-pop{right:18px;top:238px;width:262px}
+.chk-pop .field{padding:2px 6px 8px}
+.chk-pop .field .input{height:auto;min-height:36px;padding:7px 11px;white-space:normal;line-height:1.4}
+</style>
+</helmet>
+<div class="{{ rootClass }}" data-screen-label="Task view, M7">
+<dc-import name="Side" project="PAY" view="List" theme="{{ theme }}" hint-size="236px,900px"></dc-import>
+<main class="main">
+<header class="vh">
+<div class="crumb"><span class="tile c6">P</span><span class="crumb-proj">Payments</span><span class="crumb-sep">/</span><span class="crumb-key">{{ key }}</span></div>
+<span class="spacer"></span>
+<span class="tv-nav"><span class="btn icon ghost">‹</span><span class="btn icon ghost">›</span><span>{{ navTxt }}</span></span>
+<span class="btn ghost">Copy link</span>
+<span class="btn icon ghost">···</span>
+</header>
+<div class="{{ taskCls }}">
+<div class="task-main">
+<div class="task-col">
+<sc-if value="{{ isArch }}" hint-placeholder-val="{{ false }}">
+<div class="arch-bar"><span class="ico-arch"></span><span><b>Archived on Nov 12</b>, 14 days after it was done. It stays out of lists, boards and counts.</span><span class="spacer"></span><span class="btn sm ghost">Restore<span class="kbd">⇧E</span></span></div>
+</sc-if>
+<h1 class="task-title">{{ title }}</h1>
+
+<sc-if value="{{ showSum }}" hint-placeholder-val="{{ false }}">
+<div class="sum">
+<div class="sum-h"><b>Summary</b><span class="av agent av-cd">cd</span><span>claude-dev for Ana</span><span class="spacer"></span><span>{{ sumWhen }}</span></div>
+<div class="desc"><p>{{ sumTxt }}</p></div>
+</div>
+</sc-if>
+<sc-if value="{{ showDesc }}" hint-placeholder-val="{{ false }}">
+<div class="desc"><p>{{ descTxt }}</p></div>
+</sc-if>
+
+<sc-if value="{{ showPr }}" hint-placeholder-val="{{ true }}">
+<div class="sh"><span>Pull requests</span><span class="muted">{{ prSm }}</span></div>
+<div class="mbox">
+<sc-if value="{{ hasBranch }}" hint-placeholder-val="{{ false }}"><div class="brline"><span class="ico-branch"></span><span>Work started on <code>feat/payout-alert</code></span><span class="muted">by claude-dev on laptop, Nov 3</span><span class="spacer"></span><span class="muted">No pull request yet</span></div></sc-if>
+<sc-for list="{{ prs }}" as="p" hint-placeholder-count="1">
+<div class="{{ p.cls }}"><span class="host">{{ p.host }}</span><span class="num">{{ p.num }}</span><span class="row-t">{{ p.title }}</span><span class="how">{{ p.how }}<sc-if value="{{ p.hasBr }}" hint-placeholder-val="{{ false }}"> <code>{{ p.br }}</code></sc-if></span><span class="{{ p.stCls }}">{{ p.st }}</span><sc-if value="{{ p.x }}" hint-placeholder-val="{{ false }}"><span class="btn icon sm">×</span></sc-if><span class="arr">↗</span></div>
+</sc-for>
+<sc-if value="{{ prAdd }}" hint-placeholder-val="{{ true }}"><div class="add-l"><span class="col-add">+</span>Link a pull request<span class="spacer"></span><span class="kbd">⇧P</span></div></sc-if>
+<sc-if value="{{ linking }}" hint-placeholder-val="{{ false }}">
+<div class="prq"><span class="col-add">+</span><span class="{{ linkInCls }}"><span>{{ linkUrl }}</span><span class="caretbar"></span></span><span class="kbd">↵</span></div>
+<sc-if value="{{ linkOk }}" hint-placeholder-val="{{ false }}"><div class="prq dim"><span class="host">GH</span><span class="num">#485</span><span class="row-t">Runbook entry for payout retries</span><span class="how">Enter links it</span><span class="prs draft">Draft</span></div></sc-if>
+</sc-if>
+</div>
+<sc-if value="{{ linkBad }}" hint-placeholder-val="{{ false }}"><div class="help err" style="margin-top:8px">That isn’t a pull or merge request address. Paste the link from GitHub, GitLab or Forgejo.</div></sc-if>
+<sc-if value="{{ linkOther }}" hint-placeholder-val="{{ false }}"><div class="menu-note" style="margin:8px 0 0"><span class="glyph-warn">!</span><span>#77 is in northwind/storefront. Payments is linked to northwind/payments, and only its requests can be linked here.</span></div></sc-if>
+<sc-if value="{{ prHelp }}" hint-placeholder-val="{{ false }}"><div class="help" style="margin-top:8px">PAY-142 moves to Done when #482 and #485 are merged or closed. A request closed without merging changes nothing.</div></sc-if>
+</sc-if>
+
+<sc-if value="{{ showCritOpen }}" hint-placeholder-val="{{ false }}">
+<div class="sh"><span>Acceptance criteria</span><span class="critp"><span class="cbx"></span>3 of 5</span><span class="spacer"></span><span class="muted">2 open</span></div>
+<div class="mbox">
+<div class="crit done"><span class="n">1</span><span class="box on"><span class="check"></span></span><span class="crit-t"><span class="crit-x">The report lists every payout of the month with its fee and its attempts</span></span></div>
+<div class="crit done"><span class="n">2</span><span class="box on"><span class="check"></span></span><span class="crit-t"><span class="crit-x">It downloads as CSV in the merchant’s locale</span></span></div>
+<div class="crit done"><span class="n">3</span><span class="box on"><span class="check"></span></span><span class="crit-t"><span class="crit-x">Amounts match the statement to the cent</span></span></div>
+<div class="crit hover"><span class="n">4</span><span class="box"></span><span class="crit-t"><span class="crit-x">A month with more than 10,000 payouts exports in under 30 seconds</span></span><span class="crit-acts"><span class="grip"></span><span class="btn sm">Waive<span class="kbd">W</span></span><span class="btn icon sm">×</span></span></div>
+<div class="crit"><span class="n">5</span><span class="box"></span><span class="crit-t"><span class="crit-x">The merchant documentation describes the export</span></span></div>
+</div>
+</sc-if>
+<sc-if value="{{ showCollapsed }}" hint-placeholder-val="{{ true }}">
+<div class="sh"><span class="tri"></span><span>Acceptance criteria</span><span class="critp"><span class="cbx"></span>{{ critTxt }}</span><span class="muted">{{ critSm }}</span></div>
+<div class="sh" style="margin-top:10px"><span class="tri"></span><span>Definition of done</span><span class="critp"><span class="{{ dodCbx }}"><sc-if value="{{ dodFull }}" hint-placeholder-val="{{ false }}"><span class="check"></span></sc-if></span>{{ dodTxt }}</span></div>
+<div class="sh" style="margin-top:10px"><span class="tri"></span><span>Plan</span><span class="muted">{{ planSm }}</span></div>
+</sc-if>
+
+<sc-if value="{{ showAct }}" hint-placeholder-val="{{ true }}">
+<div class="sh"><span>Activity</span><span class="act-tg"><sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4"><span class="{{ t.cls }}">{{ t.n }}</span></sc-for></span></div>
+<div class="act">
+<sc-for list="{{ acts }}" as="a" hint-placeholder-count="4">
+<sc-if value="{{ a.isEv }}" hint-placeholder-val="{{ true }}"><div class="ev"><span class="{{ a.av }}">{{ a.avI }}</span><span><b>{{ a.who }}</b> {{ a.txt }}<sc-if value="{{ a.hasCause }}" hint-placeholder-val="{{ false }}"><span class="cause"> · {{ a.cause }}</span></sc-if></span><span class="spacer"></span><sc-if value="{{ a.showSrc }}" hint-placeholder-val="{{ false }}"><span class="src">{{ a.mach }} · <code>{{ a.branch }}</code></span></sc-if><span>{{ a.when }}</span></div></sc-if>
+<sc-if value="{{ a.isNote }}" hint-placeholder-val="{{ false }}"><div class="note"><div class="note-h"><span class="{{ a.av }}">{{ a.avI }}</span><b>{{ a.who }}</b><span class="note-tag">Note</span><span class="spacer"></span><span>{{ a.when }}</span></div><div class="note-b">{{ a.txt }}</div></div></sc-if>
+</sc-for>
+<sc-if value="{{ canComment }}" hint-placeholder-val="{{ true }}"><div class="composer"><span>Leave a comment or a note</span><span class="spacer"></span><span style="font-size:var(--fs-xs)">note</span><span class="kbd">N</span><span style="font-size:var(--fs-xs)">comment</span><span class="kbd">M</span></div></sc-if>
+<sc-if value="{{ isArch }}" hint-placeholder-val="{{ false }}"><div class="composer" style="border-style:dashed"><span>Restore the task to comment on it or change it.</span></div></sc-if>
+</div>
+</sc-if>
+</div>
+</div>
+
+<aside class="props">
+<sc-if value="{{ flagMerged }}" hint-placeholder-val="{{ false }}"><div class="flagline"><span class="glyph-warn">!</span><span>Merged with 2 open criteria</span></div></sc-if>
+<div class="prop"><span class="prop-k">Status</span><span class="prop-v"><span class="{{ stCls }}"></span>{{ stTxt }}</span></div>
+<div class="prop"><span class="prop-k">Priority</span><span class="prop-v"><span class="{{ priCls }}"></span>{{ priTxt }}</span></div>
+<div class="prop"><span class="prop-k">Assignee</span><span class="prop-v"><span class="{{ asCls }}">{{ asI }}</span>{{ asTxt }}<span class="sm">{{ asSm }}</span></span></div>
+<sc-if value="{{ showPrProp }}" hint-placeholder-val="{{ false }}"><div class="prop"><span class="prop-k">Pull request</span><span class="prop-v">{{ prPropTxt }}<span class="{{ prPropCls }}">{{ prPropSt }}</span></span></div></sc-if>
+<sc-if value="{{ showCritProp }}" hint-placeholder-val="{{ true }}"><div class="prop"><span class="prop-k">Criteria</span><span class="prop-v"><span class="critp"><span class="cbx"></span></span>{{ critTxt }}<span class="sm">{{ critSm }}</span></span></div></sc-if>
+<div class="prop-sep"></div>
+<div class="prop"><span class="prop-k">Labels</span><span class="prop-v"><sc-for list="{{ labels }}" as="l" hint-placeholder-count="2"><span class="lb"><span class="{{ l.cls }}"></span>{{ l.n }}</span></sc-for></span></div>
+<div class="prop"><span class="prop-k">Due</span><span class="{{ dueVCls }}">{{ dueTxt }}</span></div>
+<sc-if value="{{ showChk }}" hint-placeholder-val="{{ false }}">
+<div class="{{ chkPropCls }}"><span class="prop-k">Check again</span>
+<sc-if value="{{ chkUnset }}" hint-placeholder-val="{{ false }}"><span class="prop-v ph">Set a day<span class="spacer"></span><span class="kbd">⇧W</span></span></sc-if>
+<sc-if value="{{ chkSet }}" hint-placeholder-val="{{ false }}"><span class="prop-v" style="flex-direction:column;align-items:flex-start;gap:4px"><span class="{{ chkCls }}"><span class="ico-wait"></span>{{ chkTxt }}</span><span class="chk-why">The bank issues the new certificate on Dec 1</span></span></sc-if>
+</div>
+</sc-if>
+<div class="prop-sep"></div>
+<div class="prop"><span class="prop-k">Milestone</span><span class="prop-v">Payouts v2<span class="bar p64"></span><span class="sm">64%</span></span></div>
+<div class="prop"><span class="prop-k">Cycle</span><span class="{{ cycVCls }}">{{ cycTxt }}</span></div>
+<div class="prop-sep"></div>
+<div class="prop"><span class="prop-k">Updated</span><span class="prop-v"><span class="sm">{{ updTxt }}</span></span></div>
+
+<sc-if value="{{ chkPop }}" hint-placeholder-val="{{ false }}">
+<div class="pop menu chk-pop">
+<div class="menu-in"><span>Dec 3</span><span class="caretbar"></span></div>
+<div class="menu-i"><span>In a week</span><span class="sm" style="margin-left:auto">Nov 11</span></div>
+<div class="menu-i"><span>In two weeks</span><span class="sm" style="margin-left:auto">Nov 18</span></div>
+<div class="menu-i"><span>In a month</span><span class="sm" style="margin-left:auto">Dec 4</span></div>
+<div class="menu-sep"></div>
+<div class="cal-top"><span>December 2026</span><span class="spacer"></span><span class="muted">‹</span><span class="muted">›</span></div>
+<div class="cal"><sc-for list="{{ calH }}" as="d" hint-placeholder-count="7"><span class="cal-h">{{ d.t }}</span></sc-for><sc-for list="{{ cal }}" as="d" hint-placeholder-count="35"><span class="{{ d.cls }}">{{ d.t }}</span></sc-for></div>
+<div class="menu-sep"></div>
+<div class="field"><span class="flabel">Why wait</span><span class="input focus"><span>The bank issues the new certificate on Dec 1<span style="display:inline-block;width:1.5px;height:15px;background:var(--accent);vertical-align:-3px;margin-left:1px"></span></span></span></div>
+<div class="menu-foot"><span><span class="kbd">↵</span>set</span><span><span class="kbd">Esc</span>cancel</span><span class="spacer"></span><span class="link">Clear</span></div>
+</div>
+</sc-if>
+</aside>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{
+  "theme": { "editor": "enum", "options": ["light", "dark"], "default": "light" },
+  "state": { "editor": "enum", "options": ["pr", "prall", "branch", "link", "linkbad", "linkother", "merged", "archived", "chk", "chkset", "chkdue"], "default": "pr" }
+}'>
+class Component extends DCLogic {
+  componentDidMount() {
+    if (!window.PM) { const i = setInterval(() => { if (window.PM) { clearInterval(i); this.forceUpdate(); } }, 30); }
+  }
+  renderVals() {
+    const P = window.PM;
+    const theme = this.props.theme ?? 'light';
+    const s = this.props.state ?? 'pr';
+    const LBC = P ? P.LBC : {};
+    const isLink = s === 'link' || s === 'linkbad' || s === 'linkother';
+    const is142 = s === 'pr' || s === 'prall' || isLink;
+    const isChk = s === 'chk' || s === 'chkset' || s === 'chkdue';
+    const isArch = s === 'archived', isMerged = s === 'merged', isBranch = s === 'branch';
+    const PR = (num, title, st, how, br, o) => { o = o || {}; return { host: 'GH', num, title, st: st[0].toUpperCase() + st.slice(1), stCls: 'prs ' + st, how, hasBr: !!br, br: br || '', x: !!o.x, cls: 'prq' + (o.hover ? ' hover' : '') }; };
+    const p482 = PR('#482', 'Retry failed payouts with backoff', 'open', 'started on', 'feat/payout-retries');
+    let prs = [p482], prSm = '1 open';
+    if (s === 'prall') {
+      prs = [PR('#479', 'Payout retries: schema and worker', 'merged', 'named in the description'), p482, PR('#485', 'Runbook entry for payout retries', 'draft', 'linked by hand'),
+        PR('#471', 'Spike: retry through the provider’s own queue', 'closed', 'linked by hand', '', { x: true, hover: true })];
+      prSm = '2 still open';
+    } else if (isBranch) { prs = []; prSm = ''; }
+    else if (isMerged) { prs = [PR('#479', 'Payout report export', 'merged', 'started on', 'feat/payout-report')]; prSm = 'merged yesterday by Tomás Ferrer'; }
+    const AV = { ana: ['av av-ana', 'AR', 'Ana Ruiz'], tf: ['av av-tf', 'TF', 'Tomás Ferrer'], cd: ['av agent av-cd', 'cd', 'claude-dev for Ana'], gh: ['sys-av', 'GH', 'GitHub'], zm: ['sys-av', 'Z', 'Zamu'] };
+    const ev = (w, txt, when, o) => { o = o || {}; return { isEv: true, isNote: false, av: AV[w][0], avI: AV[w][1], who: AV[w][2], txt, when, hasCause: !!o.cause, cause: o.cause || '', showSrc: !!o.src, mach: o.src ? o.src[0] : '', branch: o.src ? o.src[1] : '' }; };
+    const nt = (txt, when) => ({ isEv: false, isNote: true, av: AV.cd[0], avI: AV.cd[1], who: AV.cd[2], txt, when });
+    const tabsOf = (on) => ['All', 'Comments', 'Notes', 'History'].map((n) => ({ n, cls: 'tab' + (n === on ? ' on' : '') }));
+    let acts = [], tabs = tabsOf('All');
+    if (is142) acts = [ev('gh', 'linked #482', '2 h ago', { cause: 'work started on feat/payout-retries' }), ev('gh', 'moved this to In review', '2 h ago', { cause: '#482 opened by claude-dev' }), nt('Summary written. The runbook entry is still to do (criterion 6).', '2 h ago')];
+    else if (isBranch) acts = [ev('cd', 'moved this to In progress', 'Nov 3', { src: ['laptop', 'feat/payout-alert'] }), nt('Alert wired to #payments-alerts. It pages on-call between 08:00 and 22:00 only.', 'Nov 3')];
+    else if (isMerged) { tabs = tabsOf('History'); acts = [ev('cd', 'moved this to In progress', 'Oct 29', { src: ['laptop', 'feat/payout-report'] }), ev('gh', 'linked #479', 'Nov 1', { cause: 'work started on feat/payout-report' }),
+      ev('gh', 'moved this to In review', 'Nov 1', { cause: '#479 opened by claude-dev' }), ev('cd', 'checked criteria 1 to 3', 'Nov 2', { src: ['laptop', 'feat/payout-report'] }),
+      ev('gh', 'moved this to Done', 'Yesterday', { cause: '#479 merged by Tomás Ferrer, 2 criteria still open' })]; }
+    else if (isArch) acts = [ev('gh', 'moved this to Done', 'Oct 29', { cause: '#455 merged by Ana Ruiz' }), ev('zm', 'archived this', 'Nov 12', { cause: '14 days after it was done' })];
+    else acts = [ev('tf', 'created this task', 'Oct 30'), ev('tf', s === 'chk' ? 'assigned this to himself' : 'set check again to Dec 3', s === 'chk' ? 'Oct 30' : 'Nov 4')];
+    const calH = ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((t) => ({ t }));
+    const cal = [];
+    cal.push({ t: '30', cls: 'cal-d out' });
+    for (let d = 1; d <= 31; d++) cal.push({ t: String(d), cls: 'cal-d' + (d === 3 ? ' sel' : '') });
+    [1, 2, 3].forEach((d) => cal.push({ t: String(d), cls: 'cal-d out' }));
+    const title = is142 ? 'Retry failed payouts with exponential backoff' : isBranch ? 'Alert on-call after the 8th attempt' : isMerged ? 'Payout report export' : isArch ? 'Payout CSV export for accountants' : 'Rotate the bank API certificate';
+    const person = isChk;
+    return {
+      rootClass: 'app ' + theme, theme, taskCls: 'task' + (isArch ? ' ro' : ''),
+      key: is142 ? 'PAY-142' : isBranch ? 'PAY-146' : isMerged ? 'PAY-150' : isArch ? 'PAY-118' : 'PAY-131', title,
+      navTxt: is142 ? '3 of 9 in In review' : isArch ? '12 of 60 in Archived' : isMerged ? '4 of 61 in Done' : '7 of 40 in List',
+      isArch, showSum: is142 || isMerged, sumWhen: isMerged ? 'Nov 1' : '2 h ago',
+      sumTxt: isMerged ? 'The monthly payout report lists every payout with its fee and attempts and downloads as CSV. The large-month export and the merchant docs are not done yet (criteria 4 and 5).' : 'Failed payouts now retry on a backoff schedule from 1 minute to 6 hours, eight attempts at most, and on-call is alerted once after the last one. Still open: the on-call runbook entry (criterion 6).',
+      showDesc: isBranch || isArch || isChk,
+      descTxt: isBranch ? 'When the 8th attempt fails, mark the payout failed and alert the on-call channel once, with the payout and the last provider error.' : isArch ? 'Accountants asked for the month’s payouts as a CSV they can import. One row per payout, amounts in minor units, dates in UTC.' : 'The certificate for the bank API expires on Dec 15. The bank issues the replacement on Dec 1; install it on staging first, then production.',
+      showPr: !isChk && !isArch, prs, prSm, hasBranch: isBranch, prAdd: !isLink, linking: isLink,
+      linkUrl: s === 'linkbad' ? 'github.com/northwind/payments/issues/485' : s === 'linkother' ? 'https://github.com/northwind/storefront/pull/77' : 'https://github.com/northwind/payments/pull/485',
+      linkInCls: 'input crit-in ' + (s === 'link' ? 'focus' : 'err'), linkOk: s === 'link', linkBad: s === 'linkbad', linkOther: s === 'linkother', prHelp: s === 'prall',
+      showCritOpen: isMerged, showCollapsed: is142 || isBranch, critTxt: isMerged ? '3 of 5' : isBranch ? '1 of 3' : '4 of 6', critSm: isMerged ? '2 open' : isBranch ? '2 open' : '1 waived · 1 open',
+      dodTxt: isBranch ? '0 of 2' : '2 of 2', dodFull: !isBranch, dodCbx: 'cbx' + (isBranch ? '' : ' full'), planSm: isBranch ? '4 steps, by claude-dev' : '8 steps, by claude-dev',
+      showAct: true, tabs, acts, canComment: !isArch, flagMerged: isMerged,
+      stCls: is142 ? 'st rev' : isBranch ? 'st prog' : (isMerged || isArch) ? 'st done' : 'st todo', stTxt: is142 ? 'In review' : isBranch ? 'In progress' : (isMerged || isArch) ? 'Done' : 'Todo',
+      priCls: person ? 'pri m' : 'pri h', priTxt: person ? 'Medium' : 'High',
+      asCls: person ? 'av av-tf' : 'av agent av-cd', asI: person ? 'TF' : 'cd', asTxt: person ? 'Tomás Ferrer' : 'claude-dev', asSm: person ? '' : 'for Ana',
+      showPrProp: is142 || isMerged, prPropTxt: isMerged ? '#479' : s === 'prall' ? '#482 +3' : '#482', prPropSt: isMerged ? 'Merged' : 'Open', prPropCls: isMerged ? 'prs merged' : 'prs open',
+      showCritProp: !isChk && !isArch,
+      labels: (person ? ['ops'] : isMerged || isArch ? ['billing'] : ['payouts', 'reliability']).map((n) => ({ n, cls: 'lbd ' + LBC[n] })),
+      dueVCls: person ? 'prop-v' : 'prop-v', dueTxt: person ? 'Dec 15' : isArch ? 'Oct 28' : 'Nov 7',
+      showChk: isChk, chkPropCls: 'prop' + (s === 'chk' ? ' hover' : ''), chkUnset: s === 'chk', chkSet: s !== 'chk' && isChk, chkPop: s === 'chk',
+      chkCls: 'chk' + (s === 'chkdue' ? ' ready' : ''), chkTxt: s === 'chkdue' ? 'Check again: today' : 'Waiting until Dec 3',
+      cycVCls: person || isArch ? 'prop-v ph' : 'prop-v', cycTxt: person || isArch ? 'None' : 'Cycle 12',
+      updTxt: is142 ? '2 h ago by claude-dev' : isMerged ? 'Yesterday by GitHub' : isArch ? 'Nov 12, archived' : isBranch ? 'Nov 3 by claude-dev' : 'Nov 4 by Tomás Ferrer',
+      calH, cal
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>M6 · Work record</title>
+<script src="../support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas" />
+<style>
+body{margin:0;background:#ecebe7;font-family:system-ui,sans-serif}
+a{color:#1a1a1a}a:hover{color:#2a78d6}
+.cv-hd{padding:48px 56px 8px}
+.cv-t{font:600 26px/1.2 system-ui,sans-serif;color:#1a1a1a}
+.cv-d{margin-top:10px;max-width:980px;font:14px/1.55 system-ui,sans-serif;color:rgba(0,0,0,.62)}
+.cv-sec{padding:36px 56px 28px;border-bottom:1px solid rgba(0,0,0,.08)}
+.cv-sh{display:flex;align-items:baseline;gap:12px;margin:0 0 18px}
+.cv-n{font:600 12px ui-monospace,Menlo,monospace;padding:4px 8px;background:#1a1a1a;color:#fff;border-radius:4px}
+.cv-st{font:600 20px/1.2 system-ui,sans-serif;color:#1a1a1a}
+.cv-sd{font:14px/1.4 system-ui,sans-serif;color:rgba(0,0,0,.55)}
+.cv-rows{display:flex;flex-direction:column;gap:28px}
+.cv-row{display:flex;gap:28px;align-items:flex-start}
+.fr{display:flex;flex-direction:column;gap:8px;flex:none}
+.fcap{font:500 12px system-ui,sans-serif;color:rgba(0,0,0,.55)}
+.card{background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}
+.w1440{width:1440px;height:900px}.w1280{width:1280px;height:820px}
+</style>
+</helmet>
+<div class="cv-hd" data-screen-label="M6 intro">
+<div class="cv-t">M6 · Work record and the switch to Zamu</div>
+<div class="cv-d">First of three releases. A task gains acceptance criteria, a definition of done, a plan, work notes and a final summary, and a mirrored project can switch to being owned by the app. Same direction, tokens and sample data as Round 2 · Margin: no token was added. Light row above dark row in each section. PAY-142 is the task an agent has just finished; Harbor is the mirrored project that switches.</div>
+</div>
+<sc-for list="{{ sections }}" as="sec" hint-placeholder-count="2">
+<section class="cv-sec" id="{{ sec.id }}">
+<div class="cv-sh"><span class="cv-n">{{ sec.n }}</span><span class="cv-st">{{ sec.title }}</span><span class="cv-sd">{{ sec.sub }}</span></div>
+<div class="cv-rows">
+<sc-for list="{{ themes }}" as="th" hint-placeholder-count="2">
+<div class="cv-row">
+<sc-for list="{{ sec.frames }}" as="f" hint-placeholder-count="2">
+<div class="fr">
+<span class="fcap">{{ f.cap }} · {{ th.id }}</span>
+<div class="{{ f.box }}">
+<sc-if value="{{ f.isTask }}" hint-placeholder-val="{{ true }}"><dc-import name="Task" theme="{{ th.id }}" state="{{ f.state }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ f.isMarks }}" hint-placeholder-val="{{ false }}"><dc-import name="Marks" theme="{{ th.id }}" hint-size="1440px,900px"></dc-import></sc-if>
+<sc-if value="{{ f.isSet }}" hint-placeholder-val="{{ false }}"><dc-import name="Settings" theme="{{ th.id }}" state="{{ f.state }}" hint-size="1440px,900px"></dc-import></sc-if>
+</div>
+</div>
+</sc-for>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-for>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    const F = (comp, state, cap) => ({ state, cap, box: 'card ' + (/1280$/.test(state) ? 'w1280' : 'w1440'), isTask: comp === 'Task', isMarks: comp === 'Marks', isSet: comp === 'Settings' });
+    const sections = [
+      { id: 'm6-1', n: '1', title: 'Task view with the work record', sub: 'An agent has finished: the summary leads, then criteria and done items. Also at 1280, with work just started, and with nothing set.', frames: [F('Task', 'review', 'PAY-142 in review, full record'), F('Task', 'review1280', 'Same at 1280'), F('Task', 'started', 'Work just started'), F('Task', 'empty', 'Nothing set, project defaults filled in')] },
+      { id: 'm6-2', n: '2', title: 'Editing criteria', sub: 'Rewording a line, keyboard focus, adding a line; then the waive step with its reason.', frames: [F('Task', 'editing', 'Reword, focus, add'), F('Task', 'waive', 'Waive with a reason')] },
+      { id: 'm6-3', n: '3', title: 'Timeline', sub: 'Notes sit in the timeline, quieter than comments. Filters: All, Comments, Notes, History. History shows the machine and branch of agent changes.', frames: [F('Task', 'timeline', 'Plan open, All: notes, comments, history'), F('Task', 'notes', 'Notes only, writing a note'), F('Task', 'history', 'History with machine and branch')] },
+      { id: 'm6-4', n: '4', title: 'Finishing with open items', sub: 'A person gets a warning and can check, waive or go on. Agents are refused by the server and never see this.', frames: [F('Task', 'finish', 'Moving to In review with 2 open items')] },
+      { id: 'm6-5', n: '5', title: 'Mirrored task', sub: 'The same record, read-only, filled from the task file. Notes are one block, as in the file.', frames: [F('Task', 'mirrored', 'HBR-71, lock on hover')] },
+      { id: 'm6-6', n: '6', title: 'Compact progress', sub: 'The criteria marker on rows, cards and the peek. Off by default on rows and cards.', frames: [F('Marks', '', 'Rows, cards, Display options, peek')] },
+      { id: 'm6-7', n: '7', title: 'Project settings, Task defaults', sub: 'Default definition-of-done items: empty, three items with a row hovered, editing.', frames: [F('Settings', 'dodempty', 'No default items'), F('Settings', 'dod', 'Three items'), F('Settings', 'dodedit', 'Editing')] },
+      { id: 'm6-8', n: '8', title: 'Switch to Zamu', sub: 'Replaces Detach. The page before, the check for open merge requests (loading, none, three, forty, failed), the typed confirmation, and the page after with the export command.', frames: [F('Settings', 'swbefore', 'Before'), F('Settings', 'swloading', 'Checking'), F('Settings', 'swnone', 'None open, confirmed'), F('Settings', 'swthree', 'Three open'), F('Settings', 'swconfirm', 'Three open, confirmed'), F('Settings', 'swforty', 'Forty open'), F('Settings', 'swerror', 'Check failed'), F('Settings', 'swafter', 'After')] },
+      { id: 'm6-9', n: '9', title: 'Long content', sub: '15 criteria with long lines; a 60-line plan clipped; 58 timeline items.', frames: [F('Task', 'long', '15 criteria'), F('Task', 'longlow', 'Long plan and timeline')] }
+    ];
+    return { sections, themes: [{ id: 'light' }, { id: 'dark' }] };
+  }
+}
+</script>
+</body>
+</html>

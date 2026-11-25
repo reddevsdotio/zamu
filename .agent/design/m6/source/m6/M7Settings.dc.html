@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Project settings: Repository and Archive</title>
+<script src="../support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="stylesheet" href="../r2/margin.css" />
+<link rel="stylesheet" href="../r2/screens.css" />
+<link rel="stylesheet" href="./m6.css" />
+<link rel="stylesheet" href="./m7.css" />
+<script src="../r2/data.js"></script>
+<style>
+body{margin:0}
+.set-p{color:var(--text-2);line-height:1.55;font-size:var(--fs-md);max-width:640px;text-wrap:pretty}
+.set-col{gap:18px}
+.set-sec{gap:12px;padding-top:16px}
+.set-row2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.set-row2 .field{min-width:0}
+.lbl-empty{padding:34px 20px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.lbl-empty .empty-t{font-size:20px}
+.lbl-empty .empty-d{max-width:400px}
+</style>
+</helmet>
+<div class="{{ rootClass }}" data-screen-label="Project settings, M7">
+<dc-import name="Side" project="PAY" view="Settings" theme="{{ theme }}" hint-size="236px,900px"></dc-import>
+<main class="main">
+<header class="vh">
+<div class="crumb"><span class="tile c6">P</span><span class="crumb-proj">Payments</span><span class="crumb-sep">/</span><span class="crumb-page">Settings</span></div>
+<span class="spacer"></span>
+</header>
+<div class="setg">
+<nav class="set-nav">
+<div class="sec">Project</div>
+<sc-for list="{{ nav }}" as="n" hint-placeholder-count="7"><div class="{{ n.cls }}"><span class="nav-n">{{ n.n }}</span></div></sc-for>
+</nav>
+<div class="set-c">
+<div class="set-col">
+
+<sc-if value="{{ isRepo }}" hint-placeholder-val="{{ true }}">
+<div class="set-t">Repository</div>
+<div class="set-d">Links pull requests to tasks and moves tasks when a request opens or merges.</div>
+
+<sc-if value="{{ repoNone }}" hint-placeholder-val="{{ false }}">
+<div class="dod-tbl"><div class="lbl-empty"><div class="empty-t serif">No repository linked</div><div class="empty-d">Link the repository this project’s code lives in. Zamu only reads from it: it never comments, commits or changes a request.</div><div class="empty-a"><span class="btn primary">Link a repository</span></div></div></div>
+<div class="help">An agent links it for you when it runs <code style="font-family:var(--code)">zamu link</code> in a clone.</div>
+</sc-if>
+
+<sc-if value="{{ repoLinked }}" hint-placeholder-val="{{ true }}">
+<div class="kv">
+<span class="k">Repository</span><span class="v"><span class="host">GH</span><code>github.com/northwind/payments</code><span class="spacer"></span><span class="btn sm ghost">Change</span></span>
+<span class="k">Default branch</span><span class="v"><code>main</code><span class="muted" style="font-weight:400">Only merges into this branch close tasks.</span></span>
+</div>
+<div class="set-sec">
+<div class="set-tg"><span class="{{ closeTgl }}"></span><div class="t"><b>Close tasks when their pull request merges</b><span>{{ closeTxt }}</span></div></div>
+</div>
+<div class="set-sec">
+<div class="set-sec-t">Pull-request events</div>
+<sc-if value="{{ stLoading }}" hint-placeholder-val="{{ false }}"><div class="hook-st"><span class="skel round" style="width:8px;height:8px"></span><span class="skel w30"></span></div></sc-if>
+<sc-if value="{{ stNever }}" hint-placeholder-val="{{ false }}"><div class="hook-st"><span class="dot warn"></span><span><b>No event received yet.</b> Until the webhook is set up, Zamu checks the repository once an hour.</span></div></sc-if>
+<sc-if value="{{ stOk }}" hint-placeholder-val="{{ false }}"><div class="hook-st"><span class="dot"></span><span><b>Last event 4 minutes ago.</b> #482 opened.</span><span class="spacer"></span><span class="link">Setup steps</span></div></sc-if>
+<sc-if value="{{ stBad }}" hint-placeholder-val="{{ false }}"><div class="hook-st bad"><span class="glyph-warn">!</span><span><b>The last event failed its signature check.</b> The secret on GitHub doesn’t match this one. Paste it again, or issue a new one.</span></div></sc-if>
+<sc-if value="{{ showSetup }}" hint-placeholder-val="{{ false }}">
+<div class="set-row2">
+<div class="field"><span class="flabel">Payload URL</span><span class="copyf"><span>https://zamu.northwind.dev/api/webhooks/repo/8f2c41</span><span class="btn sm ghost">Copy</span></span></div>
+<div class="field"><span class="flabel">Secret</span><span class="copyf"><span>{{ secretTxt }}</span><span class="btn sm ghost">Copy</span><span class="btn sm ghost">New secret</span></span></div>
+</div>
+<div class="seg" style="align-self:flex-start"><span class="seg-i on">GitHub</span><span class="seg-i">GitLab</span><span class="seg-i">Forgejo</span></div>
+<ol class="steps">
+<li>Open the repository on GitHub, then <b>Settings › Webhooks › Add webhook</b>.</li>
+<li>Paste the payload URL and the secret, and choose content type <b>application/json</b>.</li>
+<li>Under “Let me select individual events”, tick <b>Pull requests</b> only. Save.</li>
+</ol>
+<div class="help">Without a webhook Zamu still finds requests, by checking once an hour.</div>
+</sc-if>
+</div>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{ isArch }}" hint-placeholder-val="{{ false }}">
+<div class="set-t">Archive</div>
+<div class="set-d">Finished tasks leave lists, boards and counts after a while. They stay searchable and can be restored.</div>
+<div class="set-sec">
+<div class="set-tg"><span class="{{ archTgl }}"></span><div class="t"><b>Archive finished tasks</b><span>Done and Canceled tasks are archived a set number of days after they reached that status.</span></div></div>
+<sc-if value="{{ archOn }}" hint-placeholder-val="{{ false }}">
+<div class="numf"><span class="flabel">Archive after</span><span class="input focus"><span>14</span><span class="caretbar"></span></span><span class="flabel">days</span></div>
+<div class="hook-st"><span class="ico-arch"></span><span><b>60 tasks</b> were finished more than 14 days ago and will be archived tonight.</span><span class="spacer"></span><span class="link">See them</span></div>
+<div class="set-ft"><span class="btn primary">Save</span><span class="btn ghost">Cancel</span></div>
+</sc-if>
+<sc-if value="{{ archOff }}" hint-placeholder-val="{{ false }}">
+<div class="help">Off: finished tasks stay where they are until someone archives them by hand. Payments has 61 Done and 6 Canceled tasks.</div>
+</sc-if>
+</div>
+</sc-if>
+
+</div>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{
+  "theme": { "editor": "enum", "options": ["light", "dark"], "default": "light" },
+  "state": { "editor": "enum", "options": ["reponone", "reposetup", "repook", "repobad", "repooff", "repoloading", "archoff", "archon"], "default": "repook" }
+}'>
+class Component extends DCLogic {
+  componentDidMount() {
+    if (!window.PM) { const i = setInterval(() => { if (window.PM) { clearInterval(i); this.forceUpdate(); } }, 30); }
+  }
+  renderVals() {
+    const theme = this.props.theme ?? 'light';
+    const s = this.props.state ?? 'repook';
+    const isArch = s.indexOf('arch') === 0;
+    const on = isArch ? 'Archive' : 'Repository';
+    const nav = ['General', 'Labels', 'Task defaults', 'Repository', 'Archive', 'Members', 'Agents'].map((n) => ({ n, cls: 'nav-i' + (n === on ? ' on' : '') }));
+    const off = s === 'repooff';
+    return { rootClass: 'app ' + theme, theme, nav, isRepo: !isArch, isArch,
+      repoNone: s === 'reponone', repoLinked: !isArch && s !== 'reponone',
+      closeTgl: 'tgl' + (off ? '' : ' on'),
+      closeTxt: off ? 'Off: requests still link to their tasks and a new request still moves a task to In review, but the status stays where it is after a merge. Agents set Done themselves.' : 'A task moves to Done when its last open request merges into main. Agents stop at In review and leave Done to the merge.',
+      stLoading: s === 'repoloading', stNever: s === 'reposetup', stOk: s === 'repook' || off, stBad: s === 'repobad',
+      showSetup: s === 'reposetup' || s === 'repobad', secretTxt: s === 'repobad' ? '••••••••••••••••••••••••' : 'whsec_3kT9…shown once',
+      archTgl: 'tgl' + (s === 'archon' ? ' on' : ''), archOn: s === 'archon', archOff: s === 'archoff' };
+  }
+}
+</script>
+</body>
+</html>

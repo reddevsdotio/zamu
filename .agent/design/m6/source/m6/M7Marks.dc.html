@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pull-request and check-again markers</title>
+<script src="../support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="stylesheet" href="../r2/margin.css" />
+<link rel="stylesheet" href="../r2/screens.css" />
+<link rel="stylesheet" href="./m6.css" />
+<link rel="stylesheet" href="./m7.css" />
+<style>
+body{margin:0}
+.sheet .card{width:auto}
+.sheet .peek{height:214px}
+.sheet .peek .task-title{font-size:22px;margin:0}
+.sheet .lane.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.sheet .lcol{display:flex;flex-direction:column;gap:8px}
+.sheet .lhd{display:flex;align-items:center;gap:8px;height:26px;padding:0 4px;font-weight:500}
+.sheet .lhd .muted{font-weight:400}
+</style>
+</helmet>
+<div class="{{ rootCls }}" data-screen-label="Pull-request and check-again markers">
+
+<div class="sheet-sec">
+<div class="sheet-t">List rows</div>
+<div class="listbox">
+<div class="row sel"><span class="pri h"></span><span class="key">PAY-142</span><span class="st rev"></span><span class="row-t">Retry failed payouts with exponential backoff</span><span class="row-r"><span class="lb"><span class="lbd c6"></span>payouts</span><span class="prm"><span class="ico-branch"></span>#482 open</span><span class="due">Nov 7</span><span class="av agent av-cd">cd</span><span class="row-upd">2h</span></span></div>
+<div class="row"><span class="pri blank"></span><span class="key">PAY-146</span><span class="st prog"></span><span class="row-t">Alert on-call after the 8th attempt</span><span class="row-r"><span class="lb"><span class="lbd c9"></span>reliability</span><span class="prm"><span class="ico-branch"></span>branch</span><span class="av agent av-cd">cd</span><span class="row-upd">4h</span></span></div>
+<div class="row"><span class="pri blank"></span><span class="key">PAY-131</span><span class="st todo"></span><span class="row-t">Rotate the bank API certificate</span><span class="row-r"><span class="lb"><span class="lbd c4"></span>ops</span><span class="chk"><span class="ico-wait"></span>Waiting until Dec 3</span><span class="due">Dec 15</span><span class="av av-tf">TF</span><span class="row-upd">3d</span></span></div>
+<div class="row"><span class="pri blank"></span><span class="key">PAY-166</span><span class="st todo"></span><span class="row-t">Ask the provider for the new settlement file format</span><span class="row-r"><span class="chk ready"><span class="ico-wait"></span>Check again: today</span><span class="av av-ana">AR</span><span class="row-upd">8d</span></span></div>
+<div class="row"><span class="pri u">!</span><span class="key">PAY-158</span><span class="st prog"></span><span class="row-t">Payout fee shows twice on the monthly statement</span><span class="row-r"><span class="chk ready"><span class="ico-wait"></span>Check again: 3 days ago</span><span class="due over">2 days overdue</span><span class="av av-ana">AR</span><span class="row-upd">20m</span></span></div>
+</div>
+<div class="sheet-cap">The check-again chip shows whenever a day is set, before the due date. Waiting is grey with a clock; once the day comes it turns to the accent colour and says “Check again”. It never uses the overdue red, even days later (PAY-158 shows both). The pull-request marker is off by default: an open request shows its number, a branch without a request says “branch”.</div>
+</div>
+
+<div class="sheet-sec">
+<div class="sheet-t">Display options and filters</div>
+<div class="pop" style="width:360px">
+<div class="pop-sec">
+<div class="pop-h">Shown on rows</div>
+<div class="chips"><span class="tg on">Priority</span><span class="tg on">Labels</span><span class="tg on">Subtasks</span><span class="tg">Criteria</span><span class="tg focus" style="box-shadow:var(--focus)">Pull request</span><span class="tg on">Check again</span><span class="tg on">Due date</span><span class="tg on">Assignee</span><span class="tg on">Updated</span></div>
+</div>
+<div class="pop-sec">
+<div class="pop-row"><span>Waiting tasks</span><span class="selb"><span>Shown, dimmed</span><span class="caret">▾</span></span></div>
+<div class="pop-row"><span>Archived tasks</span><span class="selb"><span>Hidden</span><span class="caret">▾</span></span></div>
+</div>
+<div class="pop-foot"><span>Saved for you on this board</span><span class="link">Reset</span></div>
+</div>
+<div class="fbar" style="border:0;padding:0;height:auto;flex-wrap:wrap"><span class="fchip"><span class="fk">Check again</span><span class="fop">is</span><span class="fv">waiting</span><span class="fx">×</span></span><span class="fchip"><span class="fk">Check again</span><span class="fop">is</span><span class="fv">ready to check</span><span class="fx">×</span></span><span class="fchip"><span class="fk">Pull request</span><span class="fop">is</span><span class="fv">open</span><span class="fx">×</span></span></div>
+<div class="sheet-cap">“Waiting tasks” has three values: Shown, Shown dimmed (the default) and Hidden. Filters: Check again is waiting or ready to check; Pull request is open, merged or none.</div>
+</div>
+
+<div class="sheet-sec">
+<div class="sheet-t">Board: waiting tasks dimmed, and hidden</div>
+<div class="lane two">
+<div class="lcol">
+<div class="lhd"><span class="st todo"></span>Todo<span class="muted">5</span></div>
+<div class="card"><span class="av av-ana card-av">AR</span><div class="card-t has-av">Show payout fees on the merchant statement</div><div class="card-m"><span class="key">PAY-151</span><span class="lb"><span class="lbd c1"></span>billing</span></div></div>
+<div class="card"><span class="av av-ana card-av">AR</span><div class="card-t has-av">Ask the provider for the new settlement file format</div><div class="card-m"><span class="key">PAY-166</span><span class="spacer"></span><span class="chk ready"><span class="ico-wait"></span>Check again: today</span></div></div>
+<div class="card waiting"><span class="av av-tf card-av">TF</span><div class="card-t has-av">Rotate the bank API certificate</div><div class="card-m"><span class="key">PAY-131</span><span class="lb"><span class="lbd c4"></span>ops</span><span class="spacer"></span><span class="chk"><span class="ico-wait"></span>Until Dec 3</span></div></div>
+</div>
+<div class="lcol">
+<div class="lhd"><span class="st todo"></span>Todo<span class="muted">3</span></div>
+<div class="card"><span class="av av-ana card-av">AR</span><div class="card-t has-av">Show payout fees on the merchant statement</div><div class="card-m"><span class="key">PAY-151</span><span class="lb"><span class="lbd c1"></span>billing</span></div></div>
+<div class="card"><span class="av av-ana card-av">AR</span><div class="card-t has-av">Ask the provider for the new settlement file format</div><div class="card-m"><span class="key">PAY-166</span><span class="spacer"></span><span class="chk ready"><span class="ico-wait"></span>Check again: today</span></div></div>
+<div class="col-foot"><span class="ico-wait"></span>2 waiting, hidden<span class="spacer"></span><span class="link">Show</span></div>
+</div>
+</div>
+<div class="sheet-cap">Left: the default. A waiting card is dimmed and keeps its place. Right: with waiting tasks hidden, the column says how many it hides. A task whose day has come is never dimmed or hidden.</div>
+</div>
+
+<div class="sheet-sec">
+<div class="sheet-t">Peek</div>
+<div class="peek">
+<div class="peek-hd"><span class="st todo"></span><span class="key">PAY-131</span><span class="spacer"></span><span class="btn sm ghost">Open<span class="kbd">↵</span></span><span class="btn icon sm">×</span></div>
+<div class="peek-b">
+<h2 class="task-title">Rotate the bank API certificate</h2>
+<div class="peek-props"><span class="propbtn set"><span class="st todo"></span>Todo</span><span class="propbtn set"><span class="av av-tf">TF</span>Tomás Ferrer</span><span class="propbtn set"><span class="ico-wait"></span>Waiting until Dec 3</span><span class="propbtn set">Due Dec 15</span></div>
+<div class="chk-why">Why it waits: the bank issues the new certificate on Dec 1.</div>
+</div>
+</div>
+<div class="sheet-cap">The reason sits right under the chips, because it is what a person needs when the task comes back.</div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{
+  "theme": { "editor": "enum", "options": ["light", "dark"], "default": "light" }
+}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { rootCls: 'sheet ' + (this.props.theme ?? 'light') };
+  }
+}
+</script>
+</body>
+</html>

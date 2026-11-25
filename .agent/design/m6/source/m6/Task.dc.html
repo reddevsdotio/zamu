@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Task view with the work record</title>
+<script src="../support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="stylesheet" href="../r2/margin.css" />
+<link rel="stylesheet" href="../r2/screens.css" />
+<link rel="stylesheet" href="./m6.css" />
+<script src="../r2/data.js"></script>
+<style>
+body{margin:0}a{color:inherit}a:hover{color:inherit}
+.fgl{display:inline-block;width:9px;height:11px;border:1.5px solid currentColor;border-radius:2px;flex:none}
+.bm.link-b{color:var(--text-2)}
+.bm .arr{color:var(--text-3)}
+.tv-title-sm{font-weight:500;color:var(--text-2);font-size:var(--fs-md);max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.act-tg{display:flex;gap:2px;margin-left:auto}
+.act-tg .tab{height:24px;font-size:var(--fs-xs);padding:0 8px}
+.cmt.agent{box-shadow:var(--shadow-card), inset 2px 0 0 var(--text-3)}
+.props .bar{max-width:64px;min-width:36px}
+.empty-f .sm{color:var(--text-3);font-size:var(--fs-xs)}
+.lock-tip{right:8px;top:-30px}
+.ro-block{padding:10px 12px;border-radius:var(--r);background:var(--bg-lane);color:var(--text-2);font-size:13.5px;line-height:1.55}
+</style>
+</helmet>
+<div class="{{ rootClass }}" data-screen-label="Task view with the work record">
+<dc-import name="Side" project="{{ projKey }}" view="List" theme="{{ theme }}" hint-size="236px,900px"></dc-import>
+<main class="main">
+<header class="vh">
+<div class="crumb"><span class="{{ tileCls }}">{{ projInitial }}</span><span class="crumb-proj">{{ projName }}</span><span class="crumb-sep">/</span><span class="crumb-key">{{ key }}</span>
+<sc-if value="{{ scrolled }}" hint-placeholder-val="{{ false }}"><span class="tv-title-sm">{{ title }}</span></sc-if>
+</div>
+<span class="spacer"></span>
+<span class="tv-nav"><span class="btn icon ghost">‹</span><span class="btn icon ghost">›</span><span>{{ navTxt }}</span></span>
+<span class="btn ghost">Copy link</span>
+<span class="btn icon ghost">···</span>
+</header>
+<div class="task">
+<div class="task-main">
+<div class="task-col" style="{{ colStyle }}">
+<sc-if value="{{ mirrored }}" hint-placeholder-val="{{ false }}"><div class="task-src"><span class="bm link-b"><span class="fgl"></span>Backlog.md<span class="arr">↗</span></span></div></sc-if>
+<sc-if value="{{ showTitle }}" hint-placeholder-val="{{ true }}"><h1 class="task-title">{{ title }}</h1></sc-if>
+
+<sc-if value="{{ showSum }}" hint-placeholder-val="{{ false }}">
+<div class="sum">
+<div class="sum-h"><b>Summary</b><span class="av agent av-cd">cd</span><span>claude-dev for Ana</span><span class="spacer"></span><span>2 h ago</span></div>
+<div class="desc">
+<p>Failed payouts now retry on a backoff schedule from 1 minute to 6 hours, eight attempts at most, and on-call is alerted once after the last one. Every attempt reuses the payout’s idempotency key.</p>
+<p>Checked with the full test suite, a replay of last week’s 219 failed payouts in the provider sandbox (212 recovered by attempt 4, the other 7 were closed accounts) and a manual run of the alert.</p>
+<p>Still open: the on-call runbook entry (criterion 6). Refunds are out of scope and tracked in PAY-160.</p>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showDesc }}" hint-placeholder-val="{{ true }}">
+<div class="{{ descCls }}">
+<p>Payouts that fail at the provider are dropped today. Retry them on a schedule so merchants are paid without support stepping in.</p>
+<ul>
+<li>Back off from 1 minute up to 6 hours, with jitter.</li>
+<li>Stop after 8 attempts and alert the on-call channel.</li>
+</ul>
+</div>
+<sc-if value="{{ descClipped }}" hint-placeholder-val="{{ false }}"><div class="more-l">Show the description<span class="kbd">D</span></div></sc-if>
+</sc-if>
+
+<sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+<div class="desc-ph" style="color:var(--text-3);font-size:14.5px;line-height:1.62;padding:2px 0 6px">Add a description…</div>
+<div class="sh"><span>Acceptance criteria</span></div>
+<div class="empty-f"><span class="col-add">+</span>Add a criterion<span class="sm">What must be true when this is done</span><span class="spacer"></span><span class="kbd">⇧A</span></div>
+</sc-if>
+
+<sc-if value="{{ showCrit }}" hint-placeholder-val="{{ true }}">
+<div class="sh"><span>Acceptance criteria</span><span class="critp"><span class="{{ critCbx }}"><sc-if value="{{ critFull }}" hint-placeholder-val="{{ false }}"><span class="check"></span></sc-if></span>{{ critTxt }}</span><span class="spacer"></span><span class="muted">{{ critSm }}</span></div>
+<div class="{{ critBoxCls }}">
+<sc-for list="{{ crits }}" as="c" hint-placeholder-count="6">
+<div class="{{ c.cls }}"><span class="n">{{ c.n }}</span><span class="{{ c.box }}"><sc-if value="{{ c.checked }}" hint-placeholder-val="{{ false }}"><span class="check"></span></sc-if></span>
+<sc-if value="{{ c.isView }}" hint-placeholder-val="{{ true }}"><span class="crit-t"><span class="crit-x">{{ c.t }}</span><sc-if value="{{ c.hasWhy }}" hint-placeholder-val="{{ false }}"><span class="crit-why"><b>Waived</b> by {{ c.whyBy }}: {{ c.why }}</span></sc-if></span></sc-if>
+<sc-if value="{{ c.isEdit }}" hint-placeholder-val="{{ false }}"><span class="input focus crit-in"><span>{{ c.t }}</span><span class="caretbar"></span></span></sc-if>
+<sc-if value="{{ c.acts }}" hint-placeholder-val="{{ false }}"><span class="crit-acts"><span class="grip"></span><span class="btn sm">Waive<span class="kbd">W</span></span><span class="btn icon sm">×</span></span></sc-if>
+<sc-if value="{{ c.lock }}" hint-placeholder-val="{{ false }}"><span class="lock"></span><span class="tip lock-tip">Set in Backlog.md. Edit the file to change it.</span></sc-if>
+<sc-if value="{{ c.pop }}" hint-placeholder-val="{{ false }}">
+<div class="pop menu wv-pop">
+<div class="menu-h">Waive criterion 5</div>
+<div class="field"><span class="input focus"><span>Load test replaced by a replay of last week’s traffic</span><span class="caretbar"></span></span><span class="help">The reason stays on the task and in its history.</span></div>
+<div class="menu-foot"><span><span class="kbd">↵</span>waive</span><span><span class="kbd">Esc</span>cancel</span></div>
+</div>
+</sc-if>
+</div>
+</sc-for>
+<sc-if value="{{ critAdd }}" hint-placeholder-val="{{ true }}"><div class="add-l"><span class="col-add">+</span>Add a criterion<span class="spacer"></span><span class="kbd">⇧A</span></div></sc-if>
+<sc-if value="{{ critAdding }}" hint-placeholder-val="{{ false }}"><div class="crit"><span class="n">7</span><span class="box"></span><span class="input focus crit-in"><span>The alert names the payout and the last provider error</span><span class="caretbar"></span></span><span class="crit-acts"><span class="kbd">↵</span></span></div></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ showDod }}" hint-placeholder-val="{{ true }}">
+<div class="sh"><span>Definition of done</span><span class="critp"><span class="{{ dodCbx }}"><sc-if value="{{ dodFull }}" hint-placeholder-val="{{ false }}"><span class="check"></span></sc-if></span>{{ dodTxt }}</span><span class="spacer"></span><span class="muted">{{ dodSm }}</span></div>
+<div class="mbox">
+<sc-for list="{{ dods }}" as="c" hint-placeholder-count="2">
+<div class="{{ c.cls }}"><span class="{{ c.box }}"><sc-if value="{{ c.checked }}" hint-placeholder-val="{{ false }}"><span class="check"></span></sc-if></span><span class="crit-t"><span class="crit-x">{{ c.t }}</span></span></div>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{ dodNone }}" hint-placeholder-val="{{ false }}">
+<div class="sh"><span>Definition of done</span></div>
+<div class="empty-f">None in the file</div>
+</sc-if>
+
+<sc-if value="{{ planCollapsed }}" hint-placeholder-val="{{ false }}">
+<div class="sh"><span class="tri"></span><span>Plan</span><span class="muted">8 steps, by claude-dev</span></div>
+</sc-if>
+<sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+<div class="sh"><span>Plan</span></div>
+<div class="empty-f"><span class="col-add">+</span>Write a plan<span class="sm">Usually written by whoever picks the task up</span></div>
+</sc-if>
+<sc-if value="{{ showPlan }}" hint-placeholder-val="{{ false }}">
+<div class="sh"><span class="tri down"></span><span>Plan</span><span class="muted">{{ planSm }}</span><span class="spacer"></span><span class="muted">{{ planBy }}</span></div>
+<sc-if value="{{ planShort }}" hint-placeholder-val="{{ true }}">
+<div class="plan"><ol>
+<sc-for list="{{ plan }}" as="p" hint-placeholder-count="8"><li>{{ p.t }}</li></sc-for>
+</ol></div>
+</sc-if>
+<sc-if value="{{ planLong }}" hint-placeholder-val="{{ false }}">
+<div class="plan clip h6"><ol>
+<li>Add <code>attempt_count</code> and <code>next_run_at</code> to <code>payouts</code>, with a backfill for rows already in <code>failed</code>.</li>
+<li>Write the schedule as a pure function, so the table below is a test fixture:
+<pre>attempt  wait      cumulative
+1        1m        1m
+2        2m        3m
+3        4m        7m</pre></li>
+<li>Run retries from the worker every minute, picking rows where <code>next_run_at</code> has passed.</li>
+<li>Reuse the idempotency key stored on the payout for every provider call.</li>
+</ol></div>
+<div class="more-l">Show all 60 lines</div>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{ showFileNotes }}" hint-placeholder-val="{{ false }}">
+<div class="sh"><span>Notes</span><span class="muted">from the file</span></div>
+<div class="ro-block">Moved the three group names into the shared inbox namespace and added the keys to fr, nl and de. Spanish and Italian still fall back to English: the translation batch lands on Nov 6.</div>
+</sc-if>
+
+<sc-if value="{{ showAct }}" hint-placeholder-val="{{ true }}">
+<div class="sh"><span>Activity</span><span class="act-tg"><sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4"><span class="{{ t.cls }}">{{ t.n }}<sc-if value="{{ t.hasCount }}" hint-placeholder-val="{{ false }}"><span class="nav-count">{{ t.count }}</span></sc-if></span></sc-for></span></div>
+<div class="act">
+<sc-if value="{{ hasMore }}" hint-placeholder-val="{{ false }}"><div class="ev-more">{{ moreTxt }}</div></sc-if>
+<sc-for list="{{ acts }}" as="a" hint-placeholder-count="5">
+<sc-if value="{{ a.isEv }}" hint-placeholder-val="{{ true }}"><div class="{{ a.evCls }}"><span class="{{ a.av }}">{{ a.avI }}</span><span><b>{{ a.who }}</b> {{ a.txt }}</span><span class="spacer"></span><sc-if value="{{ a.showSrc }}" hint-placeholder-val="{{ false }}"><span class="src">{{ a.mach }} · <code>{{ a.branch }}</code></span></sc-if><span>{{ a.when }}</span></div></sc-if>
+<sc-if value="{{ a.isCmt }}" hint-placeholder-val="{{ false }}"><div class="{{ a.cmtCls }}"><div class="cmt-h"><span class="{{ a.av }}">{{ a.avI }}</span><b>{{ a.who }}</b><sc-if value="{{ a.acting }}" hint-placeholder-val="{{ false }}"><span>{{ a.acting }}</span></sc-if><span class="spacer"></span><span>{{ a.when }}</span></div><div class="cmt-b">{{ a.txt }}</div></div></sc-if>
+<sc-if value="{{ a.isNote }}" hint-placeholder-val="{{ false }}"><div class="note"><div class="note-h"><span class="{{ a.av }}">{{ a.avI }}</span><b>{{ a.who }}</b><span class="note-tag">Note</span><sc-if value="{{ a.showSrc }}" hint-placeholder-val="{{ false }}"><span class="src">{{ a.mach }} · <code>{{ a.branch }}</code></span></sc-if><span class="spacer"></span><span>{{ a.when }}</span></div><div class="note-b">{{ a.txt }}</div></div></sc-if>
+</sc-for>
+<sc-if value="{{ composerClosed }}" hint-placeholder-val="{{ true }}"><div class="composer"><span>{{ composerPh }}</span><span class="spacer"></span><sc-if value="{{ native }}" hint-placeholder-val="{{ true }}"><span style="font-size:var(--fs-xs)">note</span><span class="kbd">N</span></sc-if><span style="font-size:var(--fs-xs)">comment</span><span class="kbd">M</span></div></sc-if>
+<sc-if value="{{ composerNote }}" hint-placeholder-val="{{ false }}">
+<div class="composer open note-on">
+<div class="composer-tabs"><b>Write</b><span>Preview</span></div>
+<div class="composer-b">Checked the alert by hand on staging: it fired once after the 8th attempt and named the payout. <span style="display:inline-block;width:1.5px;height:16px;background:var(--accent);vertical-align:-3px"></span></div>
+<div class="composer-ft"><span class="sw-l"><span class="tgl on"></span>Note</span><span class="muted" style="font-size:var(--fs-xs)">A note tells nobody unless it mentions them.</span><span class="spacer"></span><span class="btn ghost">Cancel</span><span class="btn primary">Add note<span class="kbd">⌘↵</span></span></div>
+</div>
+</sc-if>
+</div>
+<div style="height:40px"></div>
+</sc-if>
+</div>
+
+
+</div>
+
+<aside class="props">
+<sc-if value="{{ nativeProps }}" hint-placeholder-val="{{ true }}">
+<div class="prop"><span class="prop-k">Status</span><span class="prop-v"><span class="{{ stCls }}"></span>{{ stTxt }}</span></div>
+<div class="prop"><span class="prop-k">Priority</span><span class="prop-v"><span class="pri h"></span>High</span></div>
+<div class="prop"><span class="prop-k">Assignee</span><span class="prop-v"><span class="av agent av-cd">cd</span>claude-dev<span class="sm">for Ana</span></span></div>
+<div class="prop"><span class="prop-k">Criteria</span><span class="prop-v"><span class="critp"><span class="{{ critCbx }}"><sc-if value="{{ critFull }}" hint-placeholder-val="{{ false }}"><span class="check"></span></sc-if></span></span>{{ critTxt }}<span class="sm">{{ critSm }}</span></span></div>
+<div class="prop"><span class="prop-k">Done items</span><span class="prop-v"><span class="critp"><span class="{{ dodCbx }}"><sc-if value="{{ dodFull }}" hint-placeholder-val="{{ false }}"><span class="check"></span></sc-if></span></span>{{ dodTxt }}</span></div>
+<div class="prop-sep"></div>
+<div class="prop"><span class="prop-k">Labels</span><span class="prop-v"><sc-for list="{{ labels }}" as="l" hint-placeholder-count="3"><span class="lb"><span class="{{ l.cls }}"></span>{{ l.n }}</span></sc-for></span></div>
+<div class="prop"><span class="prop-k">Due</span><span class="prop-v"><span class="due">Nov 7</span><span class="sm">in 3 days</span></span></div>
+<div class="prop"><span class="prop-k">Parent</span><span class="prop-v"><span class="key">PAY-120</span><span style="font-weight:400">Idempotency keys</span></span></div>
+<div class="prop-sep"></div>
+<div class="prop"><span class="prop-k">Milestone</span><span class="prop-v">Payouts v2<span class="bar p64"></span><span class="sm">64%</span></span></div>
+<div class="prop"><span class="prop-k">Cycle</span><span class="prop-v">Cycle 12<span class="sm">Oct 27 – Nov 9</span></span></div>
+<div class="prop-sep"></div>
+<div class="prop"><span class="prop-k">Created</span><span class="prop-v"><span class="sm">Oct 14 by Ana Ruiz</span></span></div>
+<div class="prop"><span class="prop-k">Updated</span><span class="prop-v"><span class="sm">{{ updTxt }}</span></span></div>
+</sc-if>
+<sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+<div class="prop"><span class="prop-k">Status</span><span class="prop-v"><span class="st todo"></span>Todo</span></div>
+<div class="prop"><span class="prop-k">Priority</span><span class="prop-v ph"><span class="pri n"></span>Set priority</span></div>
+<div class="prop"><span class="prop-k">Assignee</span><span class="prop-v ph"><span class="av none"></span>Assign</span></div>
+<div class="prop"><span class="prop-k">Criteria</span><span class="prop-v ph">None yet</span></div>
+<div class="prop"><span class="prop-k">Done items</span><span class="prop-v"><span class="critp"><span class="cbx"></span></span>0 of 2<span class="sm">project defaults</span></span></div>
+<div class="prop-sep"></div>
+<div class="prop"><span class="prop-k">Labels</span><span class="prop-v ph">Add labels</span></div>
+<div class="prop"><span class="prop-k">Due</span><span class="prop-v ph">Set due date</span></div>
+<div class="prop"><span class="prop-k">Parent</span><span class="prop-v ph">None</span></div>
+<div class="prop-sep"></div>
+<div class="prop"><span class="prop-k">Milestone</span><span class="prop-v ph">Add to milestone</span></div>
+<div class="prop"><span class="prop-k">Cycle</span><span class="prop-v ph">Add to cycle</span></div>
+<div class="prop-sep"></div>
+<div class="prop"><span class="prop-k">Created</span><span class="prop-v"><span class="sm">Just now by Ana Ruiz</span></span></div>
+</sc-if>
+<sc-if value="{{ mirrored }}" hint-placeholder-val="{{ false }}">
+<div class="prop"><span class="prop-k">Status</span><span class="prop-v"><span class="st prog"></span>In progress</span></div>
+<div class="prop"><span class="prop-k">Priority</span><span class="prop-v"><span class="pri h"></span>High</span></div>
+<div class="prop"><span class="prop-k">Assignee</span><span class="prop-v"><span class="av agent av-cd">cd</span>claude-dev<span class="sm">for Ana</span></span></div>
+<div class="prop"><span class="prop-k">Criteria</span><span class="prop-v"><span class="critp"><span class="cbx"></span></span>2 of 3</span></div>
+<div class="prop-sep"></div>
+<div class="prop"><span class="prop-k">Labels</span><span class="prop-v"><span class="lb"><span class="lbd c6"></span>i18n</span><span class="lb"><span class="lbd c1"></span>frontend</span></span></div>
+<div class="prop"><span class="prop-k">Due</span><span class="prop-v ph">None</span></div>
+<div class="prop-sep"></div>
+<div class="prop"><span class="prop-k">Milestone</span><span class="prop-v">Mobile app release<span class="bar p60"></span><span class="sm">60%</span></span></div>
+<div class="prop"><span class="prop-k">Cycle</span><span class="prop-v">Cycle 12<span class="sm">Oct 27 – Nov 9</span></span></div>
+<div class="prop-sep"></div>
+<div class="prop"><span class="prop-k">Updated</span><span class="prop-v"><span class="sm">From the file, 38 min ago</span></span></div>
+</sc-if>
+</aside>
+</div>
+</main>
+<sc-if value="{{ isFinish }}" hint-placeholder-val="{{ false }}">
+<div class="scrim"></div>
+<div class="dlg fin">
+<div class="dlg-b">
+<div class="dlg-t">2 items are still open</div>
+<div class="dlg-msg">PAY-142 is moving to In review. Check what is done, waive what no longer applies, or move it as it is.</div>
+<div class="mbox open">
+<div class="crit focus"><span class="n">6</span><span class="box"></span><span class="crit-t"><span class="crit-x">The on-call runbook describes the alert and how to retry by hand</span></span><span class="crit-acts"><span class="btn sm">Waive<span class="kbd">W</span></span></span></div>
+<div class="crit"><span class="n"></span><span class="box"></span><span class="crit-t"><span class="crit-x">Changelog has a line</span><span class="crit-why">Definition of done</span></span><span class="crit-acts"><span class="btn sm">Waive</span></span></div>
+</div>
+</div>
+<div class="dlg-ft"><span class="muted"><span class="kbd">X</span> checks the focused item</span><span class="spacer"></span><span class="btn ghost">Cancel</span><span class="btn primary">Move to In review<span class="kbd">⌘↵</span></span></div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{
+  "theme": { "editor": "enum", "options": ["light", "dark"], "default": "light" },
+  "state": { "editor": "enum", "options": ["review", "review1280", "timeline", "started", "empty", "editing", "waive", "notes", "finish", "mirrored", "history", "long", "longlow"], "default": "review" }
+}'>
+class Component extends DCLogic {
+  componentDidMount() {
+    if (!window.PM) { const i = setInterval(() => { if (window.PM) { clearInterval(i); this.forceUpdate(); } }, 30); }
+  }
+  renderVals() {
+    const P = window.PM;
+    const theme = this.props.theme ?? 'light';
+    const s = this.props.state ?? 'review';
+    const mirrored = s === 'mirrored';
+    const isEmpty = s === 'empty';
+    const native = !mirrored;
+    const isReview = s === 'review' || s === 'review1280';
+    const scrolled = s === 'timeline' || s === 'notes' || s === 'history' || s === 'long' || s === 'longlow';
+    const LBC = P ? P.LBC : {};
+    const AV = { ana: ['av av-ana', 'AR', 'Ana Ruiz'], tf: ['av av-tf', 'TF', 'Tomás Ferrer'], cd: ['av agent av-cd', 'cd', 'claude-dev'], rb: ['av agent av-rb', 'rb', 'review-bot'] };
+    const who = (w) => AV[w][2] + (w === 'cd' ? ' for Ana' : w === 'rb' ? ' for Tomás' : '');
+    const base = (w, txt, when, src) => ({ isEv: false, isCmt: false, isNote: false, av: AV[w][0], avI: AV[w][1], who: AV[w][2], txt, when, acting: '', cmtCls: 'cmt', evCls: 'ev',
+      showSrc: !!src, mach: src ? src[0] : '', branch: src ? src[1] : '' });
+    const L = ['laptop', 'feat/payout-retries'];
+    const ev = (w, txt, when, src, hover) => ({ ...base(w, txt, when, src), isEv: true, who: who(w), evCls: 'ev' + (hover ? ' hover' : '') });
+    const cm = (w, txt, when) => ({ ...base(w, txt, when), isCmt: true, acting: w === 'cd' ? 'acting for Ana' : w === 'rb' ? 'acting for Tomás' : '', cmtCls: (w === 'cd' || w === 'rb') ? 'cmt agent' : 'cmt' });
+    const nt = (w, txt, when, src) => ({ ...base(w, txt, when, src), isNote: true, who: who(w) });
+    const N = [
+      nt('cd', 'Attempt count and next run are stored on the payout. The migration ran against a copy of production; 3 rows needed a manual fix.', 'Oct 16'),
+      nt('cd', 'Backoff schedule is in. Jitter was applied before the cap, so attempt 8 could wait 7h 12m. Fixed after review-bot’s comment.', 'Oct 30'),
+      nt('cd', 'Every attempt now reuses the idempotency key. Added a test that fails if a retry creates a second transfer.', 'Nov 1'),
+      nt('cd', 'account_closed skips straight to the alert, as Ana decided on Oct 15.', 'Nov 2'),
+      nt('cd', 'Alert wired to #payments-alerts. It pages on-call between 08:00 and 22:00 only.', 'Nov 3'),
+      nt('cd', 'Sandbox replay of last week’s failed payouts: 212 of 219 recovered by attempt 4. The other 7 were closed accounts.', 'Nov 4'),
+      nt('cd', 'Summary written. The runbook entry is still to do (criterion 6).', '2 h ago')
+    ];
+    const tabsOf = (on, counts) => ['All', 'Comments', 'Notes', 'History'].map((n, i) => ({ n, cls: 'tab' + (n === on ? ' on' : ''), hasCount: !!counts, count: counts ? counts[i] : '' }));
+    let acts = [], hasMore = false, moreTxt = '', tabs = tabsOf('All', null);
+    if (s === 'timeline') {
+      hasMore = true; moreTxt = '23 earlier · Show all'; tabs = tabsOf('All', ['31', '6', '7', '18']);
+      acts = [cm('rb', 'Jitter is applied before the cap, so attempt 8 can wait 7h 12m. Apply it after the cap.', 'Oct 29'), N[1],
+        ev('cd', 'checked criterion 2', 'Nov 1', L, true), N[5], cm('tf', 'Support had three merchants asking about missing payouts this week. Is this close?', 'Nov 4'),
+        ev('ana', 'waived criterion 5', 'Nov 4'), N[6], ev('cd', 'moved this to In review', '2 h ago')];
+    } else if (s === 'started') {
+      acts = [ev('ana', 'assigned this to claude-dev', 'Oct 16'), ev('cd', 'moved this to In progress and wrote the plan', 'Oct 16'), N[0], N[1]];
+    } else if (s === 'notes') {
+      tabs = tabsOf('Notes', ['31', '6', '7', '18']); acts = N.slice(2);
+    } else if (s === 'history') {
+      tabs = tabsOf('History', ['31', '6', '7', '18']); hasMore = true; moreTxt = '6 earlier · Show all';
+      acts = [ev('ana', 'added 6 acceptance criteria', 'Oct 14'), ev('ana', 'assigned this to claude-dev', 'Oct 16'),
+        ev('cd', 'moved this to In progress', 'Oct 16', L), ev('cd', 'wrote the plan', 'Oct 16', L), ev('cd', 'checked criterion 1', 'Oct 16', L),
+        ev('cd', 'checked criterion 2', 'Nov 1', L), ev('cd', 'checked criteria 3 and 4', 'Nov 3', L), ev('rb', 'checked “Tests and lint pass”', 'Nov 3', ['ci-runner-3', 'feat/payout-retries']),
+        ev('ana', 'waived criterion 5: load test replaced by a replay of last week’s traffic', 'Nov 4'),
+        ev('ana', 'set the due date to Nov 7', 'Nov 4', ['ana-mbp', 'main']), ev('cd', 'checked “Changelog has a line”', '2 h ago', L),
+        ev('cd', 'wrote the final summary', '2 h ago', L), ev('cd', 'moved this to In review', '2 h ago', L)];
+    } else if (s === 'longlow') {
+      tabs = tabsOf('All', ['58', '9', '40', '9']); hasMore = true; moreTxt = '53 earlier · Show all'; acts = N.slice(3);
+    } else if (isEmpty) acts = [ev('ana', 'created this task', 'Just now')];
+    else if (mirrored) acts = [ev('ana', 'imported this from backlog/tasks/hbr-71.md', 'Oct 12'), ev('cd', 'checked criterion 2 in the file', 'Oct 30'), cm('ana', 'The German strings are longer than the chip allows. Check the inbox header at 320px.', 'Nov 1')];
+
+    const C = (n, st, t, o) => { o = o || {}; return { n, t, cls: 'crit' + (st === 'done' ? ' done' : st === 'waived' ? ' waived' : '') + (o.hover ? ' hover' : '') + (o.focus ? ' focus' : ''),
+      box: 'box' + (st === 'done' ? ' on' : st === 'waived' ? ' wv' : '') + (o.ro ? ' ro' : ''), checked: st === 'done', isView: !o.edit, isEdit: !!o.edit,
+      hasWhy: !!o.why, why: o.why || '', whyBy: o.by || 'Ana', acts: !!o.acts, lock: !!o.lock, pop: !!o.pop }; };
+    const T = ['A failed payout is retried up to 8 times, waiting from 1 minute to 6 hours with jitter',
+      'Every attempt reuses the payout’s idempotency key, and a retry never pays twice',
+      'After the 8th attempt the payout is marked failed and on-call is alerted once',
+      'A payout that fails with account_closed skips the retries and alerts straight away',
+      'The schedule holds under a load test of 10,000 failed payouts',
+      'The on-call runbook describes the alert and how to retry by hand'];
+    const WHY = 'load test replaced by a replay of last week’s traffic';
+    let crits, critTxt, critSm, critFull = false, dods, dodTxt = '2 of 2', dodFull = false, dodSm = 'from the project defaults';
+    const D = (st, t) => C('', st, t);
+    if (s === 'started') { crits = T.map((t, i) => C(i + 1, 'open', t)); critTxt = '0 of 6'; critSm = ''; dods = [D('open', 'Tests and lint pass'), D('open', 'Changelog has a line')]; dodTxt = '0 of 2'; }
+    else if (s === 'editing' || s === 'waive') {
+      const w = s === 'waive';
+      crits = [C(1, 'done', T[0]), C(2, 'done', w ? T[1] : 'Every attempt reuses the payout’s idempotency key, and a retry can never pay twice', { edit: !w }), C(3, 'done', T[2]),
+        C(4, 'open', T[3], { focus: !w }), C(5, 'open', T[4], { hover: true, acts: true, pop: w }), C(6, 'open', T[5])];
+      critTxt = '3 of 6'; critSm = '3 open'; dods = [D('open', 'Tests and lint pass'), D('open', 'Changelog has a line')]; dodTxt = '0 of 2';
+    } else if (s === 'finish') {
+      crits = [C(1, 'done', T[0]), C(2, 'done', T[1]), C(3, 'done', T[2]), C(4, 'done', T[3]), C(5, 'waived', T[4], { why: WHY }), C(6, 'open', T[5])];
+      critTxt = '4 of 6'; critSm = '1 waived · 1 open'; dods = [D('done', 'Tests and lint pass'), D('open', 'Changelog has a line')]; dodTxt = '1 of 2';
+    } else if (s === 'long') {
+      const LT = ['A failed payout is retried up to 8 times, waiting from 1 minute to 6 hours, with up to 20% jitter applied after the cap so that no attempt ever waits longer than 6 hours',
+        'Every attempt reuses the idempotency key stored on the payout, and the provider sandbox confirms that a retry of a payout that already went through creates no second transfer',
+        'After the 8th attempt the payout is marked failed, the merchant sees “Payout failed” on the statement, and on-call is alerted exactly once in #payments-alerts',
+        'A payout that fails with account_closed, account_frozen or currency_not_supported skips the retries and alerts straight away, because it can never succeed',
+        'Retries stop as soon as a payout is canceled by support from the admin panel, including a retry that is already waiting for its next run',
+        'The worker picks up at most 500 due payouts a minute and leaves the rest for the next run, so a provider outage does not flood the provider when it ends',
+        'The schedule holds under a load test of 10,000 failed payouts with the provider sandbox answering in 2 seconds',
+        'Attempt count, next run and the last provider error show on the payout page of the admin panel',
+        'The alert names the payout, the merchant, the amount and the last provider error, and links to the admin panel',
+        'A deploy in the middle of a retry run loses no attempt and repeats none',
+        'Existing payouts in the failed state before the release are not retried unless support asks for it',
+        'The on-call runbook describes the alert, the three ways a payout ends up there and how to retry by hand',
+        'The merchant documentation says when a failed payout is retried and for how long',
+        'Metrics for attempts, recoveries by attempt number and final failures are on the payments dashboard',
+        'The changelog and the upgrade notes mention the two new columns and the backfill'];
+      const ST = ['done', 'done', 'done', 'done', 'done', 'done', 'waived', 'done', 'done', 'open', 'done', 'open', 'waived', 'open', 'open'];
+      crits = LT.map((t, i) => C(i + 1, ST[i], t, ST[i] === 'waived' ? { why: i === 6 ? WHY : 'the merchant docs are rewritten in PAY-171', by: i === 6 ? 'Ana' : 'Tomás' } : {}));
+      critTxt = '9 of 15'; critSm = '2 waived · 4 open'; dodFull = true;
+    } else if (mirrored) {
+      crits = [C(1, 'done', 'Group names come from the shared inbox namespace', { ro: true }), C(2, 'done', 'French, Dutch and German show translated group names', { ro: true, hover: true, lock: true }), C(3, 'open', 'Spanish and Italian show translated group names', { ro: true })];
+      critTxt = '2 of 3'; critSm = 'from the file';
+    } else {
+      crits = [C(1, 'done', T[0]), C(2, 'done', T[1]), C(3, 'done', T[2]), C(4, 'done', T[3]), C(5, 'waived', T[4], { why: WHY }), C(6, 'open', T[5], { hover: true, acts: true })];
+      critTxt = '4 of 6'; critSm = '1 waived · 1 open'; dods = [D('done', 'Tests and lint pass'), D('done', 'Changelog has a line')]; dodTxt = '2 of 2'; dodFull = true;
+    }
+    if (isEmpty) { dods = [D('open', 'Tests and lint pass'), D('open', 'Changelog has a line')]; dodTxt = '0 of 2'; dodFull = false; }
+    const plan = ['Store the attempt count and the next run on the payout (PAY-143)', 'Backoff schedule with jitter, applied after the cap (PAY-144)', 'Reuse the idempotency key on every attempt (PAY-145)',
+      'Skip the retries for account_closed', 'Alert on-call after the 8th attempt (PAY-146)', 'Replay last week’s failed payouts in the provider sandbox', 'Write the runbook entry', 'Changelog and docs'].map((t) => ({ t }));
+    const showCrit = !isEmpty && s !== 'timeline' && s !== 'notes' && s !== 'history' && s !== 'longlow';
+    const stRev = isReview || s === 'timeline' || s === 'notes' || s === 'history' || s === 'long' || s === 'longlow';
+    return {
+      rootClass: 'app ' + theme + (s === 'review1280' ? ' w1280' : ''), theme, native,
+      projKey: mirrored ? 'HBR' : 'PAY', projName: mirrored ? 'Harbor' : 'Payments', projInitial: mirrored ? 'H' : 'P', tileCls: mirrored ? 'tile c1' : 'tile c6',
+      key: mirrored ? 'HBR-71' : isEmpty ? 'PAY-151' : 'PAY-142',
+      title: mirrored ? 'Inbox sorting shows untranslated labels in every locale' : isEmpty ? 'Show payout fees on the merchant statement' : 'Retry failed payouts with exponential backoff',
+      navTxt: mirrored ? '2 of 13 in In progress' : isEmpty ? '40 of 40 in List' : '3 of 9 in In review',
+      scrolled, showTitle: !scrolled, mirrored, isEmpty, colStyle: scrolled ? 'padding-top:0' : '',
+      showSum: isReview, showDesc: native && !isEmpty && !scrolled, descCls: s === 'started' ? 'desc' : 'desc clip h2', descClipped: s !== 'started',
+      showCrit, crits: crits || [], critTxt, critSm, critFull, critCbx: 'cbx' + (critFull ? ' full' : ''), critBoxCls: 'mbox' + (s === 'editing' || s === 'waive' ? ' open' : ''),
+      critAdd: native && s !== 'editing' && s !== 'long', critAdding: s === 'editing',
+      showDod: (showCrit || isEmpty) && native && s !== 'long', dods: dods || [], dodTxt, dodFull, dodCbx: 'cbx' + (dodFull ? ' full' : ''), dodSm, dodNone: mirrored,
+      planCollapsed: isReview || s === 'finish' || s === 'editing' || s === 'waive', showPlan: s === 'timeline' || s === 'started' || s === 'longlow' || mirrored,
+      planShort: s !== 'longlow', planLong: s === 'longlow', plan: mirrored ? [{ t: 'Move the group names into the shared inbox namespace' }, { t: 'Add the keys to fr, nl, de, es and it' }] : plan,
+      planSm: mirrored ? 'from the file' : s === 'longlow' ? '60 lines' : '8 steps', planBy: mirrored ? '' : 'claude-dev for Ana, Oct 16',
+      showFileNotes: mirrored, showAct: !isReview && s !== 'editing' && s !== 'waive' && s !== 'finish' && s !== 'long', tabs, acts, hasMore, moreTxt,
+      composerClosed: s !== 'notes', composerNote: s === 'notes',
+      composerPh: mirrored ? 'Leave a comment. It stays in the app and isn’t written to the file.' : 'Leave a comment or a note',
+      isFinish: s === 'finish', nativeProps: native && !isEmpty,
+      stCls: stRev ? 'st rev' : 'st prog', stTxt: stRev ? 'In review' : 'In progress', updTxt: stRev ? '2 h ago by claude-dev' : 'Nov 4 by claude-dev',
+      labels: ['payouts', 'reliability', 'backend'].map((n) => ({ n, cls: 'lbd ' + LBC[n] }))
+    };
+  }
+}
+</script>
+</body>
+</html>
