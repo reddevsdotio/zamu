@@ -102,6 +102,8 @@ const REVIEW: HomeItem = {
     status: 'in_review',
     priority: 'high',
     assignee: asAssignee(CLAUDE, ANA),
+    // M6: four checked, one waived, one open.
+    criteriaProgress: { settled: 5, open: 1, waived: 1, total: 6 },
   }),
   reason: { kind: 'review', requestedBy: CLAUDE, onBehalfOf: ANA, waitingOn: ANA, at: ago(40 * MIN) },
   relation: 'agent',
@@ -112,6 +114,7 @@ const MENTION: HomeItem = {
     status: 'in_progress',
     assignee: asAssignee(CLAUDE, ANA),
     dueDate: '2026-10-31',
+    criteriaProgress: { settled: 1, open: 1, waived: 0, total: 2 },
   }),
   reason: {
     kind: 'mention',
@@ -363,6 +366,10 @@ describe('Home', () => {
     ).toBeInTheDocument();
 
     expect(row('PAY-120')).toHaveTextContent('blocks 2');
+    // Needs review rows carry the criteria pill; rows of other groups don't.
+    expect(row('PAY-120')).toHaveTextContent('4 of 6 criteria');
+    expect(row('PAY-142')).not.toHaveTextContent(/criteri/);
+    expect(row('WEB-193')).not.toHaveTextContent(/criteri/);
     expect(row('PAY-120')).toHaveTextContent(/claude-dev · 40 min ago/);
     expect(within(row('PAY-120')).getByRole('img', { name: 'claude-dev' })).toBeInTheDocument();
     expect(row('PAY-142')).toHaveTextContent('blocked');
@@ -390,6 +397,7 @@ describe('Home', () => {
     expect(screen.getByText('What needs attention across Northwind Labs')).toBeInTheDocument();
     expect(await screen.findByText(/Needs review/)).toBeInTheDocument();
     expect(row('PAY-120')).toHaveTextContent('waits on Ana');
+    expect(row('PAY-120')).toHaveTextContent('4 of 6 criteria');
   });
 
   it('shows agent cards and what waits on a person on Agents, without deadlines', async () => {

@@ -4,6 +4,7 @@ import {
   actionText,
   agentsLine,
   agoText,
+  criteriaPillText,
   deadlineView,
   forText,
   greeting,
@@ -51,6 +52,30 @@ function task(overrides: Partial<TaskListItem> = {}): TaskListItem {
 function item(reason: HomeItem['reason'], overrides: Partial<HomeItem> = {}): HomeItem {
   return { task: task(), reason, relation: null, pills: [], ...overrides };
 }
+
+describe('criteria pill', () => {
+  const review = (criteriaProgress?: TaskListItem['criteriaProgress']) =>
+    item(
+      { kind: 'review', requestedBy: CLAUDE, onBehalfOf: ANA, waitingOn: ANA, at: minutesAgo(5) },
+      { task: task({ status: 'in_review', ...(criteriaProgress ? { criteriaProgress } : {}) }) },
+    );
+
+  it('counts checked criteria on Needs review rows', () => {
+    expect(criteriaPillText(review({ settled: 5, open: 1, waived: 1, total: 6 }), 'review')).toBe(
+      '4 of 6 criteria',
+    );
+    expect(criteriaPillText(review({ settled: 0, open: 1, waived: 0, total: 1 }), 'review')).toBe(
+      '0 of 1 criterion',
+    );
+  });
+
+  it('says nothing without criteria or outside Needs review', () => {
+    expect(criteriaPillText(review({ settled: 0, open: 0, waived: 0, total: 0 }), 'review')).toBe('');
+    expect(criteriaPillText(review(), 'review')).toBe('');
+    expect(criteriaPillText(review({ settled: 1, open: 1, waived: 0, total: 2 }), 'waiting')).toBe('');
+    expect(criteriaPillText(review({ settled: 1, open: 1, waived: 0, total: 2 }), undefined)).toBe('');
+  });
+});
 
 describe('times', () => {
   it('words how long ago and for how long', () => {

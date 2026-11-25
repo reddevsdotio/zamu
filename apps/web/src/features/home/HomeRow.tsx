@@ -1,19 +1,22 @@
-import type { HomeItem, HomeTab } from '@zamu/contracts';
+import type { HomeGroupKey, HomeItem, HomeTab } from '@zamu/contracts';
 import type { MouseEvent, ReactNode, Ref } from 'react';
 import { Avatar, cn, DueChip, Pill, PriorityGlyph, ProjectTile, StatusGlyph } from '~/ui';
-import { pillView, rowAvatar, shownPills, showsDueChip, whyText } from './format';
+import { criteriaPillText, pillView, rowAvatar, shownPills, showsDueChip, whyText } from './format';
 
 // A Home row (components.md "Home row", frame 099; screens.css .row .proj, .why):
 //
 //   [!] [H] Harbor  HBR-110  ◔  Point the mobile client at …      blocks 2  Nov 14  claude-dev · 40 min ago  [cd]
 //
-// Priority (urgent and high only), the project tile and name, key, status, title, then pills, the due
+// Priority (urgent and high only), the project tile and name, key, status, title, then pills (on Needs
+// review rows first the criteria pill, "4 of 6 criteria"), the due
 // chip, the "why" line and the assignee. The row is a link to the task: a click opens it, Shift and
 // ⌘/Ctrl clicks select. Home rows are their own component: their columns differ from a project's list.
 
 export interface HomeRowProps {
   item: HomeItem;
   tab: HomeTab;
+  /** The row's group: Needs review rows add the criteria pill. */
+  group?: HomeGroupKey;
   viewerId: string | undefined;
   now: number | null;
   /** The keyboard focus (J / K): the accent background. */
@@ -35,6 +38,7 @@ const ROW =
 export function HomeRow({
   item,
   tab,
+  group,
   viewerId,
   now,
   focused,
@@ -48,6 +52,7 @@ export function HomeRow({
   const { task } = item;
   const why = whyText(item, tab, viewerId, now);
   const avatar = rowAvatar(item, tab, viewerId);
+  const criteria = criteriaPillText(item, group);
   return (
     <a
       ref={rowRef}
@@ -76,6 +81,11 @@ export function HomeRow({
       {/* 450: the design's row title weight, between font-normal and font-medium (margin.css .row-t). */}
       <span className="min-w-0 flex-1 truncate font-[450]">{task.title}</span>
       <span className="flex shrink-0 items-center gap-2">
+        {criteria ? (
+          <Pill tone="default" className="h-4.75" data-criteria-pill="">
+            {criteria}
+          </Pill>
+        ) : null}
         {shownPills(item).map((pill) => {
           const view = pillView(pill);
           return (

@@ -10,6 +10,8 @@ import {
   type TaskListItem,
   type TaskListPage,
   type TaskStatus,
+  type WorkItem,
+  type WorkItemProgress,
 } from '@zamu/contracts';
 
 // In-memory /api/v1 client for the board's component tests: board order (rank) or a `sort`, one status
@@ -40,6 +42,10 @@ export interface FakeBoardOptions {
   mirrored?: boolean;
   /** Subtasks added under a card: `count` of them, the first `done` of them Done, the rest Todo. */
   subtasks?: { parent: string; count: number; done?: number };
+  /** M6: criteria counts per card key, sent with the list as the server does. */
+  criteria?: Record<string, WorkItemProgress>;
+  /** Due dates per card key. */
+  dueDates?: Record<string, string>;
 }
 
 export function createFakeBoardApi({
@@ -48,6 +54,8 @@ export function createFakeBoardApi({
   usesCycles = true,
   mirrored = false,
   subtasks,
+  criteria = {},
+  dueDates = {},
 }: FakeBoardOptions = {}) {
   const project = { id: '10000000-0000-4000-8000-000000000001', key: 'PAY', name: 'Payments' };
   const base = Date.parse('2026-10-20T10:00:00.000Z');
@@ -118,6 +126,27 @@ export function createFakeBoardApi({
     }
     if (parent) parent.subtaskProgress = { done, total: subtasks.count };
   }
+  for (const task of tasks) {
+    const dueDate = dueDates[task.key];
+    if (dueDate) task.dueDate = dueDate;
+    // The full task (tasks.get) lists the criteria the counts stand for: checked, waived, then open.
+    const progress = criteria[task.key];
+    if (progress) {
+      const checked = progress.settled - progress.waived;
+      task.criteria = Array.from(
+        { length: progress.total },
+        (_, index): WorkItem => ({
+          number: index + 1,
+          text: `Criterion ${index + 1} of ${task.key}`,
+          state: index < checked ? 'checked' : index < progress.settled ? 'waived' : 'open',
+          waivedReason: index >= checked && index < progress.settled ? 'Not needed' : null,
+          waivedBy: index >= checked && index < progress.settled ? ANA : null,
+          locked: false,
+        }),
+      );
+      task.doneItems = [];
+    }
+  }
 
   const calls = { update: [] as Input[], list: [] as Input[] };
   const control = {
@@ -131,8 +160,17 @@ export function createFakeBoardApi({
     return task;
   };
   const toItem = (task: Task): TaskListItem => {
-    const { description: _d, createdBy: _c, createdOnBehalfOf: _o, parent, ...item } = task;
-    return { ...item, parentKey: parent?.key ?? null };
+    const {
+      description: _d,
+      createdBy: _c,
+      createdOnBehalfOf: _o,
+      parent,
+      criteria: _criteria,
+      doneItems: _doneItems,
+      ...item
+    } = task;
+    const progress = criteria[task.key];
+    return { ...item, parentKey: parent?.key ?? null, ...(progress ? { criteriaProgress: progress } : {}) };
   };
   const PRIORITY_ORDER = ['none', 'low', 'medium', 'high', 'urgent'];
   const bySort = (sort: string) => (a: Task, b: Task) => {

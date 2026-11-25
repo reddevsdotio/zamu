@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useRouterState } from '@tanstack/react-router';
-import type { Task, TimelineItem } from '@zamu/contracts';
+import type { Task, TimelineItem, WorkItemProgress } from '@zamu/contracts';
 import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import { Button as AriaButton } from 'react-aria-components';
 import { CommentMarkdown } from '~/features/comments/CommentMarkdown';
@@ -22,7 +22,7 @@ import { Markdown } from '~/features/tasks/Markdown';
 import { TaskFileBadge } from '~/features/tasks/MirroredTask';
 import { membersQuery, taskQuery, timelineQuery } from '~/features/tasks/queries';
 import { projectOfKey } from '~/features/tasks/TaskPageRelations';
-import { rememberTaskNavigation } from '~/features/views';
+import { progressOfItems, rememberTaskNavigation, type WorkItemKind, workItemNoun } from '~/features/views';
 import {
   Avatar,
   Button,
@@ -34,8 +34,11 @@ import {
   LabelDot,
   localToday,
   PriorityGlyph,
+  ProgressMark,
   Skeleton,
   StatusGlyph,
+  SummaryBlock,
+  type WorkAuthor,
 } from '~/ui';
 import { closePeek, movePeek, type PeekRequest, usePeek } from './store';
 
@@ -43,7 +46,8 @@ import { closePeek, movePeek, type PeekRequest, usePeek } from './store';
 // Home, without a scrim, so the view behind stays usable. Header with the key, the Backlog.md badge,
 // Open (Enter) and close; the title; the properties as chips (each opens its picker in native
 // projects, read-only in mirrored ones, which the footer says); the description and the latest
-// comment. J / K move it along the view's keys, Space or Esc close it, Enter opens the task view.
+// comment. M6: both work-record counts as chips, and the final summary in place of the description
+// when the task has one (frame 023). J / K move it along the view's keys, Space or Esc close it, Enter opens the task view.
 // Mounted once in the shell; the views open it through features/peek/store.ts.
 
 export function PeekHost() {
@@ -207,6 +211,40 @@ function Peek({ request }: { request: PeekRequest }) {
 const chip =
   'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-pill bg-bg-lane px-2.5 text-sm font-medium whitespace-nowrap text-fg';
 
+/**
+ * "4 of 6 criteria", "2 of 2 done items" (frame 023): always shown in the peek, whatever the display
+ * options say, but only for a list that has items. Read-only: the task view changes them.
+ */
+function WorkItemChip({ kind, progress }: { kind: WorkItemKind; progress: WorkItemProgress }) {
+  if (progress.total <= 0) return null;
+  return (
+    <span className={chip} data-work-items={kind}>
+      <ProgressMark
+        {...progress}
+        format="long"
+        showNoun
+        noun={workItemNoun(kind, progress.total)}
+        className="text-sm text-fg"
+      />
+    </span>
+  );
+}
+
+/** "claude-dev for Ana", or "From the file" for a summary read from a Backlog.md file. */
+function summaryByline(task: Task): { author?: WorkAuthor; onBehalfOf?: string; byline?: string } {
+  const meta = task.finalSummaryMeta;
+  if (meta?.author) {
+    return {
+      author: meta.author,
+      ...(meta.onBehalfOf ? { onBehalfOf: meta.onBehalfOf.name.split(/\s+/)[0] } : {}),
+    };
+  }
+  return meta?.origin === 'backlog' || task.backlog ? { byline: 'From the file' } : {};
+}
+
+/** formatRelative's "Just now" reads "just now" after the byline's comma. */
+const sentenceTime = (text: string) => (text === 'Just now' ? 'just now' : text);
+
 /** A property chip: a picker trigger in native projects, plain text in mirrored ones. */
 function PropertyChip({
   task,
@@ -252,6 +290,12 @@ function PeekBody({ task, isMirrored }: { task: Task; isMirrored: boolean }) {
   const latest = comments.at(-1);
   const today = now == null ? undefined : localToday(new Date(now));
   const description = task.description?.trim();
+  // A finished task opens on its final summary, in place of the description (M6 design call 8).
+  const summary = task.finalSummary?.trim();
+  const summaryAt = task.finalSummaryMeta?.at;
+  const summaryTime = summaryAt ? sentenceTime(time(summaryAt)) : '';
+  const criteria = progressOfItems(task.criteria);
+  const doneItems = progressOfItems(task.doneItems);
   return (
     <>
       <h2 className="m-0 font-serif text-xl leading-tight font-medium text-balance">{task.title}</h2>
@@ -276,6 +320,8 @@ function PeekBody({ task, isMirrored }: { task: Task; isMirrored: boolean }) {
             {label.name}
           </PropertyChip>
         ))}
+        <WorkItemChip kind="criteria" progress={criteria} />
+        <WorkItemChip kind="done" progress={doneItems} />
         {task.dueDate ? (
           <PropertyChip task={task} Picker={DuePicker} label="Due date" readOnly={isMirrored}>
             <DueChip
@@ -304,7 +350,11 @@ function PeekBody({ task, isMirrored }: { task: Task; isMirrored: boolean }) {
           </PropertyChip>
         ) : null}
       </div>
-      {description ? (
+      {summary ? (
+        <SummaryBlock variant="plain" time={summaryTime || null} {...summaryByline(task)}>
+          <Markdown source={summary} size="page" variant={isMirrored ? 'backlog' : 'default'} />
+        </SummaryBlock>
+      ) : description ? (
         <Markdown source={description} size="page" variant={isMirrored ? 'backlog' : 'default'} />
       ) : null}
       <div className="mt-1.5 flex items-center gap-2 text-sm font-semibold text-fg-2">

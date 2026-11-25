@@ -19,6 +19,7 @@ function View({ projectKey, view }: { projectKey: string | null; view: 'list' | 
         hideDone: options.hideDoneAfterDays,
         cards: options.boardSubtasks,
         milestone: options.properties.milestone,
+        criteria: options.properties.criteria,
       })}
     </output>
   );
@@ -47,6 +48,7 @@ describe('display options', () => {
       hideDone: 14,
       cards: 'expandable',
       milestone: false,
+      criteria: false,
     });
     expect(screen.getByTestId('options-board')).toHaveAttribute('data-default', 'true');
 
@@ -66,6 +68,7 @@ describe('display options', () => {
       hideDone: 14,
       cards: 'cards',
       milestone: true,
+      criteria: false,
     });
     expect(screen.getByTestId('options-board')).toHaveAttribute('data-default', 'false');
     expect(read('list')).toMatchObject({ orderBy: 'priority' });
@@ -110,6 +113,31 @@ describe('display options', () => {
     expect(within(dialog).queryByRole('button', { name: /Swimlanes$/ })).toBeNull();
     await user.click(within(dialog).getByRole('radio', { name: 'Board' }));
     expect(onLayoutChange).toHaveBeenCalledWith('board');
+  });
+
+  it('offers a Criteria chip after Subtasks, off by default, and saves it for the view', async () => {
+    const user = userEvent.setup();
+    await renderWithQuery(
+      <>
+        <DisplayButton projectKey="HBR" view="list" />
+        <View projectKey="HBR" view="list" />
+        <View projectKey="HBR" view="board" />
+      </>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Display options' });
+    const chips = within(within(dialog).getByLabelText('Shown on rows')).getAllByRole('button');
+    const names = chips.map((chip) => chip.textContent);
+    expect(names.indexOf('Criteria')).toBe(names.indexOf('Subtasks') + 1);
+    expect(names.indexOf('Due date')).toBe(names.indexOf('Criteria') + 1);
+
+    const criteria = within(dialog).getByRole('button', { name: 'Criteria', pressed: false });
+    await user.click(criteria);
+    expect(within(dialog).getByRole('button', { name: 'Criteria', pressed: true })).toBeInTheDocument();
+    expect(read('list')).toMatchObject({ criteria: true });
+    expect(read('board')).toMatchObject({ criteria: false });
+    const stored = JSON.parse(localStorage.getItem(displayStorageKey(VIEWER.id, 'HBR', 'list')) ?? 'null');
+    expect(stored).toMatchObject({ properties: { criteria: true } });
   });
 
   it('opens from the palette', async () => {

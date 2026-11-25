@@ -10,9 +10,11 @@ import type {
   UserRef,
 } from '@zamu/contracts';
 import { describeActivity } from '~/features/tasks/format';
+import { progressText } from '~/features/views/work-progress';
 import { formatShortDate, type PillTone, STATUS_LABELS } from '~/ui';
 
-// The words of Home (frames 099–106): group titles and hints, the "why" line of a row, pills, the
+// The words of Home (frames 099–106; M6 frame 064 for the criteria pill): group titles and hints, the
+// "why" line of a row, pills, the
 // deadlines strip, agent cards and the page title. Pure, so the screen and its tests share them.
 
 const MINUTE = 60_000;
@@ -167,6 +169,15 @@ export function pillView(pill: HomePill): PillView {
  */
 export function shownPills(item: HomeItem): HomePill[] {
   return item.task.dueDate ? item.pills.filter((pill) => pill.kind !== 'due') : item.pills;
+}
+
+/**
+ * "4 of 6 criteria" on a Needs review row (M6, frame 064) when the task has criteria; empty
+ * otherwise. The counts come with the row, so nothing more is fetched.
+ */
+export function criteriaPillText(item: HomeItem, group: HomeGroupKey | undefined): string {
+  if (group !== 'review') return '';
+  return progressText('criteria', item.task.criteriaProgress);
 }
 
 /** The due chip shows unless an overdue pill already says how late the task is. */

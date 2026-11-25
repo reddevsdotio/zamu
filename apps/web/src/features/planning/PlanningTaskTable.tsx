@@ -18,6 +18,7 @@ import {
   showsProperty,
   type TaskGroup,
   useTaskSelection,
+  workItemNoun,
 } from '~/features/views';
 import {
   Avatar,
@@ -29,6 +30,7 @@ import {
   localToday,
   MilestoneGlyph,
   PriorityGlyph,
+  ProgressMark,
   Skeleton,
   StatusGlyph,
   SubtaskProgress,
@@ -41,7 +43,8 @@ import { FoldGroup } from './parts';
 //   ▾ ◐ In progress 4
 //   ▮▮▮ HBR-166  ◐ Offline cache: browse every tab…     • mobile • perf  ◔ 2/6  Nov 14  (cd)   2m
 //
-// Grouped as the person's list Display options say (status by default), with the same properties.
+// Grouped as the person's list Display options say (status by default), with the same properties,
+// the criteria marker (M6, off by default) included.
 // J / K or ↓ / ↑ move, X and Shift select, Space peeks, Enter or a click opens the task view (which
 // then walks this list: "3 of 12 in Cycle 12"), and the task keys (S, P, A, L …) act on the focused
 // or selected tasks. ← / → on a group row fold it.
@@ -322,6 +325,12 @@ function TaskRow({
         {shows('labels') && task.labels?.length ? <LabelList labels={task.labels} max={2} /> : null}
         {shows('subtasks') && subtasks && subtasks.total > 0 ? (
           <SubtaskProgress done={subtasks.done} total={subtasks.total} />
+        ) : null}
+        {shows('criteria') && task.criteriaProgress && task.criteriaProgress.total > 0 ? (
+          <ProgressMark
+            {...task.criteriaProgress}
+            noun={workItemNoun('criteria', task.criteriaProgress.total)}
+          />
         ) : null}
         {shows('due') && task.dueDate ? (
           <DueChip dueDate={task.dueDate} status={task.status} {...(today ? { today } : {})} />
