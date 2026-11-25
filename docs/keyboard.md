@@ -72,12 +72,43 @@ With several tasks selected, these keys act on all of them, in native projects o
 
 ## Task view
 
-| Key   | Action                                                               |
-| ----- | -------------------------------------------------------------------- |
-| J / K | Next or previous task of the list you came from ("12 of 40 in List") |
-| Esc   | Back to the list or board, with the task still under the cursor      |
-| E     | Edit the title                                                       |
-| D     | Edit the description                                                 |
+| Key     | Action                                                                |
+| ------- | --------------------------------------------------------------------- |
+| J / K   | Next or previous task of the list you came from ("12 of 40 in List")  |
+| Esc     | Back to the list or board, with the task still under the cursor       |
+| E       | Edit the title                                                        |
+| D       | Edit the description, or show it when a final summary folds it        |
+| Shift+A | Add a criterion                                                       |
+| Shift+X | Move to the first open criterion (or done item)                       |
+| N       | Write a note: the comment box in note mode (M opens it for a comment) |
+
+## Criteria and done items
+
+These keys work on the focused line of the Acceptance criteria or Definition of done list in the task view.
+Mirrored tasks show the lists read-only.
+
+| Key           | Action                                                             |
+| ------------- | ------------------------------------------------------------------ |
+| ↑ / ↓         | Previous or next line                                              |
+| X             | Check or uncheck the line                                          |
+| W             | Waive the line (type the reason, then Enter), or remove its waiver |
+| E             | Reword the line                                                    |
+| Alt+↑ / Alt+↓ | Move the line up or down                                           |
+| Backspace     | Remove the line, with Undo in the toast                            |
+| Enter         | In the add field: add the line and keep the field open             |
+| Esc           | Leave the list                                                     |
+
+## Finishing with open items
+
+The dialog that opens when you move a task to In review or Done while criteria or done items are open.
+
+| Key    | Action                             |
+| ------ | ---------------------------------- |
+| ↑ / ↓  | Move between the open items        |
+| X      | Check the focused item             |
+| W      | Waive the focused item             |
+| ⌘Enter | Move the task anyway               |
+| Esc    | Cancel: the status stays as it was |
 
 ## Pickers and menus
 
@@ -102,6 +133,13 @@ With several tasks selected, these keys act on all of them, in native projects o
 | @      | Mention someone in a comment                    |
 
 In quick create (C), I assigns the task to you, Shift+M opens the milestone and Shift+C the cycle.
+
+## Changed in 0.9.0
+
+- New in the task view: Shift+A adds a criterion, Shift+X moves to the first open item, and N opens the
+  comment box as a note.
+- D shows the description when a final summary folds it, and edits it after that.
+- The criteria and done-item lists and the finishing dialog have their own keys, listed above.
 
 ## Changed in 0.7.0
 

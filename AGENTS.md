@@ -2,8 +2,10 @@
 
 Zamu is a self-hosted, MIT-licensed project management tool for teams where AI coding agents work next to
 people. Agents are workspace members with their own scoped API keys, and every change records the agent and
-the person it acts for. People use the web app; agents use the `zamu` CLI over a REST API. It ships as one
-Docker image, and Postgres is the only stateful service.
+the person it acts for. People use the web app; agents use the `zamu` CLI over a REST API and record their
+work on the task: acceptance criteria, a definition of done, a plan, work notes and a final summary. The
+server ships as one Docker image, and Postgres is the only stateful service. The CLI is published to npm
+(`@reddevs/zamu`) and Homebrew (`reddevsdotio/tap/zamu`).
 
 This file is for contributors and their coding agents. [README.md](README.md) covers features and
 self-hosting, and [docs/architecture.md](docs/architecture.md) explains how the pieces fit together.
@@ -19,20 +21,20 @@ self-hosting, and [docs/architecture.md](docs/architecture.md) explains how the 
 
 ## Layout
 
-| Path                     | What lives there                                                          |
-| ------------------------ | ------------------------------------------------------------------------- |
-| `apps/web`               | Web server: pages, `/api/v1`, `/api/auth`, webhooks, `/api/healthz`       |
-| `apps/worker`            | pg-boss worker that runs the background jobs                              |
-| `apps/cli`               | The `zamu` CLI, bundled with tsdown                                       |
-| `packages/core`          | Business rules: every service the API, server functions and jobs call     |
-| `packages/contracts`     | Zod schemas, the oRPC contract, error codes and the CLI's `--json` shapes |
-| `packages/db`            | Drizzle schema, SQL migrations and the throwaway test database helper     |
-| `packages/auth`          | Better Auth setup, SSO, API keys and the request actor                    |
-| `packages/git-providers` | Read-only clients for the supported git hosts, webhook signature checks   |
-| `packages/backlog-md`    | Pure parser for Backlog.md folders                                        |
-| `e2e`                    | Playwright specs that run against the Docker Compose stack                |
-| `docker`                 | Image entrypoint, health check, migration runner, Forgejo test container  |
-| `docs`                   | User, API and self-hosting docs                                           |
+| Path                     | What lives there                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------ |
+| `apps/web`               | Web server: pages, `/api/v1`, `/api/auth`, webhooks, `/api/healthz`                  |
+| `apps/worker`            | pg-boss worker that runs the background jobs                                         |
+| `apps/cli`               | The `zamu` CLI, bundled with tsdown; `scripts/` packages it for npm and Homebrew     |
+| `packages/core`          | Business rules: every service the API, server functions and jobs call                |
+| `packages/contracts`     | Zod schemas, the oRPC contract, error codes and the CLI's `--json` shapes            |
+| `packages/db`            | Drizzle schema, SQL migrations and the throwaway test database helper                |
+| `packages/auth`          | Better Auth setup, SSO, API keys and the request actor                               |
+| `packages/git-providers` | Read-only clients for the supported git hosts, webhook signature checks              |
+| `packages/backlog-md`    | Pure parser and writer for Backlog.md folders                                        |
+| `e2e`                    | Playwright specs that run against the Docker Compose stack                           |
+| `docker`                 | Image entrypoint, health check, migrations, Forgejo test container, Homebrew formula |
+| `docs`                   | User, API and self-hosting docs                                                      |
 
 ## Commands
 
@@ -71,13 +73,24 @@ pnpm e2e                      # Playwright against a fresh Docker Compose stack
   `E2E_SKIP_UPGRADE=1` and `E2E_SKIP_BACKLOG=1` skip the slow specs; the README lists the other variables.
 - After a schema change in `packages/db/src/schema`, run `pnpm --filter @zamu/db generate` and commit the
   new folder under `packages/db/migrations`.
+- `node apps/cli/scripts/npm-package.ts --version 0.0.1 --check` builds the folder npm gets (the bundle with
+  that version), installs it into an empty directory and runs `zamu --version` there. On `X.Y.Z` tags the
+  release workflow publishes it and updates the Homebrew tap.
+- The upgrade spec builds older releases from git tags. Its 0.8.0 step runs only when the tag `0.8.0`
+  exists, or `E2E_0_8_IMAGE` or `E2E_0_8_REF` points at a build; otherwise it is skipped with a message.
 
 ## Code conventions
 
 - Biome sets the style: 2 spaces, single quotes, 110 columns, sorted imports. Run `pnpm format` before you
   commit.
 - Business rules go in `packages/core`. oRPC handlers, server functions and worker jobs stay thin: parse the
-  input with a contract schema, resolve the actor, call a core service.
+  input with a contract schema, resolve the actor, call a core service. The work record is an example:
+  criteria and done items are `task_item` rows, the plan and summary are columns on `task`, notes are
+  `comment` rows of kind `note`, and `packages/core/src/criteria.ts` holds the operations and the rule that
+  refuses an agent finishing a task with open items.
+- Backlog.md has one owner at a time. A mirrored project reads its files and refuses writes to what they
+  own; a project owned by Zamu (imported, or switched in its settings) can be written back out as a copy with
+  `zamu backlog export`. The server never writes to a repository.
 - A new API route starts in `packages/contracts`. The web app, the API and the CLI share those types.
 - Core services take a context object. They never read `process.env`; the apps read configuration once at
   startup.
