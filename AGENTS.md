@@ -117,4 +117,4 @@ pnpm e2e                      # Playwright against a fresh Docker Compose stack
 ## Security
 
 Do not open a public issue for a vulnerability. Report it privately through GitHub's private vulnerability
-reporting: the Security tab of https://github.com/reddevs-io/zamu, then "Report a vulnerability".
+reporting: the Security tab of https://github.com/reddevsdotio/zamu, then "Report a vulnerability".

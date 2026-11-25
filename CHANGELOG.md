@@ -7,7 +7,7 @@ Renamed to Zamu. The rename is breaking: none of the old names keep working.
 ### Changed
 
 - The product is Zamu in the web app, page titles, the OpenAPI document and sign-in. The repository moves to
-  https://github.com/reddevs-io/zamu.
+  https://github.com/reddevsdotio/zamu.
 - The CLI binary is `zamu` instead of `pm`. It reads `ZAMU_URL`, `ZAMU_KEY`, `ZAMU_API_KEY` and
   `ZAMU_PROJECT` instead of the `PM_*` variables, stores its config in `$XDG_CONFIG_HOME/zamu/config.json`,
   and looks for `.zamu.json` instead of `.pm.json`. `--json` output uses the schema ids `zamu.v1.*` instead

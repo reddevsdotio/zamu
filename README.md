@@ -46,7 +46,7 @@ What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 You need Docker with the Compose plugin.
 
 ```sh
-git clone https://github.com/reddevs-io/zamu.git
+git clone https://github.com/reddevsdotio/zamu.git
 cd zamu
 cp .env.example .env
 # set BETTER_AUTH_SECRET in .env, for example to the output of: openssl rand -base64 32

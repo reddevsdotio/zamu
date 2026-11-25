@@ -1,5 +1,5 @@
 # Releases: an X.Y.Z tag (no pre-release suffix) runs CI on the tag and pushes the image to
-# ghcr.io/reddevs-io/zamu (:<tag> and :latest). Deploying an instance is up to whoever runs it; this workflow
+# ghcr.io/reddevsdotio/zamu (:<tag> and :latest). Deploying an instance is up to whoever runs it; this workflow
 # deploys nothing.
 #
 # workflow_dispatch builds and pushes an existing tag by hand, for example the first push that creates the ghcr
@@ -25,7 +25,7 @@ defaults:
     shell: bash
 
 env:
-  IMAGE: ghcr.io/reddevs-io/zamu
+  IMAGE: ghcr.io/reddevsdotio/zamu
 
 jobs:
   # Resolves the tag (the pushed one, or the dispatch input) and checks its format before anything runs.
@@ -91,7 +91,7 @@ jobs:
             ${{ needs.meta.outputs.latest == 'true' && format('{0}:latest', env.IMAGE) || '' }}
           labels: |
             org.opencontainers.image.title=Zamu
-            org.opencontainers.image.source=https://github.com/reddevs-io/zamu
+            org.opencontainers.image.source=https://github.com/reddevsdotio/zamu
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.version=${{ needs.meta.outputs.tag }}
             org.opencontainers.image.revision=${{ steps.checkout.outputs.commit }}
