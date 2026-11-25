@@ -16,6 +16,7 @@ import {
   project,
   task,
   taskDependency,
+  taskItem,
   taskLabel,
   user,
 } from '../src/schema';
@@ -87,6 +88,7 @@ describe('schema on a throwaway database', () => {
       'session',
       'task',
       'task_dependency',
+      'task_item',
       'task_label',
       'user',
       'verification',
@@ -779,6 +781,200 @@ describe('M5 schema', () => {
         indexname: 'task_projectId_dueDate_idx',
         indexdef:
           'CREATE INDEX "task_projectId_dueDate_idx" ON public.task USING btree (project_id, due_date) WHERE (due_date IS NOT NULL)',
+      },
+    ]);
+  });
+});
+
+describe('M6 schema', () => {
+  let database: TestDatabase;
+  let db: Db;
+
+  beforeAll(async () => {
+    database = await createTestDatabase();
+    db = database.db;
+  });
+
+  afterAll(async () => {
+    await database?.drop();
+  });
+
+  async function newTask(world: Awaited<ReturnType<typeof seed>>, number: number) {
+    const [row] = await db
+      .insert(task)
+      .values({ projectId: world.pay.id, number, title: `Task ${number}`, createdById: world.owner.id })
+      .returning();
+    if (!row) throw new Error('task insert failed');
+    return row;
+  }
+
+  async function newItem(
+    taskId: string,
+    position: number,
+    values: Partial<typeof taskItem.$inferInsert> = {},
+  ) {
+    const [row] = await db
+      .insert(taskItem)
+      .values({ taskId, kind: 'criterion', position, text: `Criterion ${position}`, ...values })
+      .returning();
+    if (!row) throw new Error('item insert failed');
+    return row;
+  }
+
+  it('defaults the new task, project, comment and activity columns', async () => {
+    const world = await seed(db);
+    const row = await newTask(world, 1);
+    expect(row).toMatchObject({ plan: null, finalSummary: null });
+    expect(world.pay.defaultDoneItems).toEqual([]);
+    const [note] = await db
+      .insert(comment)
+      .values({
+        workspaceId: world.workspace.id,
+        projectId: world.pay.id,
+        taskId: row.id,
+        authorId: world.owner.id,
+        body: 'Started',
+      })
+      .returning();
+    expect(note).toMatchObject({ kind: 'comment', machine: null, branch: null });
+    const [entry] = await db
+      .insert(activity)
+      .values({
+        workspaceId: world.workspace.id,
+        projectId: world.pay.id,
+        taskId: row.id,
+        actorId: world.owner.id,
+        type: 'task.updated',
+        changes: [{ field: 'criterion.checked', number: 1, text: 'Refunds post a ledger entry' }],
+        machine: 'ana-laptop',
+        branch: 'feat/refunds',
+      })
+      .returning();
+    expect(entry).toMatchObject({ machine: 'ana-laptop', branch: 'feat/refunds' });
+    expect(entry?.changes).toEqual([
+      { field: 'criterion.checked', number: 1, text: 'Refunds post a ledger entry' },
+    ]);
+  });
+
+  it('checks comment kinds and default done items', async () => {
+    const world = await seed(db);
+    const row = await newTask(world, 1);
+    const values = {
+      workspaceId: world.workspace.id,
+      projectId: world.pay.id,
+      taskId: row.id,
+      authorId: world.owner.id,
+      body: 'Migration written',
+    };
+    await expect(db.insert(comment).values({ ...values, kind: 'note' })).resolves.toBeTruthy();
+    expect(
+      await pgErrorCode(
+        db.execute(sql`insert into comment (workspace_id, project_id, task_id, author_id, body, kind)
+        values (${world.workspace.id}, ${world.pay.id}, ${row.id}, ${world.owner.id}, 'x', 'memo')`),
+      ),
+    ).toBe('23514');
+    await db
+      .update(project)
+      .set({ defaultDoneItems: ['Tests pass', 'Docs updated'] })
+      .where(eq(project.id, world.pay.id));
+    const reloaded = await db.query.project.findFirst({ where: { id: world.pay.id } });
+    expect(reloaded?.defaultDoneItems).toEqual(['Tests pass', 'Docs updated']);
+    expect(
+      await pgErrorCode(
+        db.execute(sql`update project set default_done_items = '{"a": 1}'::jsonb where id = ${world.pay.id}`),
+      ),
+    ).toBe('23514');
+  });
+
+  it('checks item kind, state, source, position and text', async () => {
+    const world = await seed(db);
+    const row = await newTask(world, 1);
+    const item = await newItem(row.id, 1);
+    expect(item).toMatchObject({ state: 'open', source: 'app', waivedReason: null, waivedById: null });
+    expect(await pgErrorCode(newItem(row.id, 2, { kind: 'step' as 'done' }))).toBe('23514');
+    expect(await pgErrorCode(newItem(row.id, 2, { state: 'skipped' as 'open' }))).toBe('23514');
+    expect(await pgErrorCode(newItem(row.id, 2, { source: 'file' as 'app' }))).toBe('23514');
+    expect(await pgErrorCode(newItem(row.id, 0))).toBe('23514');
+    expect(await pgErrorCode(newItem(row.id, 2, { text: '' }))).toBe('23514');
+    expect(await pgErrorCode(newItem(row.id, 2, { text: 'two\nlines' }))).toBe('23514');
+    expect(await pgErrorCode(newItem(row.id, 2, { text: 'carriage\rreturn' }))).toBe('23514');
+    // Done items number on their own.
+    await expect(newItem(row.id, 1, { kind: 'done', text: 'Tests pass' })).resolves.toBeTruthy();
+  });
+
+  it('needs a reason exactly while waived', async () => {
+    const world = await seed(db);
+    const row = await newTask(world, 1);
+    expect(await pgErrorCode(newItem(row.id, 1, { state: 'waived' }))).toBe('23514');
+    expect(await pgErrorCode(newItem(row.id, 1, { waivedReason: 'Not needed' }))).toBe('23514');
+    expect(
+      await pgErrorCode(
+        newItem(row.id, 1, { state: 'checked', waivedReason: null, waivedById: world.owner.id }),
+      ),
+    ).toBe('23514');
+    const waived = await newItem(row.id, 1, {
+      state: 'waived',
+      waivedReason: 'Load test replaced by a replay',
+      waivedById: world.owner.id,
+    });
+    expect(waived).toMatchObject({ state: 'waived', waivedById: world.owner.id });
+    // Checking a waived item clears the waiver in the same write.
+    await db
+      .update(taskItem)
+      .set({ state: 'checked', waivedReason: null, waivedById: null })
+      .where(eq(taskItem.id, waived.id));
+  });
+
+  it('keeps one item per number and kind, checked at commit so renumbering may pass through duplicates', async () => {
+    const world = await seed(db);
+    const row = await newTask(world, 1);
+    const one = await newItem(row.id, 1);
+    const two = await newItem(row.id, 2);
+
+    // A move inside one transaction: swap the two numbers.
+    await db.transaction(async (tx) => {
+      await tx.update(taskItem).set({ position: 2 }).where(eq(taskItem.id, one.id));
+      await tx.update(taskItem).set({ position: 1 }).where(eq(taskItem.id, two.id));
+    });
+    const order = await db
+      .select({ id: taskItem.id })
+      .from(taskItem)
+      .where(eq(taskItem.taskId, row.id))
+      .orderBy(taskItem.position);
+    expect(order.map((item) => item.id)).toEqual([two.id, one.id]);
+
+    // A duplicate left at commit fails.
+    expect(await pgErrorCode(newItem(row.id, 1))).toBe('23505');
+    const other = await newTask(world, 2);
+    await expect(newItem(other.id, 1)).resolves.toBeTruthy();
+  });
+
+  it('drops items with their task and keeps the waiver author', async () => {
+    const world = await seed(db);
+    const row = await newTask(world, 1);
+    const [tomas] = await db
+      .insert(user)
+      .values({ name: 'Tomás', email: `tomas-${crypto.randomUUID()}@example.com` })
+      .returning();
+    if (!tomas) throw new Error('user insert failed');
+    await newItem(row.id, 1, { state: 'waived', waivedReason: 'Out of scope', waivedById: tomas.id });
+    expect(await pgErrorCode(db.delete(user).where(eq(user.id, tomas.id)))).toBe('23001');
+    await db.delete(task).where(eq(task.id, row.id));
+    const left = await db.select().from(taskItem).where(eq(taskItem.taskId, row.id));
+    expect(left).toEqual([]);
+  });
+
+  it('indexes items by task, kind and position', async () => {
+    const result = await db.execute<{ indexdef: string; deferrable: boolean; deferred: boolean }>(sql`
+      select i.indexdef, c.condeferrable as deferrable, c.condeferred as deferred
+      from pg_indexes i join pg_constraint c on c.conname = i.indexname
+      where i.tablename = 'task_item' and i.indexname <> 'task_item_pkey'`);
+    expect(result.rows).toEqual([
+      {
+        indexdef:
+          'CREATE UNIQUE INDEX "task_item_taskId_kind_position_unique" ON public.task_item USING btree (task_id, kind, "position")',
+        deferrable: true,
+        deferred: true,
       },
     ]);
   });

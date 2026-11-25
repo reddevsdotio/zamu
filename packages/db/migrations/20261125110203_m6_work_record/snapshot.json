@@ -1,0 +1,601 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "38ab5391-8c4d-42da-8482-eda0f092eabe",
+  "prevIds": ["f7850fb6-f1f8-4147-9cd2-99a883ec8908"],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "public", "task_item"],
+      "writes": [
+        "s|tbl|public.task_item",
+        "n|tbl|public.task_item",
+        "e|tbl|public.task_item",
+        "n|rel|public.task_item",
+        "n|type|public.task_item",
+        "n|rel|public.task_item_pkey",
+        "n|rel|public.task_item_taskId_kind_position_unique"
+      ],
+      "reads": ["n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "activity", "machine"],
+      "writes": [
+        "s|col|public.activity.machine",
+        "n|col|public.activity.machine",
+        "e|col|public.activity.machine"
+      ],
+      "reads": ["n|tbl|public.activity", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "activity", "branch"],
+      "writes": [
+        "s|col|public.activity.branch",
+        "n|col|public.activity.branch",
+        "e|col|public.activity.branch"
+      ],
+      "reads": ["n|tbl|public.activity", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "comment", "kind"],
+      "writes": ["s|col|public.comment.kind", "n|col|public.comment.kind", "e|col|public.comment.kind"],
+      "reads": ["n|tbl|public.comment", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "comment", "machine"],
+      "writes": [
+        "s|col|public.comment.machine",
+        "n|col|public.comment.machine",
+        "e|col|public.comment.machine"
+      ],
+      "reads": ["n|tbl|public.comment", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "comment", "branch"],
+      "writes": ["s|col|public.comment.branch", "n|col|public.comment.branch", "e|col|public.comment.branch"],
+      "reads": ["n|tbl|public.comment", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "project", "default_done_items"],
+      "writes": [
+        "s|col|public.project.default_done_items",
+        "n|col|public.project.default_done_items",
+        "e|col|public.project.default_done_items"
+      ],
+      "reads": ["n|tbl|public.project", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "task", "plan"],
+      "writes": ["s|col|public.task.plan", "n|col|public.task.plan", "e|col|public.task.plan"],
+      "reads": ["n|tbl|public.task", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "task", "final_summary"],
+      "writes": [
+        "s|col|public.task.final_summary",
+        "n|col|public.task.final_summary",
+        "e|col|public.task.final_summary"
+      ],
+      "reads": ["n|tbl|public.task", "n|sch|public"]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "task_item"],
+      "writes": [
+        "s|fk|public.task_item.task_item_task_id_task_id_fkey",
+        "n|fk|public.task_item.task_item_task_id_task_id_fkey",
+        "e|fk|public.task_item.task_item_task_id_task_id_fkey",
+        "n|con|public.task_item.task_item_task_id_task_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.task_item",
+        "n|sch|public",
+        "n|tbl|public.task",
+        "n|sch|public",
+        "n|col|public.task_item.task_id",
+        "n|col|public.task.id",
+        "e|uniqueness|public.task.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "task_item"],
+      "writes": [
+        "s|fk|public.task_item.task_item_waived_by_id_user_id_fkey",
+        "n|fk|public.task_item.task_item_waived_by_id_user_id_fkey",
+        "e|fk|public.task_item.task_item_waived_by_id_user_id_fkey",
+        "n|con|public.task_item.task_item_waived_by_id_user_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.task_item",
+        "n|sch|public",
+        "n|tbl|public.user",
+        "n|sch|public",
+        "n|col|public.task_item.waived_by_id",
+        "n|col|public.user.id",
+        "e|uniqueness|public.user.id"
+      ]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": ["table", "public", "comment"],
+      "writes": [
+        "s|ck|public.comment.comment_kind_check",
+        "n|ck|public.comment.comment_kind_check",
+        "e|ck|public.comment.comment_kind_check",
+        "n|con|public.comment.comment_kind_check"
+      ],
+      "reads": ["n|tbl|public.comment", "n|sch|public", "n|col|public.comment.kind"]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": ["table", "public", "project"],
+      "writes": [
+        "s|ck|public.project.project_default_done_items_check",
+        "n|ck|public.project.project_default_done_items_check",
+        "e|ck|public.project.project_default_done_items_check",
+        "n|con|public.project.project_default_done_items_check"
+      ],
+      "reads": ["n|tbl|public.project", "n|sch|public", "n|col|public.project.default_done_items"]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "task_item",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "activity",
+        "name": "machine",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "activity",
+        "name": "branch",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "comment",
+        "name": "kind",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'comment'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "comment",
+        "name": "machine",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "comment",
+        "name": "branch",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "project",
+        "name": "default_done_items",
+        "type": "jsonb",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'[]'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "plan",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "final_summary",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "uuidv7()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "task_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "kind",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "position",
+        "type": "integer",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "text",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "state",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'open'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "waived_reason",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "waived_by_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "source",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'app'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "task_item_task_id_task_id_fkey",
+        "nameExplicit": false,
+        "columns": ["task_id"],
+        "schemaTo": "public",
+        "tableTo": "task",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "task_item_waived_by_id_user_id_fkey",
+        "nameExplicit": false,
+        "columns": ["waived_by_id"],
+        "schemaTo": "public",
+        "tableTo": "user",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "RESTRICT",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "task_item_pkey",
+        "columns": ["id"],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "task_item_taskId_kind_position_unique",
+        "nameExplicit": true,
+        "columns": ["task_id", "kind", "position"],
+        "nullsNotDistinct": false,
+        "entityType": "uniques"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "comment",
+        "name": "comment_kind_check",
+        "value": "\"kind\" in ('comment', 'note')",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "project",
+        "name": "project_default_done_items_check",
+        "value": "jsonb_typeof(\"default_done_items\") = 'array'",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "task_item_kind_check",
+        "value": "\"kind\" in ('criterion', 'done')",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "task_item_state_check",
+        "value": "\"state\" in ('open', 'checked', 'waived')",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "task_item_source_check",
+        "value": "\"source\" in ('app', 'backlog')",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "task_item_position_check",
+        "value": "\"position\" >= 1",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "task_item_text_check",
+        "value": "\"text\" <> '' and \"text\" !~ '[\\r\\n]'",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_item",
+        "name": "task_item_waived_check",
+        "value": "(\"state\" = 'waived') = (\"waived_reason\" is not null) and (\"state\" = 'waived' or \"waived_by_id\" is null)",
+        "entityType": "checks"
+      }
+    }
+  ]
+}

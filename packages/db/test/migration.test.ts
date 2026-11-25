@@ -1,5 +1,6 @@
-// Upgrade path: a database migrated and filled under M1 keeps every row through the M2 migration,
-// and the backfilled task.rank reproduces the M1 list order inside each status column.
+// Upgrade paths: a database migrated and filled under an older release keeps every row through the
+// later migrations, and each backfill fills what it should (M2 ranks in the M1 list order, M5 task
+// fields from Backlog.md blocks, the M6 work record from mirrored descriptions).
 import { cpSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -635,5 +636,253 @@ describe('M5 mirror backfill on a 0.6.0 database with Backlog.md tasks', () => {
       await rows(sql`select count(*)::int as count from task where project_id = ${NAT}
         and (due_date is not null or parent_id is not null)`),
     ).toEqual([{ count: 0 }]);
+  });
+});
+
+/** Every migration released in 0.8.0, the last release before M6. */
+const V0_8_0_MIGRATIONS = [
+  ...V0_6_0_MIGRATIONS,
+  '20261104104246_m5_task_fields',
+  '20261104110039_m5_backfill_mirrors',
+];
+
+describe('M6 work record migration on a 0.8.0 database with a mirrored project', () => {
+  let url: string;
+  let folder: string;
+  let db: Db;
+  let end: () => Promise<void>;
+
+  const OWNER = '0190a1b2-0000-7000-8000-0000000002a1';
+  const WORKSPACE = '0190a1b2-0000-7000-8000-0000000002b1';
+  const PAY = '0190a1b2-0000-7000-8000-0000000002c1';
+  const OLD = '0190a1b2-0000-7000-8000-0000000002c2';
+  const NAT = '0190a1b2-0000-7000-8000-0000000002c3';
+
+  beforeAll(async () => {
+    folder = mkdtempSync(join(tmpdir(), 'zamu-0-8-0-migrations-'));
+    for (const name of V0_8_0_MIGRATIONS) {
+      cpSync(join(migrationsFolder, name), join(folder, name), { recursive: true });
+    }
+    url = withDatabase(testServerUrl(), uniqueDatabaseName('pm_test_upgrade_m6'));
+    await createDatabase(url);
+    await migrateFrom(url, folder);
+    const handle = createDb(url);
+    db = handle.db;
+    end = () => handle.pool.end();
+  });
+
+  afterAll(async () => {
+    await end?.();
+    if (url) await dropDatabase(url);
+    if (folder) rmSync(folder, { recursive: true, force: true });
+  });
+
+  async function rows(query: ReturnType<typeof sql>) {
+    const result = await db.execute<Record<string, unknown>>(query);
+    return result.rows;
+  }
+
+  /** Inserts a task as 0.8.0 wrote it; returns its id. */
+  async function insertTask(
+    projectId: string,
+    number: number,
+    description: string | null,
+    block: Record<string, unknown> | null,
+    hidden = false,
+  ): Promise<string> {
+    const result = await db.execute<{ id: string }>(sql`
+      insert into task (project_id, number, backlog_id, backlog_data, hidden_at, title, description,
+        created_by_id, updated_at)
+      values (${projectId}, ${number}, ${block ? `BACK-${number}` : null},
+        ${block ? JSON.stringify(block) : null}::jsonb, ${hidden ? '2026-10-30T09:00:00Z' : null}::timestamptz,
+        ${`Task ${number}`}, ${description}, ${OWNER}, '2026-10-20T08:00:00.123456Z'::timestamptz)
+      returning id`);
+    return result.rows[0]?.id as string;
+  }
+
+  // A description as the 0.8.0 refresh rendered it from a Backlog.md file: the Description section,
+  // then the other sections under fixed headings. Headings and checkboxes inside fences are content.
+  const RENDERED = [
+    'Payouts settle nightly through the ledger.',
+    '',
+    '```sh',
+    '## Final summary',
+    '- [ ] not an item',
+    '```',
+    '',
+    '## Acceptance criteria',
+    '',
+    '- [x] #1 Refunds post a ledger entry',
+    '- [ ] #2 Webhook retries back off',
+    'Items checked by the reviewer only.',
+    '~~~',
+    '- [ ] #9 sample inside a fence',
+    '~~~',
+    '- [ ] #4   Payout report lists fees  ',
+    '- [ ]   ',
+    '',
+    '## Definition of done',
+    '',
+    '- [ ] #1 Tests pass',
+    '- [X] #2 Docs updated',
+    '',
+    '## Implementation plan',
+    '',
+    '1. Add the ledger table',
+    '2. Wire the webhook',
+    '',
+    '## Implementation notes',
+    '',
+    'Started with the ledger.',
+    '',
+    '## Comments from Backlog.md',
+    '',
+    '**@ana** · 2026-10-20 10:00',
+    '',
+    'Looks right.',
+    '',
+    '## Final summary',
+    '',
+    'Refunds write a ledger entry; retries back off.',
+  ].join('\n');
+
+  it('moves criteria, done items, plan, notes and summary out of the description, with no activity', async () => {
+    await db.execute(
+      sql`insert into "user" (id, name, email) values (${OWNER}, 'Ana', 'ana-m6@example.com')`,
+    );
+    await db.execute(
+      sql`insert into organization (id, name, slug) values (${WORKSPACE}, 'Reddevs', 'reddevs-m6')`,
+    );
+    await db.execute(
+      sql`insert into member (organization_id, user_id, role) values (${WORKSPACE}, ${OWNER}, 'owner')`,
+    );
+    await db.execute(sql`insert into project (id, workspace_id, key, name, next_task_number) values
+      (${PAY}, ${WORKSPACE}, 'PAY', 'Payments', 5), (${OLD}, ${WORKSPACE}, 'OLD', 'Imported', 2),
+      (${NAT}, ${WORKSPACE}, 'NAT', 'Native', 2)`);
+    // PAY mirrors; OLD was imported (an import detaches after its first read).
+    await db.execute(sql`insert into backlog_source (project_id, mode, state, webhook_id, created_by_id, detached_at)
+      values (${PAY}, 'mirror', 'healthy', 'wh-pay-m6', ${OWNER}, null),
+        (${OLD}, 'import', 'detached', 'wh-old-m6', ${OWNER}, '2026-10-25T10:00:00Z')`);
+
+    const back1 = await insertTask(PAY, 1, RENDERED, { labels: ['payouts'], type: 'feature' });
+    // Hidden (its file is gone): backfilled too. Only a checklist: the description empties.
+    const back2 = await insertTask(PAY, 2, '## Acceptance criteria\n\n- [ ] #1 Hidden item', {}, true);
+    const back3 = await insertTask(PAY, 3, 'Plain text, no sections.', {});
+    const back4 = await insertTask(PAY, 4, null, {});
+    const old1 = await insertTask(
+      OLD,
+      1,
+      'Intro\n\n## Acceptance criteria\n\n- [x] Old item\n\n## Final summary\n\nShipped.',
+      {},
+    );
+    // A native task: never touched, even with the same headings.
+    const nat1 = await insertTask(NAT, 1, '## Acceptance criteria\n\n- [ ] #1 Native text', null);
+    await db.execute(sql`
+      insert into activity (workspace_id, project_id, task_id, actor_id, type, changes, origin)
+      select ${WORKSPACE}, project_id, id, null, 'task.created', '[]'::jsonb, 'backlog' from task`);
+    await db.execute(sql`
+      insert into comment (workspace_id, project_id, task_id, author_id, body)
+      select ${WORKSPACE}, project_id, id, ${OWNER}, 'Looks good' from task where number = 1`);
+
+    const updatedBefore = await rows(sql`select id, updated_at::text from task order by id`);
+    const activityBefore = await rows(sql`select id, changes::text from activity order by id`);
+
+    await migrateFrom(url, migrationsFolder);
+
+    expect(await rows(sql`select id, updated_at::text from task order by id`)).toEqual(updatedBefore);
+    expect(await rows(sql`select id, changes::text from activity order by id`)).toEqual(activityBefore);
+
+    // Items: numbered in file order from 1 per kind, text trimmed, empty and fenced lines left out.
+    expect(
+      await rows(sql`select task_id as task, kind, position, text, state, source, waived_reason
+        from task_item order by task_id, kind, position`),
+    ).toEqual(
+      [
+        {
+          task: back1,
+          kind: 'criterion',
+          position: 1,
+          text: 'Refunds post a ledger entry',
+          state: 'checked',
+        },
+        { task: back1, kind: 'criterion', position: 2, text: 'Webhook retries back off', state: 'open' },
+        { task: back1, kind: 'criterion', position: 3, text: 'Payout report lists fees', state: 'open' },
+        { task: back1, kind: 'done', position: 1, text: 'Tests pass', state: 'open' },
+        { task: back1, kind: 'done', position: 2, text: 'Docs updated', state: 'checked' },
+        { task: back2, kind: 'criterion', position: 1, text: 'Hidden item', state: 'open' },
+        { task: old1, kind: 'criterion', position: 1, text: 'Old item', state: 'checked', source: 'app' },
+      ]
+        .map((item) => ({ source: 'backlog', waived_reason: null, ...item }))
+        .sort((a, b) => (a.task === b.task ? 0 : a.task < b.task ? -1 : 1)),
+    );
+
+    const tasks = await rows(sql`select id, description, plan, final_summary, backlog_data
+      from task order by id`);
+    const byId = new Map(tasks.map((row) => [row.id, row]));
+    expect(byId.get(back1)).toEqual({
+      id: back1,
+      description: [
+        'Payouts settle nightly through the ledger.',
+        '',
+        '```sh',
+        '## Final summary',
+        '- [ ] not an item',
+        '```',
+        '',
+        '## Acceptance criteria',
+        '',
+        'Items checked by the reviewer only.',
+        '~~~',
+        '- [ ] #9 sample inside a fence',
+        '~~~',
+        '',
+        '## Comments from Backlog.md',
+        '',
+        '**@ana** · 2026-10-20 10:00',
+        '',
+        'Looks right.',
+      ].join('\n'),
+      plan: '1. Add the ledger table\n2. Wire the webhook',
+      final_summary: 'Refunds write a ledger entry; retries back off.',
+      backlog_data: { labels: ['payouts'], type: 'feature', implementationNotes: 'Started with the ledger.' },
+    });
+    expect(byId.get(back2)).toMatchObject({
+      description: null,
+      plan: null,
+      final_summary: null,
+      backlog_data: {},
+    });
+    expect(byId.get(back3)).toMatchObject({
+      description: 'Plain text, no sections.',
+      plan: null,
+      backlog_data: {},
+    });
+    expect(byId.get(back4)).toMatchObject({ description: null, plan: null, final_summary: null });
+    expect(byId.get(old1)).toMatchObject({ description: 'Intro', plan: null, final_summary: 'Shipped.' });
+    expect(byId.get(nat1)).toMatchObject({
+      description: '## Acceptance criteria\n\n- [ ] #1 Native text',
+      plan: null,
+      backlog_data: null,
+    });
+
+    // The new columns start empty on upgraded rows.
+    expect(await rows(sql`select distinct kind, machine, branch from comment`)).toEqual([
+      { kind: 'comment', machine: null, branch: null },
+    ]);
+    expect(
+      await rows(
+        sql`select count(*)::int as count from activity where machine is not null or branch is not null`,
+      ),
+    ).toEqual([{ count: 0 }]);
+    expect(await rows(sql`select distinct default_done_items from project`)).toEqual([
+      { default_done_items: [] },
+    ]);
+
+    // Numbers stay unique per task and kind on upgraded data.
+    await expect(
+      db.execute(
+        sql`insert into task_item (task_id, kind, position, text) values (${back1}, 'criterion', 1, 'Twice')`,
+      ),
+    ).rejects.toThrow();
   });
 });
