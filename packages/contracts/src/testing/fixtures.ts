@@ -3,6 +3,7 @@ import type {
   Activity,
   ApiKeyCreated,
   ApiKeySummary,
+  BacklogExport,
   Comment,
   Cycle,
   CycleDetail,
@@ -19,8 +20,10 @@ import type {
   Task,
   TaskListItem,
   TaskListPage,
+  Timeline,
   TimelineItem,
   UserRef,
+  WorkItem,
 } from '../entities';
 
 // Valid sample values for every entity schema, typed as server-side inputs (Dates allowed).
@@ -568,3 +571,105 @@ export const homeAgentsFixture = {
     },
   ],
 } satisfies z.input<typeof Home>;
+
+// ---------------------------------------------------------------------------
+// M6: the work record
+// ---------------------------------------------------------------------------
+
+export const workItemFixtures = {
+  checked: {
+    number: 1,
+    text: 'Retries stop after a 4xx answer',
+    state: 'checked',
+    waivedReason: null,
+    waivedBy: null,
+    locked: false,
+  },
+  open: {
+    number: 2,
+    text: 'Backoff doubles from 30 seconds',
+    state: 'open',
+    waivedReason: null,
+    waivedBy: null,
+    locked: false,
+  },
+  waived: {
+    number: 3,
+    text: 'Load test at 1,000 deliveries a minute',
+    state: 'waived',
+    waivedReason: 'Load test replaced by a replay',
+    waivedBy: ana,
+    locked: false,
+  },
+} satisfies Record<string, z.input<typeof WorkItem>>;
+
+/** PAY-142 with criteria, done items, a plan and a summary. */
+export const workRecordTaskFixture = {
+  ...taskFixture,
+  status: 'in_review',
+  criteria: [workItemFixtures.checked, workItemFixtures.open, workItemFixtures.waived],
+  doneItems: [
+    { number: 1, text: 'Tests pass', state: 'checked', waivedReason: null, waivedBy: null, locked: false },
+  ],
+  plan: '1. Store the attempt count\n2. Schedule retries as jobs',
+  planMeta: { author: claudeDev, onBehalfOf: ana, origin: 'app', at: at('2026-10-21T09:00:00.000Z') },
+  finalSummary: 'Retries back off and stop on 4xx answers.',
+  finalSummaryMeta: { author: claudeDev, onBehalfOf: ana, origin: 'app', at: at('2026-10-22T18:00:00.000Z') },
+} satisfies z.input<typeof Task>;
+
+export const workRecordListItemFixture = {
+  ...taskListItemFixture,
+  criteriaProgress: { settled: 2, open: 1, waived: 1, total: 3 },
+  doneProgress: { settled: 1, open: 0, waived: 0, total: 1 },
+  hasFinalSummary: true,
+} satisfies z.input<typeof TaskListItem>;
+
+/** A work note claude-dev wrote from the CLI. */
+export const noteFixture = {
+  ...commentFixture,
+  id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4ae5',
+  body: 'Migration written and tested',
+  mentions: [],
+  editedAt: null,
+  kind: 'note',
+  source: { machine: 'ana-laptop', branch: 'feat/webhook-retries' },
+} satisfies z.input<typeof Comment>;
+
+/** claude-dev checking criterion 1 and waiving criterion 3 from the CLI. */
+export const workRecordActivityFixture = {
+  ...activityFixture,
+  id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4af6',
+  changes: [
+    { field: 'criterion.checked', number: 1, text: workItemFixtures.checked.text },
+    {
+      field: 'criterion.waived',
+      number: 3,
+      text: workItemFixtures.waived.text,
+      reason: workItemFixtures.waived.waivedReason,
+    },
+    { field: 'plan', from: null, to: workRecordTaskFixture.plan },
+  ],
+  source: { machine: 'ana-laptop', branch: 'feat/webhook-retries' },
+} satisfies z.input<typeof Activity>;
+
+export const workRecordTimelineFixture = {
+  items: [
+    { kind: 'activity', ...activityFixture },
+    { kind: 'comment', ...commentFixture },
+    noteFixture,
+    { kind: 'activity', ...workRecordActivityFixture },
+  ],
+  counts: { all: 4, comments: 1, notes: 1, history: 2 },
+} satisfies z.input<typeof Timeline>;
+
+export const backlogExportFixture = {
+  project: 'PAY',
+  format: 'backlog.md 1',
+  generatedAt: at('2026-10-23T08:00:00.000Z'),
+  files: [
+    { path: 'tasks/pay-142 - Retry failed webhook deliveries.md', content: '---\nid: PAY-142\n---\n' },
+    { path: 'completed/pay-7 - Ledger table.md', content: '---\nid: PAY-7\n---\n' },
+    { path: 'milestones/m-1 - webhooks-v2.md', content: '---\nid: m-1\n---\n' },
+  ],
+  removedPrefixes: ['tasks/', 'completed/', 'milestones/'],
+} satisfies z.input<typeof BacklogExport>;

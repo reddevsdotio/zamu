@@ -2,6 +2,7 @@ import { type InferContractRouterInputs, type InferContractRouterOutputs, oc } f
 import { z } from 'zod';
 import {
   ActivityList,
+  BacklogExport,
   BacklogRefreshResult,
   BacklogSourceStatus,
   Comment,
@@ -38,6 +39,7 @@ import {
   DeleteMilestoneInput,
   DeleteProjectInput,
   EndCycleInput,
+  ExportBacklogInput,
   GetBacklogStatusInput,
   GetCycleInput,
   GetDashboardInput,
@@ -107,6 +109,9 @@ export const apiErrors = {
   SUBTASK_DEPTH: { status: PROBLEM_STATUS.SUBTASK_DEPTH, data: ProblemData },
   /** Related tasks, labels, or a bulk milestone or cycle across projects (422). */
   NOT_SAME_PROJECT: { status: PROBLEM_STATUS.NOT_SAME_PROJECT, data: ProblemData },
+  // M6
+  /** An agent moving a task to In review or Done with open criteria or done items (409, openItems). */
+  OPEN_ITEMS: { status: PROBLEM_STATUS.OPEN_ITEMS, data: ProblemData },
 };
 
 const base = oc.errors(apiErrors);
@@ -161,7 +166,8 @@ export const contract = base.prefix(API_PREFIX).router({
         summary: 'Update a project',
         description:
           'The key can change only while the project has no tasks. usesMilestones and usesCycles turn ' +
-          'the features on or off; turning one off keeps its data.',
+          'the features on or off; turning one off keeps its data. defaultDoneItems replaces the done ' +
+          'items new tasks start with (owners and admins); existing tasks keep theirs.',
       })
       .input(UpdateProjectInput)
       .output(Project),
@@ -213,7 +219,9 @@ export const contract = base.prefix(API_PREFIX).router({
           'New tasks go to the top of their board column. cycle takes a number, current or next. ' +
           'labels are names; missing ones are created. parent makes it a subtask (one level, same ' +
           'project) that takes the parent assignee unless one is given. blockedBy lists task keys of ' +
-          'the same project.',
+          'the same project. criteria and doneItems start the work record (up to 50 each, one line of ' +
+          "500 characters each); the project's default done items come first unless " +
+          'skipDefaultDoneItems is true. plan is Markdown, up to 50,000 characters.',
       })
       .input(CreateTaskInput)
       .output(Task),
@@ -229,7 +237,13 @@ export const contract = base.prefix(API_PREFIX).router({
           'status column. labels replaces the labels; addLabels and removeLabels change some. ' +
           'addBlockers and removeBlockers change what the task waits on; a loop fails with 409 ' +
           'DEPENDENCY_LOOP. With ifUpdatedAt, a task changed since then fails with 409 TASK_CHANGED ' +
-          'and the current task.',
+          'and the current task; with ifStatus, so does a task whose status differs. Criteria and ' +
+          'done items change through operations (addCriteria, checkCriteria, uncheckCriteria, ' +
+          'waiveCriteria, unwaiveCriteria, editCriteria, moveCriteria, removeCriteria, and the same ' +
+          'eight for DoneItems); numbers refer to the list before the request. plan and finalSummary ' +
+          'set the Markdown texts (null clears). An agent moving a task to In review or Done while a ' +
+          'criterion or done item is open gets 409 OPEN_ITEMS with the open items; people are not ' +
+          'refused. Every work-record field of a mirrored task fails with 409 TASK_MIRRORED.',
       })
       .input(UpdateTaskInput)
       .output(Task),
@@ -265,7 +279,9 @@ export const contract = base.prefix(API_PREFIX).router({
         tags: ['tasks'],
         summary: 'Get the timeline of a task',
         description:
-          "Activity and comments in one list, oldest first, told apart by kind ('activity' or 'comment').",
+          'Activity, comments and notes in one list, oldest first, told apart by kind (activity, ' +
+          'comment or note). show=all (default), comments, notes or history narrows the items; counts ' +
+          'gives the size of all four.',
       })
       .input(ListTaskTimelineInput)
       .output(Timeline),
@@ -290,7 +306,8 @@ export const contract = base.prefix(API_PREFIX).router({
         summary: 'Comment on a task',
         description:
           'Markdown body. Mention members as [@Name](mention:<userId>), @agent-name or @email; the ' +
-          'last two are rewritten to the link form.',
+          'last two are rewritten to the link form. kind=note writes a work note, which notifies only ' +
+          'the people it mentions.',
       })
       .input(CreateCommentInput)
       .output(Comment),
@@ -504,6 +521,22 @@ export const contract = base.prefix(API_PREFIX).router({
       })
       .input(RefreshBacklogInput)
       .output(BacklogRefreshResult),
+    export: base
+      .route({
+        method: 'GET',
+        path: '/projects/{project}/backlog/export',
+        tags: ['backlog'],
+        summary: 'Export a project as Backlog.md files',
+        description:
+          'Every task and milestone as a Backlog.md file: tasks under tasks/, milestones under ' +
+          'milestones/, paths relative to the Backlog.md folder. ' +
+          'Zamu-only data (waived criteria and their reasons) sits between <!-- zamu:start --> and ' +
+          '<!-- zamu:end --> at the end of a task file. Files under removedPrefixes that are not in ' +
+          'the list are stale. Native projects and projects switched to Zamu only; a project that ' +
+          'still mirrors Backlog.md gets 409 PROJECT_MIRRORED.',
+      })
+      .input(ExportBacklogInput)
+      .output(BacklogExport),
   },
   dashboard: {
     get: base
