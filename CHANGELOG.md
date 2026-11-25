@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.9.0)
+## 0.9.0
 
 Agents record their work in Zamu. A task gains a work record, the CLI installs from npm and Homebrew, and a
 project that mirrors Backlog.md can switch to Zamu and be exported back as files.
