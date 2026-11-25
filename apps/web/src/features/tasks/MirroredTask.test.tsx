@@ -83,6 +83,7 @@ function mirrorPay1({ detached = false, hidden = false }: { detached?: boolean; 
       fileUrl: hidden || detached ? null : FILE_URL,
       data: {
         kind: 'task',
+        implementationNotes: null,
         status: 'In Progress',
         priority: 'high',
         milestone: 'm-3',

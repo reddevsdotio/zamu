@@ -60,6 +60,7 @@ const BACKLOG_FIELD_NAMES: Record<string, string> = {
   milestone: 'the milestone',
   key: 'the key',
   id: 'the Backlog.md ID',
+  implementationNotes: 'the notes',
 };
 
 /** "changed the labels and the due date" for the fields only the Backlog.md block holds. */

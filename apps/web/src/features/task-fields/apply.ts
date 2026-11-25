@@ -15,12 +15,14 @@ import {
 } from '~/features/tasks/queries';
 import { localToday } from '~/ui';
 import { describeChange } from './describe';
+import { confirmFinishing } from './finishing';
 import { type FieldTarget, READ_ONLY_TEXT, subjectOf } from './targets';
 import { showFieldToast } from './toast';
 
 // Applies a picker's change to its targets: one task through tasks.update, a selection through
 // tasks.bulkUpdate (native projects only). The caches change at once (features/tasks/queries.ts),
-// a toast says what changed, and its Undo applies the inverse patch.
+// a toast says what changed, and its Undo applies the inverse patch. A move to In review or Done of
+// tasks with open items waits for the finishing warning (finishing.ts); Cancel sends nothing.
 
 export interface ApplyOptions {
   /** The error was shown elsewhere (the blocker picker's loop note): return true to skip the toast. */
@@ -87,6 +89,11 @@ export function useFieldChange(): FieldChange {
           showFieldToast({ text: refusal, tone: 'error' });
           return false;
         }
+      }
+      // A person moving tasks with open items to In review or Done answers the finishing warning
+      // first. An Undo puts back a status the person already had, so it never asks.
+      if (patch.status !== undefined && !options.isUndo) {
+        if (!(await confirmFinishing(queryClient, changing, patch.status))) return false;
       }
       const inverses = changing.map((task) => ({ task, patch: inversePatch(task, patch) }));
       try {

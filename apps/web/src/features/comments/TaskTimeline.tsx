@@ -3,8 +3,11 @@ import {
   type Activity,
   BACKLOG_ACTOR_NAME,
   type Comment as CommentEntity,
+  type EntrySource,
   type Member,
   type ProjectActivity,
+  type TimelineCounts,
+  type TimelineFilter,
   type UserRef,
 } from '@zamu/contracts';
 import { type ReactNode, useEffect, useState } from 'react';
@@ -20,30 +23,39 @@ import {
   shortCommit,
 } from '~/features/tasks/mirror';
 import { meQuery, timelineQuery } from '~/features/tasks/queries';
-import { Avatar, Banner, Button, cn, Popover, Skeleton } from '~/ui';
+import { Avatar, Banner, Button, cn, NoteItem, Popover, Skeleton, SourceTag } from '~/ui';
 import { CommentBox } from './CommentBox';
 import { CommentMarkdown } from './CommentMarkdown';
 import { useDeleteComment, useUpdateComment } from './queries';
 
-// A task's history (frames 051, 054, 057): one-line events and comment cards in time order, with All /
-// Comments. Long histories show the latest entries under "23 earlier · Show all". Agent comments say who
-// they act for and carry a side rule. Authors edit their comments in place and delete them after a
-// confirmation; deleted comments leave a dashed line. Times render after hydration. Entries a Backlog.md
-// refresh wrote read "… in the file" with the commit; a mirrored task also shows the project's import and
-// the detach.
+// A task's history (frames 051, 054, 057; M6 013 to 018): one-line events, comment cards and work notes in
+// time order, with the filters All, Comments, Notes and History and their counts from the API. Notes are
+// quieter than comments: no card, a left rule, the "Note" tag. Where a change came from (the CLI's machine
+// and branch) shows on hover under All and always under History and Notes. Long histories show the latest
+// entries under "23 earlier · Show all". Agent comments say who they act for and carry a side rule.
+// Authors edit their comments in place and delete them after a confirmation; deleted comments leave a
+// dashed line. Times render after hydration. Entries a Backlog.md refresh wrote read "… in the file" with
+// the commit; a mirrored task also shows the project's import and the detach.
 
-/** "Comments" stays as set while moving between tasks. */
-let commentsOnlyChoice = false;
+/** The filter stays as set while moving between tasks. */
+let filterChoice: TimelineFilter = 'all';
 
 /** Back to showing everything (tests). */
 export function resetTimelinePreferences() {
-  commentsOnlyChoice = false;
+  filterChoice = 'all';
 }
 
-/** Histories longer than this fold their older entries. */
+/** Histories longer than this fold their older entries, and the filters show their counts. */
 export const FOLD_AFTER = 20;
 /** How many entries a folded history shows. */
 export const FOLDED_SHOWN = 15;
+
+const FILTERS: readonly { id: TimelineFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'comments', label: 'Comments' },
+  { id: 'notes', label: 'Notes' },
+  { id: 'history', label: 'History' },
+];
 
 export interface TaskTimelineProps {
   taskKey: string;
@@ -70,7 +82,34 @@ export interface TaskTimelineProps {
 type Entry =
   | (Activity & { kind: 'activity' })
   | (CommentEntity & { kind: 'comment' })
+  | (CommentEntity & { kind: 'note' })
   | ReturnType<typeof projectRowsForTask>[number];
+
+/** True when the entry belongs under the filter. Project-level rows are history. */
+export function matchesFilter(entry: { kind: string }, filter: TimelineFilter): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'comments') return entry.kind === 'comment';
+  if (filter === 'notes') return entry.kind === 'note';
+  return entry.kind === 'activity' || entry.kind === 'project';
+}
+
+/** The counts of each filter: the API's when it sends them, plus the project-level rows shown here. */
+export function timelineCounts(
+  entries: readonly { kind: string }[],
+  fromApi: TimelineCounts | undefined,
+  projectRows: number,
+): TimelineCounts {
+  if (fromApi) {
+    return { ...fromApi, all: fromApi.all + projectRows, history: fromApi.history + projectRows };
+  }
+  const count = (filter: TimelineFilter) => entries.filter((entry) => matchesFilter(entry, filter)).length;
+  return {
+    all: entries.length,
+    comments: count('comments'),
+    notes: count('notes'),
+    history: count('history'),
+  };
+}
 
 export function TaskTimeline({
   taskKey,
@@ -88,23 +127,26 @@ export function TaskTimeline({
   const meId = useQuery(meQuery()).data?.user.id;
   const now = useNow();
   const time = atTime(formatRelative, now);
-  const [commentsOnly, setCommentsOnlyState] = useState(commentsOnlyChoice);
+  const [filter, setFilterState] = useState<TimelineFilter>(filterChoice);
   const [showAll, setShowAll] = useState(false);
-  const setCommentsOnly = (value: boolean) => {
-    commentsOnlyChoice = value;
-    setCommentsOnlyState(value);
+  const setFilter = (value: TimelineFilter) => {
+    filterChoice = value;
+    setFilterState(value);
   };
 
   const taskItems = result.data?.items;
+  const projectRows = taskItems ? projectRowsForTask(projectHistory, taskItems) : [];
   const items: Entry[] | undefined = taskItems
-    ? [...taskItems, ...projectRowsForTask(projectHistory, taskItems)].sort(
-        (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
-      )
+    ? [...taskItems, ...projectRows].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
     : undefined;
-  const filtered = items && commentsOnly ? items.filter((item) => item.kind === 'comment') : items;
+  const counts = items ? timelineCounts(items, result.data?.counts, projectRows.length) : null;
+  const filtered = items?.filter((item) => matchesFilter(item, filter));
   const folded = filtered != null && !showAll && filtered.length > FOLD_AFTER;
   const shown = folded ? filtered.slice(-FOLDED_SHOWN) : filtered;
   const earlier = folded && filtered ? filtered.length - FOLDED_SHOWN : 0;
+  // Short histories show the bare filters (frames 004, 021); long ones their counts (013 to 015).
+  const showCounts = counts != null && counts.all > FOLD_AFTER;
+  const sourceVisibility = filter === 'all' ? 'hover' : 'always';
 
   // Bring a just-sent comment into view once it is in the list.
   const revealReady = revealId != null && shown?.some((item) => item.id === revealId) === true;
@@ -117,14 +159,17 @@ export function TaskTimeline({
     <section aria-label="Activity" className={cn('flex flex-col', className)}>
       <div className="mt-6 mb-1.5 flex items-center gap-2 text-sm text-fg-2">
         <h2 className="m-0 text-sm font-semibold">Activity</h2>
-        {earlier > 0 && items ? <span className="tabular-nums">{items.length}</span> : null}
         <fieldset aria-label="Show" className="m-0 ml-auto flex gap-0.5 border-0 p-0">
-          <FilterTab isSelected={!commentsOnly} onPress={() => setCommentsOnly(false)}>
-            All
-          </FilterTab>
-          <FilterTab isSelected={commentsOnly} onPress={() => setCommentsOnly(true)}>
-            Comments
-          </FilterTab>
+          {FILTERS.map((item) => (
+            <FilterTab
+              key={item.id}
+              isSelected={filter === item.id}
+              onPress={() => setFilter(item.id)}
+              count={showCounts && counts ? counts[item.id] : null}
+            >
+              {item.label}
+            </FilterTab>
+          ))}
         </fieldset>
       </div>
       {shown ? (
@@ -142,12 +187,24 @@ export function TaskTimeline({
               {shown.map((item) => (
                 <li
                   key={`${item.kind}:${item.id}`}
-                  id={item.kind === 'comment' ? commentDomId(item.id) : undefined}
+                  id={item.kind === 'comment' || item.kind === 'note' ? commentDomId(item.id) : undefined}
                 >
                   {item.kind === 'project' ? (
                     <ProjectLine entry={item.entry} projectName={projectName} file={file} time={time} />
                   ) : item.kind === 'activity' ? (
-                    <ActivityLine activity={item} time={time} branch={branch} />
+                    <ActivityLine
+                      activity={item}
+                      time={time}
+                      branch={branch}
+                      sourceVisibility={sourceVisibility}
+                    />
+                  ) : item.kind === 'note' ? (
+                    <TimelineNote
+                      note={item}
+                      members={members}
+                      time={time}
+                      sourceVisibility={sourceVisibility}
+                    />
                   ) : (
                     <TimelineComment
                       comment={item}
@@ -161,7 +218,7 @@ export function TaskTimeline({
               ))}
             </ol>
           ) : (
-            <p className="m-0 text-sm text-fg-3">No comments yet.</p>
+            <p className="m-0 text-sm text-fg-3">{EMPTY[filter]}</p>
           )}
           {composer}
         </div>
@@ -176,13 +233,23 @@ export function TaskTimeline({
 
 const commentDomId = (id: string) => `comment-${id}`;
 
+const EMPTY: Record<TimelineFilter, string> = {
+  all: 'Nothing here yet.',
+  comments: 'No comments yet.',
+  notes: 'No notes yet.',
+  history: 'No changes yet.',
+};
+
 function FilterTab({
   isSelected,
   onPress,
+  count,
   children,
 }: {
   isSelected: boolean;
   onPress: () => void;
+  /** The filter's size, when the counts show. */
+  count: number | null;
   children: ReactNode;
 }) {
   return (
@@ -190,11 +257,12 @@ function FilterTab({
       onPress={onPress}
       aria-pressed={isSelected}
       className={cn(
-        'inline-flex h-6 cursor-pointer items-center rounded-sm px-2 text-xs font-medium outline-none focus-visible:focus-ring',
+        'inline-flex h-6 cursor-pointer items-center gap-1.5 rounded-sm px-2 text-xs font-medium outline-none focus-visible:focus-ring',
         isSelected ? 'bg-bg-grp text-fg' : 'text-fg-2 hover:text-fg',
       )}
     >
       {children}
+      {count != null ? <span className="font-normal text-fg-3 tabular-nums">{count}</span> : null}
     </AriaButton>
   );
 }
@@ -219,6 +287,8 @@ function EventLine({
   children,
   at,
   time,
+  source,
+  sourceVisibility = 'always',
 }: {
   type: string;
   origin?: string;
@@ -228,12 +298,20 @@ function EventLine({
   children: ReactNode;
   at: string;
   time: (value: string) => string;
+  /** The machine and branch the CLI sent. */
+  source?: EntrySource | null;
+  /** `hover`: the source shows while the line is hovered (the All filter). */
+  sourceVisibility?: 'hover' | 'always';
 }) {
+  const hasSource = Boolean(source?.machine || source?.branch);
   return (
     <div
       data-activity={type}
       data-origin={origin}
-      className="flex min-w-0 items-center gap-2 pl-0.5 text-sm text-fg-3"
+      className={cn(
+        'group/ev flex min-w-0 items-center gap-2 pl-0.5 text-sm text-fg-3',
+        hasSource && sourceVisibility === 'hover' && '-mx-1.5 -my-1 rounded-sm px-1.5 py-1 hover:bg-bg-grp',
+      )}
     >
       <ActorAvatar actor={actor} />
       <span className="min-w-0 flex-1 truncate">
@@ -241,6 +319,13 @@ function EventLine({
         {who ? ' ' : null}
         {children}
       </span>
+      {hasSource ? (
+        <SourceTag
+          machine={source?.machine}
+          branch={source?.branch}
+          className={cn(sourceVisibility === 'hover' && 'opacity-0 group-hover/ev:opacity-100')}
+        />
+      ) : null}
       <time dateTime={at} className="shrink-0 tabular-nums">
         {time(at)}
       </time>
@@ -280,12 +365,20 @@ function ActivityLine({
   activity,
   time,
   branch,
+  sourceVisibility,
 }: {
   activity: Activity & { kind: 'activity' };
   time: (value: string) => string;
   branch?: string | null;
+  sourceVisibility: 'hover' | 'always';
 }) {
-  const base = { type: activity.type, at: activity.createdAt, time };
+  const base = {
+    type: activity.type,
+    at: activity.createdAt,
+    time,
+    source: activity.source,
+    sourceVisibility,
+  };
   if (activity.origin === 'backlog') {
     // A refresh: the file's author is unknown, so the Backlog.md actor speaks (or the person who
     // pressed Refresh, when one did).
@@ -343,6 +436,43 @@ function ProjectLine({
       {describeProjectEntry(entry, projectName, file)}
       {isBacklog ? <CommitRef commit={entry.originRef} /> : null}
     </EventLine>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Notes
+// ---------------------------------------------------------------------------
+
+/** A work note (frame 013): quiet, with the "Note" tag and, from the CLI, the machine and branch. */
+function TimelineNote({
+  note,
+  members,
+  time,
+  sourceVisibility,
+}: {
+  note: CommentEntity & { kind: 'note' };
+  members: readonly Member[];
+  time: (value: string) => string;
+  sourceVisibility: 'hover' | 'always';
+}) {
+  if (note.body == null || note.deletedAt) {
+    const at = note.deletedAt ?? note.createdAt;
+    return (
+      <p className="m-0 border-l-2 border-dashed border-line py-px pl-3 text-sm text-fg-3">
+        Note deleted by {note.author.name} · <time dateTime={at}>{time(at)}</time>
+      </p>
+    );
+  }
+  return (
+    <NoteItem
+      author={note.author}
+      onBehalfOf={note.onBehalfOf ? firstName(note.onBehalfOf.name) : null}
+      time={<time dateTime={note.createdAt}>{time(note.createdAt)}</time>}
+      source={note.source ?? null}
+      sourceVisibility={sourceVisibility}
+    >
+      <CommentMarkdown source={note.body} mentions={note.mentions} members={members} className="text-fg-2" />
+    </NoteItem>
   );
 }
 

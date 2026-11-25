@@ -247,7 +247,144 @@ function describeChange(change: ActivityChange): string {
     case 'parent':
       if (change.to) return `made this a subtask of ${change.to.key}`;
       return change.from ? `moved this out of ${change.from.key}` : 'made this a top-level task';
+    default:
+      return describeWorkChanges([change]);
   }
+}
+
+// ── M6: the work record ─────────────────────────────────────────────────────────────────────────────
+
+type WorkChange = Exclude<
+  ActivityChange,
+  {
+    field:
+      | 'status'
+      | 'priority'
+      | 'assignee'
+      | 'title'
+      | 'description'
+      | 'milestone'
+      | 'cycle'
+      | 'labels'
+      | 'dueDate'
+      | 'blockedBy'
+      | 'parent';
+  }
+>;
+
+const isWorkChange = (change: ActivityChange): change is WorkChange =>
+  change.field.includes('.') || change.field === 'plan' || change.field === 'finalSummary';
+
+const quoted = (text: string) => `“${text}”`;
+
+/** "criterion 2", "criteria 3 and 4". */
+function criteriaWords(numbers: readonly number[]): string {
+  return numbers.length === 1 ? `criterion ${numbers[0]}` : `criteria ${joinWords(numbers.map(String))}`;
+}
+
+/** "wrote the plan", "edited the final summary", "removed the plan". */
+function describeText(change: { from: string | null; to: string | null }, noun: string): string {
+  if (!change.to) return `removed ${noun}`;
+  return change.from ? `edited ${noun}` : `wrote ${noun}`;
+}
+
+/**
+ * Changes of one kind on the work record, as one phrase (frames 013, 015): "checked criteria 3 and 4",
+ * "waived criterion 5: load test replaced", "checked “Tests and lint pass”", "added 6 acceptance
+ * criteria", "wrote the plan". Criteria are named by number, done items by their text.
+ */
+export function describeWorkChanges(changes: readonly WorkChange[]): string {
+  const first = changes[0];
+  if (!first) return '';
+  if (first.field === 'plan' || first.field === 'finalSummary') {
+    return describeText(first, first.field === 'plan' ? 'the plan' : 'the final summary');
+  }
+  const items = changes.filter((change): change is Extract<WorkChange, { text: string }> => 'text' in change);
+  const [list, operation] = first.field.split('.') as ['criterion' | 'doneItem', string];
+  const numbers = items.map((change) => ('number' in change ? change.number : 0));
+  const texts = items.map((change) => quoted(change.text));
+  const many = items.length > 1;
+  if (list === 'criterion') {
+    switch (operation) {
+      case 'added':
+        return many ? `added ${items.length} acceptance criteria` : `added ${criteriaWords(numbers)}`;
+      case 'edited':
+        return `reworded ${criteriaWords(numbers)}`;
+      case 'moved':
+        return first.field === 'criterion.moved' && !many
+          ? `moved criterion ${first.from} to ${first.to}`
+          : 'reordered the criteria';
+      case 'removed':
+        return many
+          ? `removed ${criteriaWords(numbers)}`
+          : `removed ${criteriaWords(numbers)}: ${items[0]?.text ?? ''}`;
+      case 'checked':
+      case 'unchecked':
+        return `${operation} ${criteriaWords(numbers)}`;
+      case 'waived':
+        return joinWords(
+          items.map((change) =>
+            change.field === 'criterion.waived'
+              ? `waived criterion ${change.number}: ${change.reason}`
+              : `waived ${criteriaWords([numbers[0] ?? 0])}`,
+          ),
+        );
+      case 'unwaived':
+        return `removed the ${many ? 'waivers' : 'waiver'} on ${criteriaWords(numbers)}`;
+    }
+  } else {
+    switch (operation) {
+      case 'added':
+        return many ? `added ${items.length} done items` : `added the done item ${texts[0]}`;
+      case 'edited':
+        return many ? `reworded ${items.length} done items` : `reworded the done item ${texts[0]}`;
+      case 'moved':
+        if (first.field === 'doneItem.moved' && !many) {
+          return `moved ${quoted(first.text)} ${first.to < first.from ? 'up' : 'down'}`;
+        }
+        return 'reordered the done items';
+      case 'removed':
+        return `removed the done ${many ? 'items' : 'item'} ${joinWords(texts)}`;
+      case 'checked':
+      case 'unchecked':
+        return `${operation} ${joinWords(texts)}`;
+      case 'waived':
+        return joinWords(
+          items.map((change) =>
+            change.field === 'doneItem.waived'
+              ? `waived ${quoted(change.text)}: ${change.reason}`
+              : `waived ${quoted(change.text)}`,
+          ),
+        );
+      case 'unwaived':
+        return `removed the ${many ? 'waivers' : 'waiver'} on ${joinWords(texts)}`;
+    }
+  }
+  return 'changed the work record';
+}
+
+/** Every change as a phrase, work-record changes of one kind grouped: "checked criteria 3 and 4". */
+function describeChanges(changes: readonly ActivityChange[]): string[] {
+  const phrases: string[] = [];
+  const groups = new Map<string, WorkChange[]>();
+  const order: (ActivityChange | string)[] = [];
+  for (const change of changes) {
+    if (!isWorkChange(change)) {
+      order.push(change);
+      continue;
+    }
+    const group = groups.get(change.field);
+    if (group) group.push(change);
+    else {
+      groups.set(change.field, [change]);
+      order.push(change.field);
+    }
+  }
+  for (const entry of order) {
+    if (typeof entry === 'string') phrases.push(describeWorkChanges(groups.get(entry) ?? []));
+    else phrases.push(describeChange(entry));
+  }
+  return phrases;
 }
 
 const cycleName = (cycle: { number: number }) => `Cycle ${cycle.number}`;
@@ -263,7 +400,7 @@ export function describeActivity(activity: Pick<Activity, 'type' | 'changes'>): 
         : `ended ${cycleName(change.from)} and took this out of the cycle`;
     }
   }
-  return joinWords(activity.changes.map(describeChange)) || 'updated this task';
+  return joinWords(describeChanges(activity.changes)) || 'updated this task';
 }
 
 /**

@@ -14,6 +14,7 @@ import { rememberView } from '~/features/tasks/list-memory';
 import { QuickCreateDialog } from '~/features/tasks/QuickCreateDialog';
 import { ThemeErrorToast, useThemeChoice } from '~/features/theme/ThemeChoice';
 import { useSystemTheme } from '~/features/theme/theme';
+import { FinishingHost } from '~/features/work-record/FinishingHost';
 import { useSignOut } from '~/lib/auth-client';
 import { AppFrame, Sidebar, type SidebarProject } from '~/ui';
 import { homeCountLabel, useHomeCount, useRefreshCountsAfterEdits } from './home-count';
@@ -83,6 +84,7 @@ export function AppShell({ user, children }: AppShellProps) {
               <QuickCreateDialog />
               <TaskFieldToast />
               <PeekHost />
+              <FinishingHost />
               <NewProjectDialogHost />
               <FromBacklogHost />
             </SidebarStateProvider>

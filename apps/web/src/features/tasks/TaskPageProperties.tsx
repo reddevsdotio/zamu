@@ -7,6 +7,7 @@ import {
   TooltipTriggerStateContext,
 } from 'react-aria-components';
 import { cycleLabel, type ProjectPlanning, type TaskFieldKey } from '~/features/task-fields';
+import { isFromDefaults, progressNote, progressOf } from '~/features/work-record/ops';
 import {
   Avatar,
   BlockedNotice,
@@ -18,6 +19,7 @@ import {
   localToday,
   PriorityGlyph,
   ProgressBar,
+  ProgressBox,
   StatusGlyph,
   UnassignedAvatar,
 } from '~/ui';
@@ -28,7 +30,9 @@ import { projectOfKey } from './TaskPageRelations';
 // The task view's properties (screens.css .props, frames 051, 053, 054): a row per field with its value
 // or a placeholder ("Set priority"). A row opens its picker (the same as the field's key, shown on
 // hover). Fields Backlog.md owns show a lock on hover, and a press says where to change them. Mirrored
-// tasks end with "From the file".
+// tasks end with "From the file". M6 adds "Criteria" and "Done items" under the assignee (frames 001,
+// 004, 021): the count with "1 waived · 1 open", "None yet", or "project defaults"; a press moves focus
+// to the list, like ⇧X.
 
 /** The lock tooltip of a field Backlog.md owns (frame 054). */
 export const LOCKED_FIELD_TEXT = 'Set in Backlog.md. Edit the file to change it.';
@@ -153,6 +157,55 @@ function FieldRow({
   );
 }
 
+/** A work-record row (Criteria, Done items): the count, or a placeholder. A press focuses the list. */
+function WorkRow({
+  label,
+  shortcut,
+  onPress,
+  children,
+}: {
+  label: string;
+  /** aria-keyshortcuts of the key that does the same (Shift+X). */
+  shortcut?: string;
+  onPress?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <AriaButton
+      onPress={onPress}
+      aria-label={label}
+      aria-keyshortcuts={shortcut}
+      data-field={label === 'Criteria' ? 'criteria' : 'doneItems'}
+      className={cn(
+        rowClass,
+        'cursor-pointer outline-none hover:bg-bg-grp focus-visible:shadow-[var(--focus-ring)]',
+      )}
+    >
+      <span className="text-sm leading-5 text-fg-3">{label}</span>
+      <span className="flex min-h-5 min-w-0 items-center gap-1.75 text-md font-medium whitespace-nowrap text-fg tabular-nums">
+        {children}
+      </span>
+    </AriaButton>
+  );
+}
+
+/** "☐ 4 of 6  1 waived · 1 open" for a list, or null when it is empty. */
+function WorkCount({ items, note }: { items: Task['criteria']; note?: string | null }) {
+  const progress = progressOf(items);
+  if (progress.total === 0) return null;
+  const checked = progress.settled - progress.waived;
+  const extra = note === undefined ? progressNote(progress) : note;
+  return (
+    <>
+      <ProgressBox complete={progress.open === 0} />
+      <span>
+        {checked} of {progress.total}
+      </span>
+      {extra ? <span className="min-w-0 truncate text-xs font-normal text-fg-3">{extra}</span> : null}
+    </>
+  );
+}
+
 /** A property that is only shown (parent, dates). */
 function StaticRow({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -243,6 +296,12 @@ export interface TaskPropertiesProps {
   /** Times bound to the clock (empty during hydration). */
   time: (value: string) => string;
   now: number | null;
+  /** M6: the project's default done items, for "project defaults". */
+  defaults?: readonly string[];
+  /** M6: the Criteria row moves focus to the first open criterion. */
+  onFocusCriteria?: () => void;
+  /** M6: the Done items row moves focus to the first open done item. */
+  onFocusDone?: () => void;
 }
 
 export function TaskProperties({
@@ -256,6 +315,9 @@ export function TaskProperties({
   updatedBy,
   time,
   now,
+  defaults = [],
+  onFocusCriteria,
+  onFocusDone,
 }: TaskPropertiesProps) {
   const locked = new Set(task.locked ?? []);
   const isMirrored = locked.size > 0;
@@ -323,6 +385,42 @@ export function TaskProperties({
           </>
         ),
       )}
+      {isMirrored && !task.criteria?.length ? null : (
+        <WorkRow
+          label="Criteria"
+          shortcut="Shift+X"
+          {...(onFocusCriteria ? { onPress: onFocusCriteria } : {})}
+        >
+          {task.criteria?.length ? (
+            <WorkCount items={task.criteria} {...(isMirrored ? { note: null } : {})} />
+          ) : (
+            <Placeholder>None yet</Placeholder>
+          )}
+        </WorkRow>
+      )}
+      {isMirrored && !task.doneItems?.length ? null : (
+        <WorkRow label="Done items" {...(onFocusDone ? { onPress: onFocusDone } : {})}>
+          {task.doneItems?.length ? (
+            <WorkCount
+              items={task.doneItems}
+              note={
+                // A task not started yet, still holding what the project gave it (frame 004).
+                !isMirrored &&
+                (task.status === 'backlog' || task.status === 'todo') &&
+                progressOf(task.doneItems).settled === 0 &&
+                isFromDefaults(task.doneItems, defaults)
+                  ? 'project defaults'
+                  : isMirrored
+                    ? null
+                    : undefined
+              }
+            />
+          ) : (
+            <Placeholder>None yet</Placeholder>
+          )}
+        </WorkRow>
+      )}
+      <Separator />
       {row(
         'labels',
         'Labels',
