@@ -21,7 +21,7 @@ Zamu runs as one Docker image with three roles, started by `docker-compose.yml`:
 ## Configure
 
 ```sh
-git clone https://github.com/reddevs-io/zamu.git
+git clone https://github.com/reddevsdotio/zamu.git
 cd zamu
 cp .env.example .env
 ```
