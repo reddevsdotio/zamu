@@ -2,7 +2,7 @@ import { createDb, type Db, type DbHandle, schema } from '@zamu/db';
 import { sharedTestDatabaseUrl } from '@zamu/db/test';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { bearerApiKey, getActorFromRequest } from './actor';
+import { bearerApiKey, getActorFromRequest, resolveActor } from './actor';
 import { type ApiKeyMetadata, parseApiKeyMetadata } from './api-key';
 import { cookieHeaders, testAuth } from './testing/helpers';
 
@@ -160,6 +160,200 @@ describe('getActorFromRequest', () => {
       role: 'member',
       onBehalfOfId: null,
     });
+  });
+});
+
+describe('resolveActor: workspaces', () => {
+  let db: Db;
+  let pool: DbHandle['pool'];
+  let auth: ReturnType<typeof testAuth>;
+  const run = crypto.randomUUID().slice(0, 8);
+  // Acme and Globex, each with its own slug; Acme was renamed and keeps its old slug as an alias.
+  const slugs = {
+    acme: `acme-${run}`,
+    oldAcme: `old-acme-${run}`,
+    globex: `globex-${run}`,
+    initech: `initech-${run}`,
+  };
+  let acme: string;
+  let globex: string;
+  let initech: string;
+  const password = 'long enough password';
+
+  async function workspace(name: string, slug: string) {
+    const [row] = await db.insert(schema.organization).values({ name, slug }).returning();
+    if (!row) throw new Error('organization insert failed');
+    return row.id;
+  }
+
+  /** A person with a password, signed in; returns the id and the session cookie. */
+  async function signedIn(name: string) {
+    const email = `${name.toLowerCase()}-${crypto.randomUUID()}@example.com`;
+    const [user] = await db.insert(schema.user).values({ name, email, kind: 'person' }).returning();
+    if (!user) throw new Error('user insert failed');
+    const context = await auth.$context;
+    await db.insert(schema.account).values({
+      accountId: user.id,
+      providerId: 'credential',
+      userId: user.id,
+      password: await context.password.hash(password),
+    });
+    const signIn = await auth.api.signInEmail({ body: { email, password }, returnHeaders: true });
+    return { id: user.id, cookie: cookieHeaders(signIn.headers).get('cookie') ?? '' };
+  }
+
+  async function join(userId: string, organizationId: string, role = 'member', createdAt?: Date) {
+    await db
+      .insert(schema.member)
+      .values({ organizationId, userId, role, ...(createdAt ? { createdAt } : {}) });
+  }
+
+  function request(credentials: { cookie?: string; key?: string }, workspaceSlug?: string) {
+    const headers = new Headers();
+    if (credentials.cookie) headers.set('cookie', credentials.cookie);
+    if (credentials.key) headers.set('authorization', `Bearer ${credentials.key}`);
+    if (workspaceSlug !== undefined) headers.set('x-zamu-workspace', workspaceSlug);
+    return { headers };
+  }
+
+  async function workspaceOf(credentials: { cookie?: string; key?: string }, workspaceSlug?: string) {
+    const result = await resolveActor({ auth, db }, request(credentials, workspaceSlug));
+    return result.ok ? result.actor.workspaceId : result.code;
+  }
+
+  beforeAll(async () => {
+    ({ db, pool } = createDb(sharedTestDatabaseUrl()));
+    auth = testAuth(db);
+    acme = await workspace('Acme', slugs.acme);
+    globex = await workspace('Globex', slugs.globex);
+    initech = await workspace('Initech', slugs.initech);
+    await db.insert(schema.workspaceSlugAlias).values({ slug: slugs.oldAcme, workspaceId: acme });
+  });
+
+  afterAll(async () => {
+    await pool?.end();
+  });
+
+  it('resolves a session in the workspace the header names, by slug or old slug', async () => {
+    const ada = await signedIn('Ada');
+    await join(ada.id, acme, 'owner', new Date('2026-01-01T00:00:00Z'));
+    await join(ada.id, globex, 'member', new Date('2026-02-01T00:00:00Z'));
+
+    const inGlobex = await resolveActor({ auth, db }, request(ada, slugs.globex));
+    expect(inGlobex).toEqual({
+      ok: true,
+      actor: { userId: ada.id, kind: 'person', workspaceId: globex, role: 'member', onBehalfOfId: null },
+    });
+    expect(await workspaceOf(ada, slugs.acme)).toBe(acme);
+    expect(await workspaceOf(ada, slugs.oldAcme)).toBe(acme);
+    // Header values are trimmed and compared in lower case.
+    expect(await workspaceOf(ada, `  ${slugs.globex.toUpperCase()} `)).toBe(globex);
+  });
+
+  it('falls back to the workspace used last, then the oldest membership', async () => {
+    const bea = await signedIn('Bea');
+    await join(bea.id, acme, 'member', new Date('2026-01-01T00:00:00Z'));
+    await join(bea.id, globex, 'member', new Date('2026-02-01T00:00:00Z'));
+
+    // No workspace used yet: the oldest membership.
+    expect(await workspaceOf(bea)).toBe(acme);
+    // A blank header counts as no header.
+    expect(await workspaceOf(bea, '  ')).toBe(acme);
+
+    await db.update(schema.user).set({ lastWorkspaceId: globex }).where(eq(schema.user.id, bea.id));
+    expect(await workspaceOf(bea)).toBe(globex);
+
+    // The workspace used last is one they left: back to the oldest membership.
+    await db.update(schema.user).set({ lastWorkspaceId: initech }).where(eq(schema.user.id, bea.id));
+    expect(await workspaceOf(bea)).toBe(acme);
+  });
+
+  it('never reads the session active organization', async () => {
+    const cy = await signedIn('Cy');
+    await join(cy.id, acme, 'member', new Date('2026-01-01T00:00:00Z'));
+    await join(cy.id, globex, 'member', new Date('2026-02-01T00:00:00Z'));
+    await db
+      .update(schema.session)
+      .set({ activeOrganizationId: globex })
+      .where(eq(schema.session.userId, cy.id));
+    expect(await workspaceOf(cy)).toBe(acme);
+  });
+
+  it('answers NOT_A_MEMBER to a signed-in person outside the named workspace', async () => {
+    const dee = await signedIn('Dee');
+    await join(dee.id, acme);
+
+    for (const slug of [slugs.globex, 'no-such-workspace', 'Not a slug!']) {
+      const result = await resolveActor({ auth, db }, request(dee, slug));
+      expect(result).toEqual({
+        ok: false,
+        code: 'NOT_A_MEMBER',
+        message: `You are not a member of the workspace "${slug.toLowerCase()}".`,
+      });
+    }
+  });
+
+  it('answers NOT_A_MEMBER to a signed-in person without any workspace, and UNAUTHORIZED without a session', async () => {
+    const eli = await signedIn('Eli');
+    expect(await resolveActor({ auth, db }, request(eli))).toMatchObject({ ok: false, code: 'NOT_A_MEMBER' });
+    expect(await getActorFromRequest({ auth, db }, request(eli))).toBeNull();
+
+    expect(await resolveActor({ auth, db }, request({}, slugs.acme))).toMatchObject({
+      ok: false,
+      code: 'UNAUTHORIZED',
+    });
+    expect(
+      await resolveActor({ auth, db }, request({ cookie: 'better-auth.session_token=nope' })),
+    ).toMatchObject({
+      ok: false,
+      code: 'UNAUTHORIZED',
+    });
+  });
+
+  it('refuses an agent session as UNAUTHORIZED', async () => {
+    const owner = await signedIn('Fay');
+    const bot = await signedIn('Bot');
+    await db
+      .update(schema.user)
+      .set({ kind: 'agent', responsibleUserId: owner.id })
+      .where(eq(schema.user.id, bot.id));
+    await join(bot.id, acme);
+    expect(await workspaceOf(bot)).toBe('UNAUTHORIZED');
+    expect(await workspaceOf(bot, slugs.acme)).toBe('UNAUTHORIZED');
+  });
+
+  it('lets a key name its own workspace and refuses another with WORKSPACE_MISMATCH', async () => {
+    const gus = await signedIn('Gus');
+    await join(gus.id, acme);
+    await join(gus.id, globex);
+    const created = await auth.api.createApiKey({
+      body: {
+        userId: gus.id,
+        name: 'acme key',
+        metadata: { workspaceId: acme, projects: 'all', access: 'read' },
+      },
+    });
+    const key = { key: created.key };
+
+    expect(await workspaceOf(key)).toBe(acme);
+    expect(await workspaceOf(key, slugs.acme)).toBe(acme);
+    expect(await workspaceOf(key, slugs.oldAcme)).toBe(acme);
+
+    // Gus is a member of Globex too, but the key is not for it.
+    const other = await resolveActor({ auth, db }, request(key, slugs.globex));
+    expect(other).toEqual({
+      ok: false,
+      code: 'WORKSPACE_MISMATCH',
+      message: `This API key belongs to the workspace "${slugs.acme}", not "${slugs.globex}". Use a key from "${slugs.globex}", or drop the x-zamu-workspace header.`,
+    });
+    expect(await workspaceOf(key, 'no-such-workspace')).toBe('WORKSPACE_MISMATCH');
+
+    // The key wins over a session cookie sent alongside it, header included.
+    expect(await workspaceOf({ ...key, cookie: gus.cookie }, slugs.globex)).toBe('WORKSPACE_MISMATCH');
+  });
+
+  it('keeps invalid keys UNAUTHORIZED whatever the header says', async () => {
+    expect(await workspaceOf({ key: 'zamu_live_not-a-real-key' }, slugs.acme)).toBe('UNAUTHORIZED');
   });
 });
 

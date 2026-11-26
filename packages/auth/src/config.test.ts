@@ -40,6 +40,7 @@ describe('readAuthConfig', () => {
         adminGroups: [],
         groupsClaim: 'groups',
         trustEmail: false,
+        workspace: null,
       },
       passwordLogin: true,
       ipAddressHeaders: null,
@@ -105,6 +106,29 @@ describe('readAuthConfig', () => {
         `OIDC_TRUST_EMAIL must be "true" or "false" (got "${value}").`,
       ]);
     }
+  });
+
+  it('reads OIDC_WORKSPACE as a slug, lower-cased', () => {
+    expect(readAuthConfig({ ...SSO, OIDC_WORKSPACE: ' Acme ' }).sso?.workspace).toBe('acme');
+    expect(readAuthConfig({ ...SSO, OIDC_WORKSPACE: '' }).sso?.workspace).toBeNull();
+    expect(readAuthConfig(SSO).sso?.workspace).toBeNull();
+  });
+
+  it.each([
+    ['acme corp', 'Use lowercase letters, digits and hyphens.'],
+    ['a', 'Use 2 to 40 characters.'],
+    ['acme-', 'Use single hyphens between letters or digits, not at the end.'],
+    ['admin', 'This address is reserved. Pick another.'],
+  ])('refuses OIDC_WORKSPACE=%j', (value, reason) => {
+    expect(problems({ ...SSO, OIDC_WORKSPACE: value })).toEqual([
+      `OIDC_WORKSPACE must be a workspace slug such as "acme" (got "${value}"): ${reason}`,
+    ]);
+  });
+
+  it('refuses OIDC_WORKSPACE without SSO', () => {
+    expect(problems({ OIDC_WORKSPACE: 'acme' })).toEqual([
+      expect.stringContaining('OIDC_WORKSPACE is set, but single sign-on is not configured'),
+    ]);
   });
 
   it('refuses OIDC_TRUST_EMAIL without SSO', () => {
