@@ -131,6 +131,112 @@ export function FiltersGlyph({ className }: GlyphProps) {
   );
 }
 
+/** 10×13 branch: a stem with one fork (m7.css .ico-branch). Work branches and the request marker. */
+export function BranchGlyph({ className }: GlyphProps) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 10 13"
+      width="10"
+      height="13"
+      fill="none"
+      data-glyph="branch"
+      className={cn('shrink-0', className)}
+    >
+      <path
+        d="M2 0.5v12M2 3.5h2.5a3 3 0 0 0 3-3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** 13×12 archive box: a lid over a box with a handle (m7.css .ico-arch). Archived tasks. */
+export function ArchiveGlyph({ className }: GlyphProps) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 13 12"
+      width="13"
+      height="12"
+      fill="none"
+      data-glyph="archive"
+      className={cn('shrink-0', className)}
+    >
+      <rect x="0.75" y="0.75" width="11.5" height="3.25" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M1.75 4v6a1.25 1.25 0 0 0 1.25 1.25h7A1.25 1.25 0 0 0 11.25 10V4M5 6.75h3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/** 11×11 clock face (m7.css .ico-wait): the check-again day. Never drawn in the danger colour. */
+export function ClockGlyph({ className }: GlyphProps) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 11 11"
+      width="11"
+      height="11"
+      fill="none"
+      data-glyph="clock"
+      className={cn('shrink-0', className)}
+    >
+      <circle cx="5.5" cy="5.5" r="4.75" stroke="currentColor" strokeWidth="1.3" />
+      <path
+        d="M5.5 2.9v2.8h2"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** 8×8 arrow up and right: opens a page on another site (a request on its host). */
+export function ExternalGlyph({ className }: GlyphProps) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 8 8"
+      width="8"
+      height="8"
+      fill="none"
+      data-glyph="external"
+      className={cn('shrink-0', className)}
+    >
+      <path d="M1.5 6.5 6.5 1.5M2.5 1.5h4v4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** 13×13 exclamation in a ring: a flag or a warning line (the design's .glyph-warn). */
+export function AlertGlyph({ className }: GlyphProps) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 13 13"
+      width="13"
+      height="13"
+      fill="none"
+      data-glyph="alert"
+      className={cn('shrink-0', className)}
+    >
+      <circle cx="6.5" cy="6.5" r="5.75" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M6.5 3.6v3.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="6.5" cy="9.3" r="0.8" fill="currentColor" />
+    </svg>
+  );
+}
+
 /**
  * Frame for an SVG glyph that may carry meaning: role="img" with the label, or hidden when `label` is unset
  * (the name is visible next to it). The SVG inside is always aria-hidden.
