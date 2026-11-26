@@ -267,3 +267,90 @@ describe('GitLab open merge requests (M6)', () => {
     });
   });
 });
+
+describe('GitLab merge requests (M7)', () => {
+  const project = 'northwind/platform/payments';
+
+  it('reads one merge request in each state, and null for an iid that is not one', async () => {
+    const { provider, server } = gitlab('requests');
+    await expect(provider.getRequest?.(project, 74)).resolves.toEqual({
+      number: 74,
+      title: 'Add refunds endpoint',
+      body: '',
+      state: 'merged',
+      headBranch: 'task/pay-74',
+      baseBranch: 'main',
+      author: 'claude-dev',
+      mergedBy: 'ana-dev',
+      webUrl: 'https://gitlab.com/northwind/platform/payments/-/merge_requests/74',
+      openedAt: '2026-11-20T09:00:00.000Z',
+      mergedAt: '2026-11-24T18:05:00.000Z',
+      closedAt: '2026-11-24T18:05:00.000Z',
+      updatedAt: '2026-11-24T18:05:01.000Z',
+    });
+    // Older releases name the merger in merged_by only, and drafts in work_in_progress.
+    await expect(provider.getRequest?.(project, 72)).resolves.toMatchObject({
+      state: 'merged',
+      mergedBy: 'ana-dev',
+    });
+    await expect(provider.getRequest?.(project, 71)).resolves.toMatchObject({ state: 'draft' });
+    await expect(provider.getRequest?.(project, 73)).resolves.toMatchObject({
+      state: 'closed',
+      mergedAt: null,
+      closedAt: '2026-11-22T09:30:00.000Z',
+    });
+    await expect(provider.getRequest?.(project, 12)).resolves.toBeNull();
+    expect(server.calls.map((call) => new URL(call.url).pathname)).toEqual([
+      '/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests/74',
+      '/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests/72',
+      '/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests/71',
+      '/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests/73',
+      '/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests/12',
+    ]);
+  });
+
+  it('lists merge requests by update, passing the time to the API; locked counts as open', async () => {
+    const all = gitlab('requests');
+    const list = await all.provider.listRequestsUpdatedSince?.(project, null, 100);
+    expect(list?.map((request) => [request.number, request.state])).toEqual([
+      [77, 'open'],
+      [76, 'draft'],
+      [75, 'open'],
+      [74, 'merged'],
+      [73, 'closed'],
+    ]);
+    expect(list?.[0]?.body).toBe('Closes: PAY-12');
+
+    const since = gitlab('requests');
+    const recent = await since.provider.listRequestsUpdatedSince?.(
+      project,
+      new Date('2026-11-25T00:00:00.000Z'),
+      50,
+    );
+    expect(recent?.map((request) => request.number)).toEqual([77, 76, 75]);
+    expect(new URL(since.server.calls[0]?.url ?? '').searchParams.get('updated_after')).toBe(
+      '2026-11-25T00:00:00.000Z',
+    );
+    expect([...all.server.calls, ...since.server.calls].map((call) => call.method)).toEqual(['GET', 'GET']);
+  });
+
+  it('a token GitLab rejects stays out of the error', async () => {
+    const server = replay({
+      description: 'A revoked token.',
+      source: 'Hand-written from the GitLab REST docs.',
+      exchanges: [
+        {
+          request: {
+            url: 'https://gitlab.com/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests/9',
+          },
+          response: { status: 401, json: { message: '401 Unauthorized' } },
+        },
+      ],
+    });
+    const provider = gitlabOver(server.fetch);
+    const error = await provider.getRequest(project, 9).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(GitUnauthorized);
+    expect(JSON.stringify(error)).not.toContain(FIXTURE_TOKEN);
+    expect(String(error)).not.toContain(FIXTURE_TOKEN);
+  });
+});

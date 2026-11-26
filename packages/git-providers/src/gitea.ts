@@ -1,7 +1,9 @@
 // Gitea and Forgejo, API v1. Checked against the Forgejo 17 swagger (codeberg.org/swagger.v1.json)
 // and its source (services/repository/files/tree.go). Pull request lists and their changed files
 // (repos/{owner}/{repo}/pulls, pulls/{index}/files) page with page and limit; the server caps limit
-// at [api] MAX_RESPONSE_ITEMS (50 by default) and sends the total in X-Total-Count.
+// at [api] MAX_RESPONSE_ITEMS (50 by default) and sends the total in X-Total-Count. M7 reads single
+// pull requests (pulls/{index}) and the most recently updated ones (pulls?state=all&sort=recentupdate,
+// one page: the API has no "updated since" filter).
 //
 // Tree listings are paged with page and per_page; the server caps per_page at
 // [api] DEFAULT_GIT_TREES_PER_PAGE (1000 by default). Forgejo sets `truncated` to true on every page
@@ -13,6 +15,7 @@ import { type FetchTree, listTreeByWalk, type RawTreeEntry, rawEntry, readFileBy
 import { asArray, asRecord, decodeBase64, encodeSegments, type HttpClient, stringField } from './http';
 import { changedPaths, loginOf, requestsUnderFolder } from './open-requests';
 import { repoSegments } from './paths';
+import { giteaRequest, pageSize, updatedSince } from './requests';
 import {
   type FileContent,
   type GitProvider,
@@ -20,6 +23,7 @@ import {
   type OpenRequest,
   type OpenRequestList,
   type RepositoryInfo,
+  type RequestInfo,
   type TreeEntry,
   type Whoami,
 } from './types';
@@ -173,6 +177,30 @@ export class GiteaProvider implements GitProvider {
         return { paths: changedPaths(entries, ['filename', 'previous_filename']), more };
       },
     );
+  }
+
+  async getRequest(path: string, number: number): Promise<RequestInfo | null> {
+    const repo = this.repo(path);
+    if (!Number.isSafeInteger(number) || number < 1) return null;
+    try {
+      const { data } = await this.http.getJson(this.http.url(`${repo}/pulls/${number}`));
+      return giteaRequest(data);
+    } catch (error) {
+      if (error instanceof GitNotFound && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async listRequestsUpdatedSince(path: string, since: Date | null, limit: number): Promise<RequestInfo[]> {
+    const { data } = await this.http.getJson(
+      this.http.url(`${this.repo(path)}/pulls`, {
+        state: 'all',
+        sort: 'recentupdate',
+        page: 1,
+        limit: pageSize(limit),
+      }),
+    );
+    return updatedSince(asArray(data, 'pull request list').map(giteaRequest), since, limit);
   }
 
   fileUrl(path: string, branch: string, filePath: string): string {

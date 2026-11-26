@@ -1,0 +1,1139 @@
+{
+  "description": "M7 request deliveries: GitHub and Forgejo/Gitea pull_request, GitLab Merge Request Hook, in every action Zamu maps and a few it does not, signed with the secret below (HMAC-SHA256 hex of the exact body; GitLab sends the secret). `malformed` holds signed deliveries without the documented request fields.",
+  "source": "Hand-written from GitHub's webhook events docs (pull_request), GitLab's webhook events docs (merge request events) and Forgejo's modules/structs/hook.go and pull.go, on made-up repositories; shapes trimmed.",
+  "secret": "whsec-fixture-0123456789",
+  "deliveries": {
+    "github-pr-opened": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "7a0c1b2e-0000-11f1-8000-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=1154dca3099db2f497caf96b498daf1228d32bf63047fae1d8b0c06299604758",
+        "Content-Type": "application/json",
+        "User-Agent": "GitHub-Hookshot/044aadd"
+      },
+      "body": "{\"action\":\"opened\",\"number\":482,\"pull_request\":{\"url\":\"https://api.github.com/repos/northwind/payments/pulls/482\",\"id\":2000000482,\"html_url\":\"https://github.com/northwind/payments/pull/482\",\"number\":482,\"state\":\"open\",\"locked\":false,\"title\":\"Retry failed card payments\",\"user\":{\"login\":\"claude-dev\",\"id\":11846,\"type\":\"User\"},\"body\":\"Closes: PAY-12\",\"created_at\":\"2026-11-24T10:00:00Z\",\"updated_at\":\"2026-11-24T10:00:00Z\",\"closed_at\":null,\"merged_at\":null,\"merge_commit_sha\":null,\"draft\":false,\"head\":{\"label\":\"northwind:task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\"},\"base\":{\"label\":\"northwind:main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\"},\"author_association\":\"MEMBER\",\"merged\":false,\"merged_by\":null,\"mergeable\":true,\"comments\":0},\"repository\":{\"full_name\":\"northwind/payments\"},\"sender\":{\"login\":\"ana-dev\",\"id\":96307,\"type\":\"User\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "opened",
+        "request": {
+          "number": 482,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://github.com/northwind/payments/pull/482",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T10:00:00.000Z"
+        }
+      }
+    },
+    "github-pr-opened-draft": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "7a0c1b2e-0001-11f1-8000-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=d6281b02684f482657922591235cf95b15191bb7333a0dd91d4a1df9403afdc7",
+        "Content-Type": "application/json",
+        "User-Agent": "GitHub-Hookshot/044aadd"
+      },
+      "body": "{\"action\":\"opened\",\"number\":482,\"pull_request\":{\"url\":\"https://api.github.com/repos/northwind/payments/pulls/482\",\"id\":2000000482,\"html_url\":\"https://github.com/northwind/payments/pull/482\",\"number\":482,\"state\":\"open\",\"locked\":false,\"title\":\"Retry failed card payments\",\"user\":{\"login\":\"claude-dev\",\"id\":11846,\"type\":\"User\"},\"body\":null,\"created_at\":\"2026-11-24T10:00:00Z\",\"updated_at\":\"2026-11-24T10:00:00Z\",\"closed_at\":null,\"merged_at\":null,\"merge_commit_sha\":null,\"draft\":true,\"head\":{\"label\":\"northwind:task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\"},\"base\":{\"label\":\"northwind:main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\"},\"author_association\":\"MEMBER\",\"merged\":false,\"merged_by\":null,\"mergeable\":true,\"comments\":0},\"repository\":{\"full_name\":\"northwind/payments\"},\"sender\":{\"login\":\"ana-dev\",\"id\":96307,\"type\":\"User\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "opened",
+        "request": {
+          "number": 482,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "draft",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://github.com/northwind/payments/pull/482",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T10:00:00.000Z"
+        }
+      }
+    },
+    "github-pr-ready": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "7a0c1b2e-0002-11f1-8000-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=66743981c465b3af3e653142ace9db301361fafc5e1fb3c9f8b34e7023ad4466",
+        "Content-Type": "application/json",
+        "User-Agent": "GitHub-Hookshot/044aadd"
+      },
+      "body": "{\"action\":\"ready_for_review\",\"number\":482,\"pull_request\":{\"url\":\"https://api.github.com/repos/northwind/payments/pulls/482\",\"id\":2000000482,\"html_url\":\"https://github.com/northwind/payments/pull/482\",\"number\":482,\"state\":\"open\",\"locked\":false,\"title\":\"Retry failed card payments\",\"user\":{\"login\":\"claude-dev\",\"id\":11846,\"type\":\"User\"},\"body\":null,\"created_at\":\"2026-11-24T10:00:00Z\",\"updated_at\":\"2026-11-24T11:00:00Z\",\"closed_at\":null,\"merged_at\":null,\"merge_commit_sha\":null,\"draft\":false,\"head\":{\"label\":\"northwind:task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\"},\"base\":{\"label\":\"northwind:main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\"},\"author_association\":\"MEMBER\",\"merged\":false,\"merged_by\":null,\"mergeable\":true,\"comments\":0},\"repository\":{\"full_name\":\"northwind/payments\"},\"sender\":{\"login\":\"ana-dev\",\"id\":96307,\"type\":\"User\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "ready",
+        "request": {
+          "number": 482,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://github.com/northwind/payments/pull/482",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T11:00:00.000Z"
+        }
+      }
+    },
+    "github-pr-converted": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "7a0c1b2e-0003-11f1-8000-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=675ec9fca8b985785aa85adbe6e7f89228a2868542f4c8fc8ff2fa8ba5fa883a",
+        "Content-Type": "application/json",
+        "User-Agent": "GitHub-Hookshot/044aadd"
+      },
+      "body": "{\"action\":\"converted_to_draft\",\"number\":482,\"pull_request\":{\"url\":\"https://api.github.com/repos/northwind/payments/pulls/482\",\"id\":2000000482,\"html_url\":\"https://github.com/northwind/payments/pull/482\",\"number\":482,\"state\":\"open\",\"locked\":false,\"title\":\"Retry failed card payments\",\"user\":{\"login\":\"claude-dev\",\"id\":11846,\"type\":\"User\"},\"body\":null,\"created_at\":\"2026-11-24T10:00:00Z\",\"updated_at\":\"2026-11-24T11:30:00Z\",\"closed_at\":null,\"merged_at\":null,\"merge_commit_sha\":null,\"draft\":true,\"head\":{\"label\":\"northwind:task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\"},\"base\":{\"label\":\"northwind:main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\"},\"author_association\":\"MEMBER\",\"merged\":false,\"merged_by\":null,\"mergeable\":true,\"comments\":0},\"repository\":{\"full_name\":\"northwind/payments\"},\"sender\":{\"login\":\"ana-dev\",\"id\":96307,\"type\":\"User\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "converted_to_draft",
+        "request": {
+          "number": 482,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "draft",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://github.com/northwind/payments/pull/482",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T11:30:00.000Z"
+        }
+      }
+    },
+    "github-pr-edited": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "7a0c1b2e-0004-11f1-8000-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=de82f032782489b6aff83484887fc0578d9b9fbdb7390fe10546d632a71a33da",
+        "Content-Type": "application/json",
+        "User-Agent": "GitHub-Hookshot/044aadd"
+      },
+      "body": "{\"action\":\"edited\",\"number\":482,\"pull_request\":{\"url\":\"https://api.github.com/repos/northwind/payments/pulls/482\",\"id\":2000000482,\"html_url\":\"https://github.com/northwind/payments/pull/482\",\"number\":482,\"state\":\"open\",\"locked\":false,\"title\":\"Retry failed card payments\",\"user\":{\"login\":\"claude-dev\",\"id\":11846,\"type\":\"User\"},\"body\":\"Closes: PAY-12, PAY-14\",\"created_at\":\"2026-11-24T10:00:00Z\",\"updated_at\":\"2026-11-24T12:00:00Z\",\"closed_at\":null,\"merged_at\":null,\"merge_commit_sha\":null,\"draft\":false,\"head\":{\"label\":\"northwind:task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\"},\"base\":{\"label\":\"northwind:main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\"},\"author_association\":\"MEMBER\",\"merged\":false,\"merged_by\":null,\"mergeable\":true,\"comments\":0},\"repository\":{\"full_name\":\"northwind/payments\"},\"sender\":{\"login\":\"ana-dev\",\"id\":96307,\"type\":\"User\"},\"changes\":{\"body\":{\"from\":\"Closes: PAY-12\"}}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "edited",
+        "request": {
+          "number": 482,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12, PAY-14",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://github.com/northwind/payments/pull/482",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T12:00:00.000Z"
+        }
+      }
+    },
+    "github-pr-synchronize": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "7a0c1b2e-0005-11f1-8000-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=25fdd396a9440e43ec54d32c3c34539d63afbca7604082086cf345c0fbb2eafd",
+        "Content-Type": "application/json",
+        "User-Agent": "GitHub-Hookshot/044aadd"
+      },
+      "body": "{\"action\":\"synchronize\",\"number\":482,\"pull_request\":{\"url\":\"https://api.github.com/repos/northwind/payments/pulls/482\",\"id\":2000000482,\"html_url\":\"https://github.com/northwind/payments/pull/482\",\"number\":482,\"state\":\"open\",\"locked\":false,\"title\":\"Retry failed card payments\",\"user\":{\"login\":\"claude-dev\",\"id\":11846,\"type\":\"User\"},\"body\":null,\"created_at\":\"2026-11-24T10:00:00Z\",\"updated_at\":\"2026-11-24T13:00:00Z\",\"closed_at\":null,\"merged_at\":null,\"merge_commit_sha\":null,\"draft\":false,\"head\":{\"label\":\"northwind:task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\"},\"base\":{\"label\":\"northwind:main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\"},\"author_association\":\"MEMBER\",\"merged\":false,\"merged_by\":null,\"mergeable\":true,\"comments\":0},\"repository\":{\"full_name\":\"northwind/payments\"},\"sender\":{\"login\":\"ana-dev\",\"id\":96307,\"type\":\"User\"},\"before\":\"28e1879d029cb852e4844d9c718537df08844e03\",\"after\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\"}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "synchronized",
+        "request": {
+          "number": 482,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://github.com/northwind/payments/pull/482",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T13:00:00.000Z"
+        }
+      }
+    },
+    "github-pr-closed": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "7a0c1b2e-0006-11f1-8000-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=b14532e8e0e5152f72fcfd4535bd56390452647edffa250ca44bba743a7752e6",
+        "Content-Type": "application/json",
+        "User-Agent": "GitHub-Hookshot/044aadd"
+      },
+      "body": "{\"action\":\"closed\",\"number\":482,\"pull_request\":{\"url\":\"https://api.github.com/repos/northwind/payments/pulls/482\",\"id\":2000000482,\"html_url\":\"https://github.com/northwind/payments/pull/482\",\"number\":482,\"state\":\"closed\",\"locked\":false,\"title\":\"Retry failed card payments\",\"user\":{\"login\":\"claude-dev\",\"id\":11846,\"type\":\"User\"},\"body\":null,\"created_at\":\"2026-11-24T10:00:00Z\",\"updated_at\":\"2026-11-24T14:00:00Z\",\"closed_at\":\"2026-11-24T14:00:00Z\",\"merged_at\":null,\"merge_commit_sha\":null,\"draft\":false,\"head\":{\"label\":\"northwind:task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\"},\"base\":{\"label\":\"northwind:main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\"},\"author_association\":\"MEMBER\",\"merged\":false,\"merged_by\":null,\"mergeable\":null,\"comments\":0},\"repository\":{\"full_name\":\"northwind/payments\"},\"sender\":{\"login\":\"ana-dev\",\"id\":96307,\"type\":\"User\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "closed",
+        "request": {
+          "number": 482,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "closed",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://github.com/northwind/payments/pull/482",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": "2026-11-24T14:00:00.000Z",
+          "updatedAt": "2026-11-24T14:00:00.000Z"
+        }
+      }
+    },
+    "github-pr-reopened": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "7a0c1b2e-0007-11f1-8000-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=c1ff8762b66d31638418fe3131a0cb45ee2bff388c29f3e4b40b018ee1e5a07f",
+        "Content-Type": "application/json",
+        "User-Agent": "GitHub-Hookshot/044aadd"
+      },
+      "body": "{\"action\":\"reopened\",\"number\":482,\"pull_request\":{\"url\":\"https://api.github.com/repos/northwind/payments/pulls/482\",\"id\":2000000482,\"html_url\":\"https://github.com/northwind/payments/pull/482\",\"number\":482,\"state\":\"open\",\"locked\":false,\"title\":\"Retry failed card payments\",\"user\":{\"login\":\"claude-dev\",\"id\":11846,\"type\":\"User\"},\"body\":null,\"created_at\":\"2026-11-24T10:00:00Z\",\"updated_at\":\"2026-11-24T15:00:00Z\",\"closed_at\":null,\"merged_at\":null,\"merge_commit_sha\":null,\"draft\":false,\"head\":{\"label\":\"northwind:task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\"},\"base\":{\"label\":\"northwind:main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\"},\"author_association\":\"MEMBER\",\"merged\":false,\"merged_by\":null,\"mergeable\":true,\"comments\":0},\"repository\":{\"full_name\":\"northwind/payments\"},\"sender\":{\"login\":\"ana-dev\",\"id\":96307,\"type\":\"User\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "reopened",
+        "request": {
+          "number": 482,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://github.com/northwind/payments/pull/482",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T15:00:00.000Z"
+        }
+      }
+    },
+    "github-pr-merged": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "7a0c1b2e-0008-11f1-8000-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=a851a5b4b75bf0e6ce737891d2c1995b7e4d1fe6421e8ff0659e32303faaeac3",
+        "Content-Type": "application/json",
+        "User-Agent": "GitHub-Hookshot/044aadd"
+      },
+      "body": "{\"action\":\"closed\",\"number\":482,\"pull_request\":{\"url\":\"https://api.github.com/repos/northwind/payments/pulls/482\",\"id\":2000000482,\"html_url\":\"https://github.com/northwind/payments/pull/482\",\"number\":482,\"state\":\"closed\",\"locked\":false,\"title\":\"Retry failed card payments\",\"user\":{\"login\":\"claude-dev\",\"id\":11846,\"type\":\"User\"},\"body\":null,\"created_at\":\"2026-11-24T10:00:00Z\",\"updated_at\":\"2026-11-25T16:40:01Z\",\"closed_at\":\"2026-11-25T16:40:00Z\",\"merged_at\":\"2026-11-25T16:40:00Z\",\"merge_commit_sha\":\"e5bd3914e2e596debea16f433f57875b5b90bcd6\",\"draft\":false,\"head\":{\"label\":\"northwind:task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\"},\"base\":{\"label\":\"northwind:main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\"},\"author_association\":\"MEMBER\",\"merged\":true,\"merged_by\":{\"login\":\"ana-dev\",\"id\":96307,\"type\":\"User\"},\"mergeable\":null,\"comments\":0},\"repository\":{\"full_name\":\"northwind/payments\"},\"sender\":{\"login\":\"ana-dev\",\"id\":96307,\"type\":\"User\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "merged",
+        "request": {
+          "number": 482,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "merged",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": "ana-dev",
+          "webUrl": "https://github.com/northwind/payments/pull/482",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": "2026-11-25T16:40:00.000Z",
+          "closedAt": "2026-11-25T16:40:00.000Z",
+          "updatedAt": "2026-11-25T16:40:01.000Z"
+        }
+      }
+    },
+    "github-pr-merged-form": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "7a0c1b2e-0009-11f1-8000-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=30c21cea133e04af9452db0529062ac474fa747a0630d29dc075f75e4e89e981",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "GitHub-Hookshot/044aadd"
+      },
+      "body": "payload=%7B%22action%22%3A%22closed%22%2C%22number%22%3A482%2C%22pull_request%22%3A%7B%22url%22%3A%22https%3A%2F%2Fapi.github.com%2Frepos%2Fnorthwind%2Fpayments%2Fpulls%2F482%22%2C%22id%22%3A2000000482%2C%22html_url%22%3A%22https%3A%2F%2Fgithub.com%2Fnorthwind%2Fpayments%2Fpull%2F482%22%2C%22number%22%3A482%2C%22state%22%3A%22closed%22%2C%22locked%22%3Afalse%2C%22title%22%3A%22Retry%20failed%20card%20payments%22%2C%22user%22%3A%7B%22login%22%3A%22claude-dev%22%2C%22id%22%3A11846%2C%22type%22%3A%22User%22%7D%2C%22body%22%3Anull%2C%22created_at%22%3A%222026-11-24T10%3A00%3A00Z%22%2C%22updated_at%22%3A%222026-11-25T16%3A40%3A01Z%22%2C%22closed_at%22%3A%222026-11-25T16%3A40%3A00Z%22%2C%22merged_at%22%3A%222026-11-25T16%3A40%3A00Z%22%2C%22merge_commit_sha%22%3A%22e5bd3914e2e596debea16f433f57875b5b90bcd6%22%2C%22draft%22%3Afalse%2C%22head%22%3A%7B%22label%22%3A%22northwind%3Atask%2Fpay-12%22%2C%22ref%22%3A%22task%2Fpay-12%22%2C%22sha%22%3A%226dcb09b5b57875f334f61aebed695e2e4193db5e%22%7D%2C%22base%22%3A%7B%22label%22%3A%22northwind%3Amain%22%2C%22ref%22%3A%22main%22%2C%22sha%22%3A%229049f1265b7d61be4a8904a9a27120d2064dab3b%22%7D%2C%22author_association%22%3A%22MEMBER%22%2C%22merged%22%3Atrue%2C%22merged_by%22%3A%7B%22login%22%3A%22ana-dev%22%2C%22id%22%3A96307%2C%22type%22%3A%22User%22%7D%2C%22mergeable%22%3Anull%2C%22comments%22%3A0%7D%2C%22repository%22%3A%7B%22full_name%22%3A%22northwind%2Fpayments%22%7D%2C%22sender%22%3A%7B%22login%22%3A%22ana-dev%22%2C%22id%22%3A96307%2C%22type%22%3A%22User%22%7D%7D",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "merged",
+        "request": {
+          "number": 482,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "merged",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": "ana-dev",
+          "webUrl": "https://github.com/northwind/payments/pull/482",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": "2026-11-25T16:40:00.000Z",
+          "closedAt": "2026-11-25T16:40:00.000Z",
+          "updatedAt": "2026-11-25T16:40:01.000Z"
+        }
+      }
+    },
+    "github-pr-labeled": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-GitHub-Delivery": "7a0c1b2e-0010-11f1-8000-4c9367dc0958",
+        "X-Hub-Signature-256": "sha256=9803d15bc18c05bd6c5999f03295f860ce788eefdff75dd5162445c3882c83c0",
+        "Content-Type": "application/json",
+        "User-Agent": "GitHub-Hookshot/044aadd"
+      },
+      "body": "{\"action\":\"labeled\",\"number\":482,\"pull_request\":{\"url\":\"https://api.github.com/repos/northwind/payments/pulls/482\",\"id\":2000000482,\"html_url\":\"https://github.com/northwind/payments/pull/482\",\"number\":482,\"state\":\"open\",\"locked\":false,\"title\":\"Retry failed card payments\",\"user\":{\"login\":\"claude-dev\",\"id\":11846,\"type\":\"User\"},\"body\":null,\"created_at\":\"2026-11-24T10:00:00Z\",\"updated_at\":\"2026-11-24T16:00:00Z\",\"closed_at\":null,\"merged_at\":null,\"merge_commit_sha\":null,\"draft\":false,\"head\":{\"label\":\"northwind:task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\"},\"base\":{\"label\":\"northwind:main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\"},\"author_association\":\"MEMBER\",\"merged\":false,\"merged_by\":null,\"mergeable\":true,\"comments\":0},\"repository\":{\"full_name\":\"northwind/payments\"},\"sender\":{\"login\":\"ana-dev\",\"id\":96307,\"type\":\"User\"},\"label\":{\"name\":\"payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "other",
+        "eventName": "pull_request"
+      }
+    },
+    "gitlab-mr-open": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789",
+        "X-Gitlab-Instance": "https://gitlab.com",
+        "X-Gitlab-Event-UUID": "1e0a3c52-0011-4f3b-9c3e-1f9b8e3c0d11",
+        "User-Agent": "GitLab/19.6.0",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"event_type\":\"merge_request\",\"user\":{\"id\":11846,\"username\":\"claude-dev\",\"name\":\"Claude Dev\",\"state\":\"active\",\"avatar_url\":null,\"email\":\"[REDACTED]\"},\"project\":{\"id\":61000001,\"name\":\"payments\",\"web_url\":\"https://gitlab.com/northwind/platform/payments\",\"path_with_namespace\":\"northwind/platform/payments\",\"default_branch\":\"main\"},\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"opened\",\"state_id\":1,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"updated_at\":\"2026-11-24T10:00:00.000Z\",\"merged_at\":null,\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":null,\"draft\":false,\"work_in_progress\":false,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"open\",\"actioned_at\":\"2026-11-24T10:00:00.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\"},\"labels\":[],\"changes\":{\"merge_status\":{\"previous\":\"preparing\",\"current\":\"unchecked\"}},\"repository\":{\"name\":\"payments\",\"url\":\"git@gitlab.com:northwind/platform/payments.git\",\"homepage\":\"https://gitlab.com/northwind/platform/payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "Merge Request Hook",
+        "action": "opened",
+        "request": {
+          "number": 77,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://gitlab.com/northwind/platform/payments/-/merge_requests/77",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T10:00:00.000Z"
+        }
+      }
+    },
+    "gitlab-mr-open-draft": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789",
+        "X-Gitlab-Instance": "https://gitlab.com",
+        "X-Gitlab-Event-UUID": "1e0a3c52-0012-4f3b-9c3e-1f9b8e3c0d11",
+        "User-Agent": "GitLab/19.6.0",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"event_type\":\"merge_request\",\"user\":{\"id\":11846,\"username\":\"claude-dev\",\"name\":\"Claude Dev\",\"state\":\"active\",\"avatar_url\":null,\"email\":\"[REDACTED]\"},\"project\":{\"id\":61000001,\"name\":\"payments\",\"web_url\":\"https://gitlab.com/northwind/platform/payments\",\"path_with_namespace\":\"northwind/platform/payments\",\"default_branch\":\"main\"},\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Draft: Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"opened\",\"state_id\":1,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"updated_at\":\"2026-11-24T10:00:00.000Z\",\"merged_at\":null,\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":null,\"draft\":true,\"work_in_progress\":true,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"open\",\"actioned_at\":\"2026-11-24T10:00:00.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\"},\"labels\":[],\"changes\":{},\"repository\":{\"name\":\"payments\",\"url\":\"git@gitlab.com:northwind/platform/payments.git\",\"homepage\":\"https://gitlab.com/northwind/platform/payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "Merge Request Hook",
+        "action": "opened",
+        "request": {
+          "number": 77,
+          "title": "Draft: Retry failed card payments",
+          "body": "Closes: PAY-12",
+          "state": "draft",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://gitlab.com/northwind/platform/payments/-/merge_requests/77",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T10:00:00.000Z"
+        }
+      }
+    },
+    "gitlab-mr-ready": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789",
+        "X-Gitlab-Instance": "https://gitlab.com",
+        "X-Gitlab-Event-UUID": "1e0a3c52-0013-4f3b-9c3e-1f9b8e3c0d11",
+        "User-Agent": "GitLab/19.6.0",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"event_type\":\"merge_request\",\"user\":{\"id\":11846,\"username\":\"claude-dev\",\"name\":\"Claude Dev\",\"state\":\"active\",\"avatar_url\":null,\"email\":\"[REDACTED]\"},\"project\":{\"id\":61000001,\"name\":\"payments\",\"web_url\":\"https://gitlab.com/northwind/platform/payments\",\"path_with_namespace\":\"northwind/platform/payments\",\"default_branch\":\"main\"},\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"opened\",\"state_id\":1,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"updated_at\":\"2026-11-24T11:00:00.000Z\",\"merged_at\":null,\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":null,\"draft\":false,\"work_in_progress\":false,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"update\",\"actioned_at\":\"2026-11-24T11:00:00.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\"},\"labels\":[],\"changes\":{\"updated_at\":{\"previous\":\"2026-11-24T10:00:00.000Z\",\"current\":\"2026-11-24T11:00:00.000Z\"},\"draft\":{\"previous\":true,\"current\":false},\"title\":{\"previous\":\"Draft: Retry failed card payments\",\"current\":\"Retry failed card payments\"}},\"repository\":{\"name\":\"payments\",\"url\":\"git@gitlab.com:northwind/platform/payments.git\",\"homepage\":\"https://gitlab.com/northwind/platform/payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "Merge Request Hook",
+        "action": "ready",
+        "request": {
+          "number": 77,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": null,
+          "mergedBy": null,
+          "webUrl": "https://gitlab.com/northwind/platform/payments/-/merge_requests/77",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T11:00:00.000Z"
+        }
+      }
+    },
+    "gitlab-mr-to-draft": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789",
+        "X-Gitlab-Instance": "https://gitlab.com",
+        "X-Gitlab-Event-UUID": "1e0a3c52-0014-4f3b-9c3e-1f9b8e3c0d11",
+        "User-Agent": "GitLab/19.6.0",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"event_type\":\"merge_request\",\"user\":{\"id\":11846,\"username\":\"claude-dev\",\"name\":\"Claude Dev\",\"state\":\"active\",\"avatar_url\":null,\"email\":\"[REDACTED]\"},\"project\":{\"id\":61000001,\"name\":\"payments\",\"web_url\":\"https://gitlab.com/northwind/platform/payments\",\"path_with_namespace\":\"northwind/platform/payments\",\"default_branch\":\"main\"},\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"opened\",\"state_id\":1,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"updated_at\":\"2026-11-24T11:00:00.000Z\",\"merged_at\":null,\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":null,\"draft\":true,\"work_in_progress\":true,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"update\",\"actioned_at\":\"2026-11-24T11:00:00.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\"},\"labels\":[],\"changes\":{\"updated_at\":{\"previous\":\"2026-11-24T10:00:00.000Z\",\"current\":\"2026-11-24T11:00:00.000Z\"},\"draft\":{\"previous\":false,\"current\":true}},\"repository\":{\"name\":\"payments\",\"url\":\"git@gitlab.com:northwind/platform/payments.git\",\"homepage\":\"https://gitlab.com/northwind/platform/payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "Merge Request Hook",
+        "action": "converted_to_draft",
+        "request": {
+          "number": 77,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12",
+          "state": "draft",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": null,
+          "mergedBy": null,
+          "webUrl": "https://gitlab.com/northwind/platform/payments/-/merge_requests/77",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T11:00:00.000Z"
+        }
+      }
+    },
+    "gitlab-mr-push": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789",
+        "X-Gitlab-Instance": "https://gitlab.com",
+        "X-Gitlab-Event-UUID": "1e0a3c52-0015-4f3b-9c3e-1f9b8e3c0d11",
+        "User-Agent": "GitLab/19.6.0",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"event_type\":\"merge_request\",\"user\":{\"id\":11846,\"username\":\"claude-dev\",\"name\":\"Claude Dev\",\"state\":\"active\",\"avatar_url\":null,\"email\":\"[REDACTED]\"},\"project\":{\"id\":61000001,\"name\":\"payments\",\"web_url\":\"https://gitlab.com/northwind/platform/payments\",\"path_with_namespace\":\"northwind/platform/payments\",\"default_branch\":\"main\"},\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"opened\",\"state_id\":1,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"updated_at\":\"2026-11-24T11:00:00.000Z\",\"merged_at\":null,\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":null,\"draft\":false,\"work_in_progress\":false,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"update\",\"actioned_at\":\"2026-11-24T11:00:00.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\",\"oldrev\":\"28e1879d029cb852e4844d9c718537df08844e03\"},\"labels\":[],\"changes\":{\"updated_at\":{\"previous\":\"2026-11-24T10:00:00.000Z\",\"current\":\"2026-11-24T11:00:00.000Z\"}},\"repository\":{\"name\":\"payments\",\"url\":\"git@gitlab.com:northwind/platform/payments.git\",\"homepage\":\"https://gitlab.com/northwind/platform/payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "Merge Request Hook",
+        "action": "synchronized",
+        "request": {
+          "number": 77,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": null,
+          "mergedBy": null,
+          "webUrl": "https://gitlab.com/northwind/platform/payments/-/merge_requests/77",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T11:00:00.000Z"
+        }
+      }
+    },
+    "gitlab-mr-edited": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789",
+        "X-Gitlab-Instance": "https://gitlab.com",
+        "X-Gitlab-Event-UUID": "1e0a3c52-0016-4f3b-9c3e-1f9b8e3c0d11",
+        "User-Agent": "GitLab/19.6.0",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"event_type\":\"merge_request\",\"user\":{\"id\":11846,\"username\":\"claude-dev\",\"name\":\"Claude Dev\",\"state\":\"active\",\"avatar_url\":null,\"email\":\"[REDACTED]\"},\"project\":{\"id\":61000001,\"name\":\"payments\",\"web_url\":\"https://gitlab.com/northwind/platform/payments\",\"path_with_namespace\":\"northwind/platform/payments\",\"default_branch\":\"main\"},\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12 PAY-14\",\"state\":\"opened\",\"state_id\":1,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"updated_at\":\"2026-11-24T11:00:00.000Z\",\"merged_at\":null,\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":null,\"draft\":false,\"work_in_progress\":false,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"update\",\"actioned_at\":\"2026-11-24T11:00:00.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\"},\"labels\":[],\"changes\":{\"updated_at\":{\"previous\":\"2026-11-24T10:00:00.000Z\",\"current\":\"2026-11-24T11:00:00.000Z\"},\"description\":{\"previous\":\"Closes: PAY-12\",\"current\":\"Closes: PAY-12 PAY-14\"}},\"repository\":{\"name\":\"payments\",\"url\":\"git@gitlab.com:northwind/platform/payments.git\",\"homepage\":\"https://gitlab.com/northwind/platform/payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "Merge Request Hook",
+        "action": "edited",
+        "request": {
+          "number": 77,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12 PAY-14",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": null,
+          "mergedBy": null,
+          "webUrl": "https://gitlab.com/northwind/platform/payments/-/merge_requests/77",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T11:00:00.000Z"
+        }
+      }
+    },
+    "gitlab-mr-labels": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789",
+        "X-Gitlab-Instance": "https://gitlab.com",
+        "X-Gitlab-Event-UUID": "1e0a3c52-0017-4f3b-9c3e-1f9b8e3c0d11",
+        "User-Agent": "GitLab/19.6.0",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"event_type\":\"merge_request\",\"user\":{\"id\":11846,\"username\":\"claude-dev\",\"name\":\"Claude Dev\",\"state\":\"active\",\"avatar_url\":null,\"email\":\"[REDACTED]\"},\"project\":{\"id\":61000001,\"name\":\"payments\",\"web_url\":\"https://gitlab.com/northwind/platform/payments\",\"path_with_namespace\":\"northwind/platform/payments\",\"default_branch\":\"main\"},\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"opened\",\"state_id\":1,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"updated_at\":\"2026-11-24T11:00:00.000Z\",\"merged_at\":null,\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":null,\"draft\":false,\"work_in_progress\":false,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"update\",\"actioned_at\":\"2026-11-24T11:00:00.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\"},\"labels\":[],\"changes\":{\"updated_at\":{\"previous\":\"2026-11-24T10:00:00.000Z\",\"current\":\"2026-11-24T11:00:00.000Z\"},\"labels\":{\"previous\":[],\"current\":[{\"id\":1,\"title\":\"payments\"}]}},\"repository\":{\"name\":\"payments\",\"url\":\"git@gitlab.com:northwind/platform/payments.git\",\"homepage\":\"https://gitlab.com/northwind/platform/payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "other",
+        "eventName": "Merge Request Hook"
+      }
+    },
+    "gitlab-mr-approved": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789",
+        "X-Gitlab-Instance": "https://gitlab.com",
+        "X-Gitlab-Event-UUID": "1e0a3c52-0018-4f3b-9c3e-1f9b8e3c0d11",
+        "User-Agent": "GitLab/19.6.0",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"event_type\":\"merge_request\",\"user\":{\"id\":96307,\"username\":\"ana-dev\",\"name\":\"Ana Dev\",\"state\":\"active\",\"avatar_url\":null,\"email\":\"[REDACTED]\"},\"project\":{\"id\":61000001,\"name\":\"payments\",\"web_url\":\"https://gitlab.com/northwind/platform/payments\",\"path_with_namespace\":\"northwind/platform/payments\",\"default_branch\":\"main\"},\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"opened\",\"state_id\":1,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"updated_at\":\"2026-11-24T11:00:00.000Z\",\"merged_at\":null,\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":null,\"draft\":false,\"work_in_progress\":false,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"approved\",\"actioned_at\":\"2026-11-24T11:00:00.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\"},\"labels\":[],\"changes\":{},\"repository\":{\"name\":\"payments\",\"url\":\"git@gitlab.com:northwind/platform/payments.git\",\"homepage\":\"https://gitlab.com/northwind/platform/payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "other",
+        "eventName": "Merge Request Hook"
+      }
+    },
+    "gitlab-mr-close": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789",
+        "X-Gitlab-Instance": "https://gitlab.com",
+        "X-Gitlab-Event-UUID": "1e0a3c52-0019-4f3b-9c3e-1f9b8e3c0d11",
+        "User-Agent": "GitLab/19.6.0",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"event_type\":\"merge_request\",\"user\":{\"id\":96307,\"username\":\"ana-dev\",\"name\":\"Ana Dev\",\"state\":\"active\",\"avatar_url\":null,\"email\":\"[REDACTED]\"},\"project\":{\"id\":61000001,\"name\":\"payments\",\"web_url\":\"https://gitlab.com/northwind/platform/payments\",\"path_with_namespace\":\"northwind/platform/payments\",\"default_branch\":\"main\"},\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"closed\",\"state_id\":2,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"updated_at\":\"2026-11-24T14:00:00.000Z\",\"merged_at\":null,\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":null,\"draft\":false,\"work_in_progress\":false,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"close\",\"actioned_at\":\"2026-11-24T14:00:00.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\"},\"labels\":[],\"changes\":{\"state_id\":{\"previous\":1,\"current\":2}},\"repository\":{\"name\":\"payments\",\"url\":\"git@gitlab.com:northwind/platform/payments.git\",\"homepage\":\"https://gitlab.com/northwind/platform/payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "Merge Request Hook",
+        "action": "closed",
+        "request": {
+          "number": 77,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12",
+          "state": "closed",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": null,
+          "mergedBy": null,
+          "webUrl": "https://gitlab.com/northwind/platform/payments/-/merge_requests/77",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": "2026-11-24T14:00:00.000Z",
+          "updatedAt": "2026-11-24T14:00:00.000Z"
+        }
+      }
+    },
+    "gitlab-mr-reopen": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789",
+        "X-Gitlab-Instance": "https://gitlab.com",
+        "X-Gitlab-Event-UUID": "1e0a3c52-0020-4f3b-9c3e-1f9b8e3c0d11",
+        "User-Agent": "GitLab/19.6.0",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"event_type\":\"merge_request\",\"user\":{\"id\":96307,\"username\":\"ana-dev\",\"name\":\"Ana Dev\",\"state\":\"active\",\"avatar_url\":null,\"email\":\"[REDACTED]\"},\"project\":{\"id\":61000001,\"name\":\"payments\",\"web_url\":\"https://gitlab.com/northwind/platform/payments\",\"path_with_namespace\":\"northwind/platform/payments\",\"default_branch\":\"main\"},\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"opened\",\"state_id\":1,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"updated_at\":\"2026-11-24T15:00:00.000Z\",\"merged_at\":null,\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":null,\"draft\":false,\"work_in_progress\":false,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"reopen\",\"actioned_at\":\"2026-11-24T15:00:00.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\"},\"labels\":[],\"changes\":{\"state_id\":{\"previous\":2,\"current\":1}},\"repository\":{\"name\":\"payments\",\"url\":\"git@gitlab.com:northwind/platform/payments.git\",\"homepage\":\"https://gitlab.com/northwind/platform/payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "Merge Request Hook",
+        "action": "reopened",
+        "request": {
+          "number": 77,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": null,
+          "mergedBy": null,
+          "webUrl": "https://gitlab.com/northwind/platform/payments/-/merge_requests/77",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T15:00:00.000Z"
+        }
+      }
+    },
+    "gitlab-mr-merge": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789",
+        "X-Gitlab-Instance": "https://gitlab.com",
+        "X-Gitlab-Event-UUID": "1e0a3c52-0021-4f3b-9c3e-1f9b8e3c0d11",
+        "User-Agent": "GitLab/19.6.0",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"event_type\":\"merge_request\",\"user\":{\"id\":96307,\"username\":\"ana-dev\",\"name\":\"Ana Dev\",\"state\":\"active\",\"avatar_url\":null,\"email\":\"[REDACTED]\"},\"project\":{\"id\":61000001,\"name\":\"payments\",\"web_url\":\"https://gitlab.com/northwind/platform/payments\",\"path_with_namespace\":\"northwind/platform/payments\",\"default_branch\":\"main\"},\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"merged\",\"state_id\":3,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"updated_at\":\"2026-11-25T16:40:01.000Z\",\"merged_at\":\"2026-11-25T16:40:00.000Z\",\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":5078,\"draft\":false,\"work_in_progress\":false,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"merge\",\"actioned_at\":\"2026-11-25T16:40:01.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\"},\"labels\":[],\"changes\":{\"state_id\":{\"previous\":4,\"current\":3}},\"repository\":{\"name\":\"payments\",\"url\":\"git@gitlab.com:northwind/platform/payments.git\",\"homepage\":\"https://gitlab.com/northwind/platform/payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "Merge Request Hook",
+        "action": "merged",
+        "request": {
+          "number": 77,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12",
+          "state": "merged",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": null,
+          "mergedBy": "ana-dev",
+          "webUrl": "https://gitlab.com/northwind/platform/payments/-/merge_requests/77",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": "2026-11-25T16:40:00.000Z",
+          "closedAt": "2026-11-25T16:40:00.000Z",
+          "updatedAt": "2026-11-25T16:40:01.000Z"
+        }
+      }
+    },
+    "gitlab-mr-legacy-wip": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789",
+        "X-Gitlab-Instance": "https://gitlab.com",
+        "X-Gitlab-Event-UUID": "1e0a3c52-0022-4f3b-9c3e-1f9b8e3c0d11",
+        "User-Agent": "GitLab/19.6.0",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"event_type\":\"merge_request\",\"user\":{\"id\":11846,\"username\":\"claude-dev\",\"name\":\"Claude Dev\",\"state\":\"active\",\"avatar_url\":null,\"email\":\"[REDACTED]\"},\"project\":{\"id\":61000001,\"name\":\"payments\",\"web_url\":\"https://gitlab.com/northwind/platform/payments\",\"path_with_namespace\":\"northwind/platform/payments\",\"default_branch\":\"main\"},\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"opened\",\"state_id\":1,\"created_at\":\"2026-11-24 10:00:00 UTC\",\"updated_at\":\"2026-11-24 11:00:00 UTC\",\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"work_in_progress\":false,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"update\",\"merge_status\":\"can_be_merged\"},\"labels\":[],\"changes\":{\"work_in_progress\":{\"previous\":true,\"current\":false},\"title\":{\"previous\":\"WIP: Retry failed card payments\",\"current\":\"Retry failed card payments\"}},\"repository\":{\"name\":\"payments\",\"url\":\"git@gitlab.com:northwind/platform/payments.git\",\"homepage\":\"https://gitlab.com/northwind/platform/payments\"}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "Merge Request Hook",
+        "action": "ready",
+        "request": {
+          "number": 77,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": null,
+          "mergedBy": null,
+          "webUrl": "https://gitlab.com/northwind/platform/payments/-/merge_requests/77",
+          "openedAt": "2026-11-24T10:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T11:00:00.000Z"
+        }
+      }
+    },
+    "forgejo-pr-opened": {
+      "provider": "gitea",
+      "headers": {
+        "X-Forgejo-Event": "pull_request",
+        "X-Forgejo-Event-Type": "pull_request",
+        "X-Forgejo-Delivery": "b1c2d3e4-0023",
+        "X-Forgejo-Signature": "70d4a5b2c09fef7e1338f364e8518a0c5057776c358d04c501e17913a56aceb7",
+        "X-Gitea-Event": "pull_request",
+        "X-Gitea-Event-Type": "pull_request",
+        "X-Gitea-Signature": "70d4a5b2c09fef7e1338f364e8518a0c5057776c358d04c501e17913a56aceb7",
+        "X-Hub-Signature-256": "sha256=70d4a5b2c09fef7e1338f364e8518a0c5057776c358d04c501e17913a56aceb7",
+        "X-GitHub-Event": "pull_request",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"action\":\"opened\",\"number\":1204,\"pull_request\":{\"id\":10204,\"url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"number\":1204,\"user\":{\"id\":846,\"login\":\"claude-dev\",\"username\":\"claude-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"title\":\"Retry failed card payments\",\"body\":\"Closes: PAY-12\",\"labels\":[],\"milestone\":null,\"assignee\":null,\"assignees\":null,\"state\":\"open\",\"is_locked\":false,\"comments\":0,\"html_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"diff_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.diff\",\"patch_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.patch\",\"mergeable\":true,\"merged\":false,\"merged_at\":null,\"merge_commit_sha\":null,\"merged_by\":null,\"allow_maintainer_edit\":false,\"base\":{\"label\":\"main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"repo_id\":7},\"head\":{\"label\":\"task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"repo_id\":7},\"merge_base\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"due_date\":null,\"created_at\":\"2026-11-24T10:00:00+01:00\",\"updated_at\":\"2026-11-24T10:00:00+01:00\",\"closed_at\":null,\"pin_order\":0,\"draft\":false},\"requested_reviewer\":null,\"repository\":{\"id\":7,\"full_name\":\"northwind/payments\",\"html_url\":\"https://forgejo.example.com/northwind/payments\",\"default_branch\":\"main\"},\"sender\":{\"id\":307,\"login\":\"ana-dev\",\"username\":\"ana-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"commit_id\":\"\",\"review\":null}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "opened",
+        "request": {
+          "number": 1204,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://forgejo.example.com/northwind/payments/pulls/1204",
+          "openedAt": "2026-11-24T09:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T09:00:00.000Z"
+        }
+      }
+    },
+    "forgejo-pr-opened-wip": {
+      "provider": "gitea",
+      "headers": {
+        "X-Forgejo-Event": "pull_request",
+        "X-Forgejo-Event-Type": "pull_request",
+        "X-Forgejo-Delivery": "b1c2d3e4-0024",
+        "X-Forgejo-Signature": "e6e2a112b1a0f6e2db3cfbdd4d19a78d9219fd2cbed98458e79eee2be3707e4d",
+        "X-Gitea-Event": "pull_request",
+        "X-Gitea-Event-Type": "pull_request",
+        "X-Gitea-Signature": "e6e2a112b1a0f6e2db3cfbdd4d19a78d9219fd2cbed98458e79eee2be3707e4d",
+        "X-Hub-Signature-256": "sha256=e6e2a112b1a0f6e2db3cfbdd4d19a78d9219fd2cbed98458e79eee2be3707e4d",
+        "X-GitHub-Event": "pull_request",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"action\":\"opened\",\"number\":1204,\"pull_request\":{\"id\":10204,\"url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"number\":1204,\"user\":{\"id\":846,\"login\":\"claude-dev\",\"username\":\"claude-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"title\":\"WIP: Retry failed card payments\",\"body\":\"\",\"labels\":[],\"milestone\":null,\"assignee\":null,\"assignees\":null,\"state\":\"open\",\"is_locked\":false,\"comments\":0,\"html_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"diff_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.diff\",\"patch_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.patch\",\"mergeable\":true,\"merged\":false,\"merged_at\":null,\"merge_commit_sha\":null,\"merged_by\":null,\"allow_maintainer_edit\":false,\"base\":{\"label\":\"main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"repo_id\":7},\"head\":{\"label\":\"task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"repo_id\":7},\"merge_base\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"due_date\":null,\"created_at\":\"2026-11-24T10:00:00+01:00\",\"updated_at\":\"2026-11-24T10:00:00+01:00\",\"closed_at\":null,\"pin_order\":0,\"draft\":true},\"requested_reviewer\":null,\"repository\":{\"id\":7,\"full_name\":\"northwind/payments\",\"html_url\":\"https://forgejo.example.com/northwind/payments\",\"default_branch\":\"main\"},\"sender\":{\"id\":307,\"login\":\"ana-dev\",\"username\":\"ana-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"commit_id\":\"\",\"review\":null}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "opened",
+        "request": {
+          "number": 1204,
+          "title": "WIP: Retry failed card payments",
+          "body": "",
+          "state": "draft",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://forgejo.example.com/northwind/payments/pulls/1204",
+          "openedAt": "2026-11-24T09:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T09:00:00.000Z"
+        }
+      }
+    },
+    "forgejo-pr-ready": {
+      "provider": "gitea",
+      "headers": {
+        "X-Forgejo-Event": "pull_request",
+        "X-Forgejo-Event-Type": "pull_request",
+        "X-Forgejo-Delivery": "b1c2d3e4-0025",
+        "X-Forgejo-Signature": "ca3fb09e26265a66d777b51e7b18e420ff2d81f0ccdccd1399cdf9b19c92fc3f",
+        "X-Gitea-Event": "pull_request",
+        "X-Gitea-Event-Type": "pull_request",
+        "X-Gitea-Signature": "ca3fb09e26265a66d777b51e7b18e420ff2d81f0ccdccd1399cdf9b19c92fc3f",
+        "X-Hub-Signature-256": "sha256=ca3fb09e26265a66d777b51e7b18e420ff2d81f0ccdccd1399cdf9b19c92fc3f",
+        "X-GitHub-Event": "pull_request",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"action\":\"edited\",\"number\":1204,\"pull_request\":{\"id\":10204,\"url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"number\":1204,\"user\":{\"id\":846,\"login\":\"claude-dev\",\"username\":\"claude-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"title\":\"Retry failed card payments\",\"body\":\"\",\"labels\":[],\"milestone\":null,\"assignee\":null,\"assignees\":null,\"state\":\"open\",\"is_locked\":false,\"comments\":0,\"html_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"diff_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.diff\",\"patch_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.patch\",\"mergeable\":true,\"merged\":false,\"merged_at\":null,\"merge_commit_sha\":null,\"merged_by\":null,\"allow_maintainer_edit\":false,\"base\":{\"label\":\"main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"repo_id\":7},\"head\":{\"label\":\"task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"repo_id\":7},\"merge_base\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"due_date\":null,\"created_at\":\"2026-11-24T10:00:00+01:00\",\"updated_at\":\"2026-11-24T11:00:00+01:00\",\"closed_at\":null,\"pin_order\":0,\"draft\":false},\"requested_reviewer\":null,\"repository\":{\"id\":7,\"full_name\":\"northwind/payments\",\"html_url\":\"https://forgejo.example.com/northwind/payments\",\"default_branch\":\"main\"},\"sender\":{\"id\":307,\"login\":\"ana-dev\",\"username\":\"ana-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"commit_id\":\"\",\"review\":null,\"changes\":{\"title\":{\"from\":\"WIP: Retry failed card payments\"}}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "ready",
+        "request": {
+          "number": 1204,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://forgejo.example.com/northwind/payments/pulls/1204",
+          "openedAt": "2026-11-24T09:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T10:00:00.000Z"
+        }
+      }
+    },
+    "gitea-pr-to-draft-by-title": {
+      "provider": "gitea",
+      "headers": {
+        "X-Gitea-Event": "pull_request",
+        "X-Gitea-Event-Type": "pull_request",
+        "X-Gitea-Delivery": "b1c2d3e4-0026",
+        "X-Gitea-Signature": "955a1e52dc9c0ae1733d6faf81b92ceda77c86f2e84d3d41d9ec985b991b8c88",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"action\":\"edited\",\"number\":1204,\"pull_request\":{\"id\":10204,\"url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"number\":1204,\"user\":{\"id\":846,\"login\":\"claude-dev\",\"username\":\"claude-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"title\":\"[WIP] Retry failed card payments\",\"body\":\"\",\"labels\":[],\"milestone\":null,\"assignee\":null,\"assignees\":null,\"state\":\"open\",\"is_locked\":false,\"comments\":0,\"html_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"diff_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.diff\",\"patch_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.patch\",\"mergeable\":true,\"merged\":false,\"merged_at\":null,\"merge_commit_sha\":null,\"merged_by\":null,\"allow_maintainer_edit\":false,\"base\":{\"label\":\"main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"repo_id\":7},\"head\":{\"label\":\"task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"repo_id\":7},\"merge_base\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"due_date\":null,\"created_at\":\"2026-11-24T10:00:00+01:00\",\"updated_at\":\"2026-11-24T11:00:00+01:00\",\"closed_at\":null,\"pin_order\":0},\"requested_reviewer\":null,\"repository\":{\"id\":7,\"full_name\":\"northwind/payments\",\"html_url\":\"https://forgejo.example.com/northwind/payments\",\"default_branch\":\"main\"},\"sender\":{\"id\":307,\"login\":\"ana-dev\",\"username\":\"ana-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"commit_id\":\"\",\"review\":null,\"changes\":{\"title\":{\"from\":\"Retry failed card payments\"}}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "converted_to_draft",
+        "request": {
+          "number": 1204,
+          "title": "[WIP] Retry failed card payments",
+          "body": "",
+          "state": "draft",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://forgejo.example.com/northwind/payments/pulls/1204",
+          "openedAt": "2026-11-24T09:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T10:00:00.000Z"
+        }
+      }
+    },
+    "forgejo-pr-edited": {
+      "provider": "gitea",
+      "headers": {
+        "X-Forgejo-Event": "pull_request",
+        "X-Forgejo-Event-Type": "pull_request",
+        "X-Forgejo-Delivery": "b1c2d3e4-0027",
+        "X-Forgejo-Signature": "0a4947a75963531bc9fb997e92d6a79fb48683dc04f630188bcf4e7dbed456d8",
+        "X-Gitea-Event": "pull_request",
+        "X-Gitea-Event-Type": "pull_request",
+        "X-Gitea-Signature": "0a4947a75963531bc9fb997e92d6a79fb48683dc04f630188bcf4e7dbed456d8",
+        "X-Hub-Signature-256": "sha256=0a4947a75963531bc9fb997e92d6a79fb48683dc04f630188bcf4e7dbed456d8",
+        "X-GitHub-Event": "pull_request",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"action\":\"edited\",\"number\":1204,\"pull_request\":{\"id\":10204,\"url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"number\":1204,\"user\":{\"id\":846,\"login\":\"claude-dev\",\"username\":\"claude-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"title\":\"Retry failed card payments\",\"body\":\"Closes: PAY-12, PAY-14\",\"labels\":[],\"milestone\":null,\"assignee\":null,\"assignees\":null,\"state\":\"open\",\"is_locked\":false,\"comments\":0,\"html_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"diff_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.diff\",\"patch_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.patch\",\"mergeable\":true,\"merged\":false,\"merged_at\":null,\"merge_commit_sha\":null,\"merged_by\":null,\"allow_maintainer_edit\":false,\"base\":{\"label\":\"main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"repo_id\":7},\"head\":{\"label\":\"task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"repo_id\":7},\"merge_base\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"due_date\":null,\"created_at\":\"2026-11-24T10:00:00+01:00\",\"updated_at\":\"2026-11-24T11:30:00+01:00\",\"closed_at\":null,\"pin_order\":0,\"draft\":false},\"requested_reviewer\":null,\"repository\":{\"id\":7,\"full_name\":\"northwind/payments\",\"html_url\":\"https://forgejo.example.com/northwind/payments\",\"default_branch\":\"main\"},\"sender\":{\"id\":307,\"login\":\"ana-dev\",\"username\":\"ana-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"commit_id\":\"\",\"review\":null,\"changes\":{\"body\":{\"from\":\"Closes: PAY-12\"}}}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "edited",
+        "request": {
+          "number": 1204,
+          "title": "Retry failed card payments",
+          "body": "Closes: PAY-12, PAY-14",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://forgejo.example.com/northwind/payments/pulls/1204",
+          "openedAt": "2026-11-24T09:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T10:30:00.000Z"
+        }
+      }
+    },
+    "forgejo-pr-synchronized": {
+      "provider": "gitea",
+      "headers": {
+        "X-Forgejo-Event": "pull_request",
+        "X-Forgejo-Event-Type": "pull_request_sync",
+        "X-Forgejo-Delivery": "b1c2d3e4-0028",
+        "X-Forgejo-Signature": "f12272d016f5d8cc277c0505d982a9b8f803b1fd3cdf48bb3d319a8d01bf5aee",
+        "X-Gitea-Event": "pull_request",
+        "X-Gitea-Event-Type": "pull_request_sync",
+        "X-Gitea-Signature": "f12272d016f5d8cc277c0505d982a9b8f803b1fd3cdf48bb3d319a8d01bf5aee",
+        "X-Hub-Signature-256": "sha256=f12272d016f5d8cc277c0505d982a9b8f803b1fd3cdf48bb3d319a8d01bf5aee",
+        "X-GitHub-Event": "pull_request",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"action\":\"synchronized\",\"number\":1204,\"pull_request\":{\"id\":10204,\"url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"number\":1204,\"user\":{\"id\":846,\"login\":\"claude-dev\",\"username\":\"claude-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"title\":\"Retry failed card payments\",\"body\":\"\",\"labels\":[],\"milestone\":null,\"assignee\":null,\"assignees\":null,\"state\":\"open\",\"is_locked\":false,\"comments\":0,\"html_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"diff_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.diff\",\"patch_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.patch\",\"mergeable\":true,\"merged\":false,\"merged_at\":null,\"merge_commit_sha\":null,\"merged_by\":null,\"allow_maintainer_edit\":false,\"base\":{\"label\":\"main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"repo_id\":7},\"head\":{\"label\":\"task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"repo_id\":7},\"merge_base\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"due_date\":null,\"created_at\":\"2026-11-24T10:00:00+01:00\",\"updated_at\":\"2026-11-24T12:00:00+01:00\",\"closed_at\":null,\"pin_order\":0,\"draft\":false},\"requested_reviewer\":null,\"repository\":{\"id\":7,\"full_name\":\"northwind/payments\",\"html_url\":\"https://forgejo.example.com/northwind/payments\",\"default_branch\":\"main\"},\"sender\":{\"id\":307,\"login\":\"ana-dev\",\"username\":\"ana-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"commit_id\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"review\":null}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "synchronized",
+        "request": {
+          "number": 1204,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://forgejo.example.com/northwind/payments/pulls/1204",
+          "openedAt": "2026-11-24T09:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T11:00:00.000Z"
+        }
+      }
+    },
+    "forgejo-pr-closed": {
+      "provider": "gitea",
+      "headers": {
+        "X-Forgejo-Event": "pull_request",
+        "X-Forgejo-Event-Type": "pull_request",
+        "X-Forgejo-Delivery": "b1c2d3e4-0029",
+        "X-Forgejo-Signature": "b57a8f81b192dfa5d1e3841543d37bd31e8371b3ef9f11306d0c69d1c47a9db0",
+        "X-Gitea-Event": "pull_request",
+        "X-Gitea-Event-Type": "pull_request",
+        "X-Gitea-Signature": "b57a8f81b192dfa5d1e3841543d37bd31e8371b3ef9f11306d0c69d1c47a9db0",
+        "X-Hub-Signature-256": "sha256=b57a8f81b192dfa5d1e3841543d37bd31e8371b3ef9f11306d0c69d1c47a9db0",
+        "X-GitHub-Event": "pull_request",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"action\":\"closed\",\"number\":1204,\"pull_request\":{\"id\":10204,\"url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"number\":1204,\"user\":{\"id\":846,\"login\":\"claude-dev\",\"username\":\"claude-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"title\":\"Retry failed card payments\",\"body\":\"\",\"labels\":[],\"milestone\":null,\"assignee\":null,\"assignees\":null,\"state\":\"closed\",\"is_locked\":false,\"comments\":0,\"html_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"diff_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.diff\",\"patch_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.patch\",\"mergeable\":false,\"merged\":false,\"merged_at\":null,\"merge_commit_sha\":null,\"merged_by\":null,\"allow_maintainer_edit\":false,\"base\":{\"label\":\"main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"repo_id\":7},\"head\":{\"label\":\"task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"repo_id\":7},\"merge_base\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"due_date\":null,\"created_at\":\"2026-11-24T10:00:00+01:00\",\"updated_at\":\"2026-11-24T14:00:00+01:00\",\"closed_at\":\"2026-11-24T14:00:00+01:00\",\"pin_order\":0,\"draft\":false},\"requested_reviewer\":null,\"repository\":{\"id\":7,\"full_name\":\"northwind/payments\",\"html_url\":\"https://forgejo.example.com/northwind/payments\",\"default_branch\":\"main\"},\"sender\":{\"id\":307,\"login\":\"ana-dev\",\"username\":\"ana-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"commit_id\":\"\",\"review\":null}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "closed",
+        "request": {
+          "number": 1204,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "closed",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://forgejo.example.com/northwind/payments/pulls/1204",
+          "openedAt": "2026-11-24T09:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": "2026-11-24T13:00:00.000Z",
+          "updatedAt": "2026-11-24T13:00:00.000Z"
+        }
+      }
+    },
+    "forgejo-pr-reopened": {
+      "provider": "gitea",
+      "headers": {
+        "X-Forgejo-Event": "pull_request",
+        "X-Forgejo-Event-Type": "pull_request",
+        "X-Forgejo-Delivery": "b1c2d3e4-0030",
+        "X-Forgejo-Signature": "fba2b29b02bc9056186e61a4b906562708f17ce734c110e476c304a41004998f",
+        "X-Gitea-Event": "pull_request",
+        "X-Gitea-Event-Type": "pull_request",
+        "X-Gitea-Signature": "fba2b29b02bc9056186e61a4b906562708f17ce734c110e476c304a41004998f",
+        "X-Hub-Signature-256": "sha256=fba2b29b02bc9056186e61a4b906562708f17ce734c110e476c304a41004998f",
+        "X-GitHub-Event": "pull_request",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"action\":\"reopened\",\"number\":1204,\"pull_request\":{\"id\":10204,\"url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"number\":1204,\"user\":{\"id\":846,\"login\":\"claude-dev\",\"username\":\"claude-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"title\":\"Retry failed card payments\",\"body\":\"\",\"labels\":[],\"milestone\":null,\"assignee\":null,\"assignees\":null,\"state\":\"open\",\"is_locked\":false,\"comments\":0,\"html_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"diff_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.diff\",\"patch_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.patch\",\"mergeable\":true,\"merged\":false,\"merged_at\":null,\"merge_commit_sha\":null,\"merged_by\":null,\"allow_maintainer_edit\":false,\"base\":{\"label\":\"main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"repo_id\":7},\"head\":{\"label\":\"task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"repo_id\":7},\"merge_base\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"due_date\":null,\"created_at\":\"2026-11-24T10:00:00+01:00\",\"updated_at\":\"2026-11-24T15:00:00+01:00\",\"closed_at\":null,\"pin_order\":0,\"draft\":false},\"requested_reviewer\":null,\"repository\":{\"id\":7,\"full_name\":\"northwind/payments\",\"html_url\":\"https://forgejo.example.com/northwind/payments\",\"default_branch\":\"main\"},\"sender\":{\"id\":307,\"login\":\"ana-dev\",\"username\":\"ana-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"commit_id\":\"\",\"review\":null}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "reopened",
+        "request": {
+          "number": 1204,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "open",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": null,
+          "webUrl": "https://forgejo.example.com/northwind/payments/pulls/1204",
+          "openedAt": "2026-11-24T09:00:00.000Z",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-24T14:00:00.000Z"
+        }
+      }
+    },
+    "forgejo-pr-merged": {
+      "provider": "gitea",
+      "headers": {
+        "X-Forgejo-Event": "pull_request",
+        "X-Forgejo-Event-Type": "pull_request",
+        "X-Forgejo-Delivery": "b1c2d3e4-0031",
+        "X-Forgejo-Signature": "58543c2c226326c7a24f5df2f9dcd199c0eb9d58a59af7323d97630bba866c5a",
+        "X-Gitea-Event": "pull_request",
+        "X-Gitea-Event-Type": "pull_request",
+        "X-Gitea-Signature": "58543c2c226326c7a24f5df2f9dcd199c0eb9d58a59af7323d97630bba866c5a",
+        "X-Hub-Signature-256": "sha256=58543c2c226326c7a24f5df2f9dcd199c0eb9d58a59af7323d97630bba866c5a",
+        "X-GitHub-Event": "pull_request",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"action\":\"closed\",\"number\":1204,\"pull_request\":{\"id\":10204,\"url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"number\":1204,\"user\":{\"id\":846,\"login\":\"claude-dev\",\"username\":\"claude-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"title\":\"Retry failed card payments\",\"body\":\"\",\"labels\":[],\"milestone\":null,\"assignee\":null,\"assignees\":null,\"state\":\"closed\",\"is_locked\":false,\"comments\":0,\"html_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"diff_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.diff\",\"patch_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.patch\",\"mergeable\":false,\"merged\":true,\"merged_at\":\"2026-11-25T17:40:00+01:00\",\"merge_commit_sha\":\"e5bd3914e2e596debea16f433f57875b5b90bcd6\",\"merged_by\":{\"id\":307,\"login\":\"ana-dev\",\"username\":\"ana-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"allow_maintainer_edit\":false,\"base\":{\"label\":\"main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"repo_id\":7},\"head\":{\"label\":\"task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"repo_id\":7},\"merge_base\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"due_date\":null,\"created_at\":\"2026-11-24T10:00:00+01:00\",\"updated_at\":\"2026-11-25T17:40:00+01:00\",\"closed_at\":\"2026-11-25T17:40:00+01:00\",\"pin_order\":0,\"draft\":false},\"requested_reviewer\":null,\"repository\":{\"id\":7,\"full_name\":\"northwind/payments\",\"html_url\":\"https://forgejo.example.com/northwind/payments\",\"default_branch\":\"main\"},\"sender\":{\"id\":307,\"login\":\"ana-dev\",\"username\":\"ana-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"commit_id\":\"\",\"review\":null}",
+      "expected": {
+        "ok": true,
+        "event": "pull_request",
+        "eventName": "pull_request",
+        "action": "merged",
+        "request": {
+          "number": 1204,
+          "title": "Retry failed card payments",
+          "body": "",
+          "state": "merged",
+          "headBranch": "task/pay-12",
+          "baseBranch": "main",
+          "author": "claude-dev",
+          "mergedBy": "ana-dev",
+          "webUrl": "https://forgejo.example.com/northwind/payments/pulls/1204",
+          "openedAt": "2026-11-24T09:00:00.000Z",
+          "mergedAt": "2026-11-25T16:40:00.000Z",
+          "closedAt": "2026-11-25T16:40:00.000Z",
+          "updatedAt": "2026-11-25T16:40:00.000Z"
+        }
+      }
+    },
+    "forgejo-pr-label": {
+      "provider": "gitea",
+      "headers": {
+        "X-Forgejo-Event": "pull_request",
+        "X-Forgejo-Event-Type": "pull_request_label",
+        "X-Forgejo-Delivery": "b1c2d3e4-0032",
+        "X-Forgejo-Signature": "c11cdb7ea888d129f803f4859424449e6dee166b68954e9d3e357b5a913202e7",
+        "X-Gitea-Event": "pull_request",
+        "X-Gitea-Event-Type": "pull_request_label",
+        "X-Gitea-Signature": "c11cdb7ea888d129f803f4859424449e6dee166b68954e9d3e357b5a913202e7",
+        "X-Hub-Signature-256": "sha256=c11cdb7ea888d129f803f4859424449e6dee166b68954e9d3e357b5a913202e7",
+        "X-GitHub-Event": "pull_request",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"action\":\"label_updated\",\"number\":1204,\"pull_request\":{\"id\":10204,\"url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"number\":1204,\"user\":{\"id\":846,\"login\":\"claude-dev\",\"username\":\"claude-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"title\":\"Retry failed card payments\",\"body\":\"\",\"labels\":[],\"milestone\":null,\"assignee\":null,\"assignees\":null,\"state\":\"open\",\"is_locked\":false,\"comments\":0,\"html_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"diff_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.diff\",\"patch_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.patch\",\"mergeable\":true,\"merged\":false,\"merged_at\":null,\"merge_commit_sha\":null,\"merged_by\":null,\"allow_maintainer_edit\":false,\"base\":{\"label\":\"main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"repo_id\":7},\"head\":{\"label\":\"task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"repo_id\":7},\"merge_base\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"due_date\":null,\"created_at\":\"2026-11-24T10:00:00+01:00\",\"updated_at\":\"2026-11-24T16:00:00+01:00\",\"closed_at\":null,\"pin_order\":0,\"draft\":false},\"requested_reviewer\":null,\"repository\":{\"id\":7,\"full_name\":\"northwind/payments\",\"html_url\":\"https://forgejo.example.com/northwind/payments\",\"default_branch\":\"main\"},\"sender\":{\"id\":307,\"login\":\"ana-dev\",\"username\":\"ana-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"commit_id\":\"\",\"review\":null}",
+      "expected": {
+        "ok": true,
+        "event": "other",
+        "eventName": "pull_request"
+      }
+    },
+    "forgejo-pr-review-requested": {
+      "provider": "gitea",
+      "headers": {
+        "X-Forgejo-Event": "pull_request",
+        "X-Forgejo-Event-Type": "pull_request_review_request",
+        "X-Forgejo-Delivery": "b1c2d3e4-0033",
+        "X-Forgejo-Signature": "31e3c76ab9e4c6c243b3a62c23b0ec39f39d8f9ad29e904c3f7110b90c78647d",
+        "X-Gitea-Event": "pull_request",
+        "X-Gitea-Event-Type": "pull_request_review_request",
+        "X-Gitea-Signature": "31e3c76ab9e4c6c243b3a62c23b0ec39f39d8f9ad29e904c3f7110b90c78647d",
+        "X-Hub-Signature-256": "sha256=31e3c76ab9e4c6c243b3a62c23b0ec39f39d8f9ad29e904c3f7110b90c78647d",
+        "X-GitHub-Event": "pull_request",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"action\":\"review_requested\",\"number\":1204,\"pull_request\":{\"id\":10204,\"url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"number\":1204,\"user\":{\"id\":846,\"login\":\"claude-dev\",\"username\":\"claude-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"title\":\"Retry failed card payments\",\"body\":\"\",\"labels\":[],\"milestone\":null,\"assignee\":null,\"assignees\":null,\"state\":\"open\",\"is_locked\":false,\"comments\":0,\"html_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"diff_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.diff\",\"patch_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.patch\",\"mergeable\":true,\"merged\":false,\"merged_at\":null,\"merge_commit_sha\":null,\"merged_by\":null,\"allow_maintainer_edit\":false,\"base\":{\"label\":\"main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"repo_id\":7},\"head\":{\"label\":\"task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"repo_id\":7},\"merge_base\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"due_date\":null,\"created_at\":\"2026-11-24T10:00:00+01:00\",\"updated_at\":\"2026-11-24T16:00:00+01:00\",\"closed_at\":null,\"pin_order\":0,\"draft\":false},\"requested_reviewer\":null,\"repository\":{\"id\":7,\"full_name\":\"northwind/payments\",\"html_url\":\"https://forgejo.example.com/northwind/payments\",\"default_branch\":\"main\"},\"sender\":{\"id\":307,\"login\":\"ana-dev\",\"username\":\"ana-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"commit_id\":\"\",\"review\":null}",
+      "expected": {
+        "ok": true,
+        "event": "other",
+        "eventName": "pull_request"
+      }
+    }
+  },
+  "malformed": {
+    "github-pr-without-head": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-Hub-Signature-256": "sha256=7364239bb41a65041705cc884742c9a2f5984259e9899157c7a604fad9a3d883"
+      },
+      "body": "{\"action\":\"opened\",\"number\":482,\"pull_request\":{\"url\":\"https://api.github.com/repos/northwind/payments/pulls/482\",\"id\":2000000482,\"html_url\":\"https://github.com/northwind/payments/pull/482\",\"number\":482,\"state\":\"open\",\"locked\":false,\"title\":\"Retry failed card payments\",\"user\":{\"login\":\"claude-dev\",\"id\":11846,\"type\":\"User\"},\"body\":null,\"created_at\":\"2026-11-24T10:00:00Z\",\"updated_at\":\"2026-11-24T10:00:00Z\",\"closed_at\":null,\"merged_at\":null,\"merge_commit_sha\":null,\"draft\":false,\"base\":{\"label\":\"northwind:main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\"},\"author_association\":\"MEMBER\",\"merged\":false,\"merged_by\":null,\"mergeable\":true,\"comments\":0}}",
+      "expected": {
+        "ok": false,
+        "reason": "bad_payload"
+      }
+    },
+    "github-pr-without-request": {
+      "provider": "github",
+      "headers": {
+        "X-GitHub-Event": "pull_request",
+        "X-Hub-Signature-256": "sha256=992a930ccfb65f78de9cd4ba22ce390d85fe64b9c1b7a213ade28b3030fefe44"
+      },
+      "body": "{\"action\":\"opened\",\"number\":482}",
+      "expected": {
+        "ok": false,
+        "reason": "bad_payload"
+      }
+    },
+    "forgejo-pr-bad-number": {
+      "provider": "gitea",
+      "headers": {
+        "X-Forgejo-Event": "pull_request",
+        "X-Forgejo-Signature": "daf239e2d0270577d192ad7ab4a2e275c275d33d088e241432ce400bd33e2959"
+      },
+      "body": "{\"action\":\"opened\",\"number\":1204,\"pull_request\":{\"id\":10204,\"url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"number\":\"twelve\",\"user\":{\"id\":846,\"login\":\"claude-dev\",\"username\":\"claude-dev\",\"full_name\":\"\",\"login_name\":\"\"},\"title\":\"Retry failed card payments\",\"body\":\"\",\"labels\":[],\"milestone\":null,\"assignee\":null,\"assignees\":null,\"state\":\"open\",\"is_locked\":false,\"comments\":0,\"html_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204\",\"diff_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.diff\",\"patch_url\":\"https://forgejo.example.com/northwind/payments/pulls/1204.patch\",\"mergeable\":true,\"merged\":false,\"merged_at\":null,\"merge_commit_sha\":null,\"merged_by\":null,\"allow_maintainer_edit\":false,\"base\":{\"label\":\"main\",\"ref\":\"main\",\"sha\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"repo_id\":7},\"head\":{\"label\":\"task/pay-12\",\"ref\":\"task/pay-12\",\"sha\":\"6dcb09b5b57875f334f61aebed695e2e4193db5e\",\"repo_id\":7},\"merge_base\":\"9049f1265b7d61be4a8904a9a27120d2064dab3b\",\"due_date\":null,\"created_at\":\"2026-11-24T10:00:00+01:00\",\"updated_at\":\"2026-11-24T10:00:00Z\",\"closed_at\":null,\"pin_order\":0,\"draft\":false}}",
+      "expected": {
+        "ok": false,
+        "reason": "bad_payload"
+      }
+    },
+    "gitlab-mr-unknown-state": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"archived\",\"state_id\":1,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"updated_at\":\"2026-11-24T10:00:00.000Z\",\"merged_at\":null,\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":null,\"draft\":false,\"work_in_progress\":false,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"open\",\"actioned_at\":\"2026-11-24T10:00:00.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\"}}",
+      "expected": {
+        "ok": false,
+        "reason": "bad_payload"
+      }
+    },
+    "gitlab-mr-without-update-time": {
+      "provider": "gitlab",
+      "headers": {
+        "X-Gitlab-Event": "Merge Request Hook",
+        "X-Gitlab-Token": "whsec-fixture-0123456789"
+      },
+      "body": "{\"object_kind\":\"merge_request\",\"object_attributes\":{\"id\":300000077,\"iid\":77,\"title\":\"Retry failed card payments\",\"description\":\"Closes: PAY-12\",\"state\":\"merged\",\"state_id\":3,\"created_at\":\"2026-11-24T10:00:00.000Z\",\"merged_at\":null,\"source_branch\":\"task/pay-12\",\"target_branch\":\"main\",\"source_project_id\":61000001,\"target_project_id\":61000001,\"author_id\":5077,\"merge_user_id\":null,\"draft\":false,\"work_in_progress\":false,\"url\":\"https://gitlab.com/northwind/platform/payments/-/merge_requests/77\",\"action\":\"merge\",\"actioned_at\":\"2026-11-24T10:00:00.000Z\",\"detailed_merge_status\":\"mergeable\",\"merge_status\":\"can_be_merged\"}}",
+      "expected": {
+        "ok": false,
+        "reason": "bad_payload"
+      }
+    }
+  }
+}

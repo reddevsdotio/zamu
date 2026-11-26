@@ -65,26 +65,132 @@ export interface OpenRequestList {
   listUrl: string;
 }
 
+/**
+ * M7: where a pull or merge request stands. `draft` is open but marked as not ready (a draft flag,
+ * or a `WIP:`/`Draft:` title prefix on Gitea and Forgejo releases without the flag).
+ */
+export type RequestState = 'open' | 'draft' | 'merged' | 'closed';
+
+export const REQUEST_STATES: readonly RequestState[] = ['open', 'draft', 'merged', 'closed'];
+
+/**
+ * M7: one pull request (GitHub, Gitea/Forgejo) or merge request (GitLab), from the REST API or a
+ * webhook payload. Times are ISO 8601 in UTC (`2026-11-20T09:30:00.000Z`).
+ */
+export interface RequestInfo {
+  /** The number people use: #12 on GitHub and Forgejo, !12 on GitLab (its iid). */
+  number: number;
+  title: string;
+  /** Description as written, '' when there is none. */
+  body: string;
+  state: RequestState;
+  /** The branch it would merge. */
+  headBranch: string;
+  /** The branch it merges into. */
+  baseBranch: string;
+  /**
+   * Login of who opened it. Null when the host does not say: a deleted account, or a GitLab
+   * webhook for anything but the opening (its payloads name people by id only).
+   */
+  author: string | null;
+  /**
+   * Login of who merged it. Null until merged, and when the host does not say: the pull request
+   * lists of GitHub and Forgejo leave it out (getRequest and their webhooks carry it), as do GitLab
+   * webhooks for anything but the merge.
+   */
+  mergedBy: string | null;
+  /** Its page in a browser. */
+  webUrl: string;
+  openedAt: string;
+  /** When it was merged; null unless the state is `merged`. */
+  mergedAt: string | null;
+  /**
+   * When it was closed or merged; null while open or a draft, and for a closed GitLab merge request
+   * when a webhook other than the closing one does not say.
+   */
+  closedAt: string | null;
+  /** The host's last change to it; later events about the same request carry a later time. */
+  updatedAt: string;
+}
+
+/** M7: a request's web address, taken apart by parseRequestUrl. */
+export interface RequestUrl {
+  /** Inferred from the address form: `/pull/` GitHub, `/-/merge_requests/` GitLab, `/pulls/` Gitea. */
+  provider: ProviderKind;
+  /** Normalised like a connection's host: lowercase, `host` or `host:port`. */
+  host: string;
+  /** Repository path, case kept: `owner/name`, or the full namespace on GitLab. */
+  path: string;
+  number: number;
+}
+
+/**
+ * M7: what happened to a request, as a webhook reports it. GitHub's `ready_for_review` and GitLab's
+ * draft changes become `ready` and `converted_to_draft`; Gitea and Forgejo report them as a title
+ * edit that adds or drops the prefix. `synchronized` is new commits on the head branch; `merged` is
+ * a close that merged.
+ */
+export type RequestAction =
+  | 'opened'
+  | 'reopened'
+  | 'ready'
+  | 'converted_to_draft'
+  | 'edited'
+  | 'synchronized'
+  | 'closed'
+  | 'merged';
+
+export const REQUEST_ACTIONS: readonly RequestAction[] = [
+  'opened',
+  'reopened',
+  'ready',
+  'converted_to_draft',
+  'edited',
+  'synchronized',
+  'closed',
+  'merged',
+];
+
 /** Header bag as received by a server route. Names are matched case-insensitively. */
 export type WebhookHeaders = Headers | Record<string, string | string[] | undefined>;
 
 export type WebhookRefusal = 'missing_signature' | 'bad_signature' | 'bad_payload';
 
+/** A verified delivery that is a push, GitHub's ping, or an event Zamu does not read. */
+export interface WebhookPushOrOther {
+  ok: true;
+  /**
+   * `push` for branch and tag pushes, `ping` for GitHub's hook test, `other` for any other event,
+   * request events with an action outside RequestAction (labels, assignees, reviews) included.
+   */
+  event: 'push' | 'ping' | 'other';
+  /** Provider event name as sent (`push`, `Push Hook`, `ping`…). */
+  eventName: string;
+  /** Branch name for pushes to `refs/heads/…`; absent for tags and other events. */
+  branch?: string;
+  /** Commit the branch points at after the push; absent when the push deleted the branch. */
+  headCommit?: string;
+  /** True when the push deleted the ref. */
+  deleted?: boolean;
+}
+
+/**
+ * M7: a verified pull or merge request event (GitHub and Gitea/Forgejo `pull_request`, GitLab
+ * `Merge Request Hook`) with the request as the payload describes it.
+ */
+export interface WebhookRequestEvent {
+  ok: true;
+  event: 'pull_request';
+  /** Provider event name as sent (`pull_request`, `Merge Request Hook`). */
+  eventName: string;
+  action: RequestAction;
+  request: RequestInfo;
+}
+
 export type WebhookVerification =
   | { ok: false; reason: WebhookRefusal }
-  | {
-      ok: true;
-      /** `push` for branch and tag pushes, `ping` for GitHub's hook test, `other` for any other event. */
-      event: 'push' | 'ping' | 'other';
-      /** Provider event name as sent (`push`, `Push Hook`, `ping`…). */
-      eventName: string;
-      /** Branch name for pushes to `refs/heads/…`; absent for tags and other events. */
-      branch?: string;
-      /** Commit the branch points at after the push; absent when the push deleted the branch. */
-      headCommit?: string;
-      /** True when the push deleted the ref. */
-      deleted?: boolean;
-    };
+  | WebhookPushOrOther
+  | WebhookRequestEvent;
 
 /**
  * One repository host behind one token. `path` is `owner/name` (GitLab: the full namespace path,
@@ -128,6 +234,19 @@ export interface GitProvider {
    * read:repository. Optional so test doubles can leave it out; the three adapters implement it.
    */
   listOpenRequests?(path: string, folder: string): Promise<OpenRequestList>;
+  /**
+   * M7: one pull or merge request by its number, or null when the host answers 404 (no such
+   * request, an issue number, or a repository the token cannot see). One GET. Read-only, with the
+   * same token scopes as listOpenRequests. Optional so test doubles can leave it out; the three
+   * adapters implement it.
+   */
+  getRequest?(path: string, number: number): Promise<RequestInfo | null>;
+  /**
+   * M7: requests in any state, most recently updated first, updated at or after `since` (every
+   * request when null), at most `limit` (capped at MAX_UPDATED_REQUESTS). One GET of one page: a
+   * Gitea or Forgejo server returns at most its MAX_RESPONSE_ITEMS (50 by default) per page.
+   */
+  listRequestsUpdatedSince?(path: string, since: Date | null, limit: number): Promise<RequestInfo[]>;
   /** Link to a file on the branch in the provider's web UI, for "Open file". */
   fileUrl(path: string, branch: string, filePath: string): string;
   /** Checks a webhook delivery against the source's secret. Same as the standalone verifyWebhook. */

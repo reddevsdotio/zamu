@@ -20,6 +20,20 @@ Where they come from:
   listing, the last page included.
 - `gitea/errors.json` keeps another one: Forgejo's 401 body repeats the token it received. The
   fixture uses `fixture-token-123` there, and the tests check it never reaches an error message.
+- `*/requests.json` (M7) are hand-written from each provider's pull or merge request docs on
+  made-up repositories (`northwind/payments`, `northwind/platform/payments` on GitLab): single
+  requests in every state, lists ordered by update, a draft marked only by a `[WIP]` title on a
+  Gitea release without the `draft` field, GitLab's older `merged_by` and `work_in_progress`, and
+  a Forgejo 401 that repeats the token.
+- `webhooks/requests.json` (M7) holds request deliveries (GitHub and Forgejo `pull_request`, GitLab
+  `Merge Request Hook`) for every action Zamu maps and a few it ignores, shaped after each
+  provider's webhook docs and Forgejo's `modules/structs/hook.go`, signed with the secret in the
+  file, plus signed deliveries without the documented fields.
+- `webhooks/forgejo-recorded.json` (M7) holds six real `pull_request` deliveries from the Forgejo
+  17 container in `docker/forgejo`, copied from its `hook_task` table with their exact bodies and
+  headers: opened with a `WIP:` title, the prefix edited away, a push, closed, reopened, merged.
+  The Forgejo integration test checks the same deliveries live when the container can reach the
+  test process.
 - `webhooks/deliveries.json` holds push, ping and tag deliveries shaped after each provider's webhook
   docs, signed with the secret in the file, plus the test vector from GitHub's "Validating webhook
   deliveries" page.

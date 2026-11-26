@@ -1,7 +1,7 @@
 // GitLab (gitlab.com and self-managed), REST API v4.
 // Docs: https://docs.gitlab.com/api/repositories/ (tree with keyset pagination, raw blobs),
 // /api/branches/, /api/projects/, /api/rest/ (URL-encoded namespaced paths, Link headers),
-// /api/merge_requests/ (list merge requests, list merge request diffs).
+// /api/merge_requests/ (list merge requests, get a single merge request, list merge request diffs).
 //
 // Blob contents come in batches of BATCH_SIZE through GraphQL (repository.blobs): one REST call per
 // file would exceed gitlab.com's 100 requests a minute on the free plan for a few hundred tasks.
@@ -22,6 +22,7 @@ import {
 } from './http';
 import { changedPaths, loginOf, requestsUnderFolder } from './open-requests';
 import { isRegularFileMode, normalizeFolder, repoSegments, splitFilePath } from './paths';
+import { gitlabRequest, pageSize, updatedSince } from './requests';
 import {
   type BlobRef,
   type FileContent,
@@ -30,6 +31,7 @@ import {
   type OpenRequest,
   type OpenRequestList,
   type RepositoryInfo,
+  type RequestInfo,
   type TreeEntry,
   type Whoami,
 } from './types';
@@ -280,6 +282,32 @@ export class GitLabProvider implements GitProvider {
         };
       },
     );
+  }
+
+  async getRequest(path: string, number: number): Promise<RequestInfo | null> {
+    const project = this.project(path);
+    if (!Number.isSafeInteger(number) || number < 1) return null;
+    try {
+      const { data } = await this.http.getJson(this.http.url(`${project}/merge_requests/${number}`));
+      return gitlabRequest(data);
+    } catch (error) {
+      if (error instanceof GitNotFound && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async listRequestsUpdatedSince(path: string, since: Date | null, limit: number): Promise<RequestInfo[]> {
+    // updated_after is inclusive ("on or after"); the filter below keeps the same rule.
+    const { data } = await this.http.getJson(
+      this.http.url(`${this.project(path)}/merge_requests`, {
+        state: 'all',
+        order_by: 'updated_at',
+        sort: 'desc',
+        updated_after: since ? since.toISOString() : undefined,
+        per_page: pageSize(limit),
+      }),
+    );
+    return updatedSince(asArray(data, 'merge request list').map(gitlabRequest), since, limit);
   }
 
   fileUrl(path: string, branch: string, filePath: string): string {

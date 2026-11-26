@@ -1,9 +1,9 @@
 // GitHub and GitHub Enterprise Server, REST API version 2022-11-28 (supported on github.com until
 // March 2028 and the version GHES releases understand).
 // Docs: https://docs.github.com/en/rest/git/trees, /git/blobs, /branches/branches, /repos/repos,
-// /users/users, /pulls/pulls (list pull requests, list pull request files).
+// /users/users, /pulls/pulls (list pull requests, get a pull request, list pull request files).
 
-import { GitUnexpected } from './errors';
+import { GitNotFound, GitUnexpected } from './errors';
 import { type FetchTree, listTreeByWalk, rawEntry, readFileByWalk } from './git-trees';
 import {
   asArray,
@@ -16,6 +16,7 @@ import {
 } from './http';
 import { changedPaths, loginOf, requestsUnderFolder } from './open-requests';
 import { repoSegments } from './paths';
+import { githubRequest, pageSize, updatedSince } from './requests';
 import {
   type FileContent,
   type GitProvider,
@@ -23,6 +24,7 @@ import {
   type OpenRequest,
   type OpenRequestList,
   type RepositoryInfo,
+  type RequestInfo,
   type TreeEntry,
   type Whoami,
 } from './types';
@@ -144,6 +146,31 @@ export class GitHubProvider implements GitProvider {
         };
       },
     );
+  }
+
+  async getRequest(path: string, number: number): Promise<RequestInfo | null> {
+    const repo = this.repo(path);
+    if (!Number.isSafeInteger(number) || number < 1) return null;
+    try {
+      const { data } = await this.http.getJson(this.http.url(`${repo}/pulls/${number}`));
+      return githubRequest(data);
+    } catch (error) {
+      if (error instanceof GitNotFound && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async listRequestsUpdatedSince(path: string, since: Date | null, limit: number): Promise<RequestInfo[]> {
+    // GitHub has no "updated since" filter on pulls: newest updates first, then cut at `since`.
+    const { data } = await this.http.getJson(
+      this.http.url(`${this.repo(path)}/pulls`, {
+        state: 'all',
+        sort: 'updated',
+        direction: 'desc',
+        per_page: pageSize(limit),
+      }),
+    );
+    return updatedSince(asArray(data, 'pull request list').map(githubRequest), since, limit);
   }
 
   fileUrl(path: string, branch: string, filePath: string): string {
