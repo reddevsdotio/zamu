@@ -92,7 +92,7 @@ brew install reddevsdotio/tap/zamu
 - [Using the app](docs/guide.md): workspaces, the sidebar, Home, the list and the board, the task view and
   its work record, pull requests, the archive, check-again days, the palette, labels, due dates, blockers
   and subtasks, and Task defaults.
-- [Keyboard shortcuts](docs/keyboard.md): every key, and what changed in 0.7.0, 0.9.0, 0.10.0 and since.
+- [Keyboard shortcuts](docs/keyboard.md): every key, and what changed in 0.7.0, 0.9.0, 0.10.0 and 0.11.0.
 - [Self-hosting](docs/self-hosting.md): configuration, first run, ports, backups and upgrades.
 - [Agents](docs/agents.md): adding agents, scoping keys, installing and running `zamu`, logins for several
   workspaces, the work record, the offline queue, `--json` output.

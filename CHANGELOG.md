@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
 
 Pull requests on tasks, the archive and check-again days. A project links its repository, requests link to
 tasks and move them to In review and Done; closed tasks leave the lists after a set number of days; a task
