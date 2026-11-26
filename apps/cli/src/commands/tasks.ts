@@ -1,7 +1,8 @@
-// zamu tasks list | show | create | update.
+// zamu tasks list | show | create | update | archive | restore.
 import { ORPCError } from '@orpc/client';
 import {
   ActivityList,
+  ArchiveTasksInput,
   ASSIGNEE_ME,
   CreateCommentInput,
   CreateTaskInput,
@@ -11,8 +12,10 @@ import {
   ListTasksInput,
   MilestoneId,
   type RelatedTask,
+  RestoreTasksInput,
   TASK_STATUSES,
   type Task,
+  type TaskBulkResult,
   Timeline,
   type TimelineCounts,
   type TimelineItem,
@@ -24,15 +27,21 @@ import { type CommandContext, emit } from '../context';
 import { usageError } from '../errors';
 import {
   assigneeLabel,
+  checkAgainLabel,
   cycleLabel,
   cycleStateLabel,
   fields,
+  formatDate,
   formatTime,
   indentBody,
   itemLines,
   itemProgress,
+  mergedOpenText,
   milestoneStatusLabel,
   priorityLabel,
+  pullRequestHowLabel,
+  pullRequestStateLabel,
+  requestRef,
   statusLabel,
   table,
   timelineText,
@@ -43,6 +52,7 @@ import { queueBehind } from '../queue';
 import { resolveLabelIds } from './labels';
 import { noteSummary, postNote } from './notes';
 import {
+  collectKeys,
   isNone,
   normalizeChoice,
   normalizeCycle,
@@ -124,8 +134,10 @@ function taskSummary(context: CommandContext, verb: string, task: Task): string 
   return `${head}\n${fields(
     [
       ['Status', statusField(context, task)],
+      ...archiveEntries(context, task),
       ['Priority', style.priority(task.priority, priorityLabel(task.priority))],
       ['Assignee', assigneeLabel(task.assignee)],
+      ...checkAgainEntries(context, task),
       ...planningFields(task),
       ...fieldEntries(task),
       ...(task.blockedBy?.length ? [['Blocked by', relatedKeys(task.blockedBy)] as [string, string]] : []),
@@ -136,6 +148,58 @@ function taskSummary(context: CommandContext, verb: string, task: Task): string 
     ],
     style,
   )}`;
+}
+
+/**
+ * M7: "Archived  2026-11-24 08:00 by Ana Ruiz · read-only until restored" and the merged-with-open-items
+ * flag, only for what the task has.
+ */
+function archiveEntries(
+  context: CommandContext,
+  task: Pick<Task, 'key' | 'archivedAt' | 'archivedBy' | 'mergedOpen' | 'locked'>,
+): [string, string][] {
+  const { style } = context;
+  const entries: [string, string][] = [];
+  if (task.mergedOpen) {
+    entries.push([
+      'Flag',
+      style.warn(`${mergedOpenText(task.mergedOpen)} (${formatTime(task.mergedOpen.at)})`),
+    ]);
+  }
+  if (task.archivedAt) {
+    const by = task.archivedBy ? ` by ${task.archivedBy.name}` : '';
+    // A mirrored task comes back when its file leaves archive/tasks/; others with zamu tasks restore.
+    const how = task.locked?.length
+      ? "read-only; it comes back when its file leaves Backlog.md's archive/tasks/"
+      : `read-only until restored: zamu tasks restore ${task.key}`;
+    entries.push(['Archived', `${formatTime(task.archivedAt)}${by} · ${style.dim(how)}`]);
+  }
+  return entries;
+}
+
+/** M7: "Check again  2026-12-01 · Wait for the bank's answer", the day marked once it has come. */
+function checkAgainEntries(context: CommandContext, task: Pick<Task, 'checkAgain'>): [string, string][] {
+  if (!task.checkAgain) return [];
+  const label = checkAgainLabel(task.checkAgain);
+  return [['Check again', task.checkAgain.on <= localToday() ? context.style.warn(label) : label]];
+}
+
+/**
+ * M7: the work branch and the linked requests, newest first: "#482  Retry failed webhook deliveries
+ * (Open, started on feat/webhook-retries)" with the address under it.
+ */
+function requestEntries(task: Pick<Task, 'workBranch' | 'pullRequests'>): [string, string][] {
+  const entries: [string, string][] = [];
+  if (task.workBranch) entries.push(['Branch', task.workBranch]);
+  for (const [i, request] of (task.pullRequests ?? []).entries()) {
+    const how = pullRequestHowLabel(request);
+    entries.push([
+      i === 0 ? 'Requests' : '',
+      `${requestRef(request.provider, request.number)}  ${request.title} (${pullRequestStateLabel(request.state)}, ${how})`,
+    ]);
+    entries.push(['', request.url]);
+  }
+  return entries;
 }
 
 /** "Criteria  4 of 6 settled (1 waived)" and the same for done items, for lists that have items. */
@@ -227,6 +291,11 @@ export interface ListOptions {
   blocked?: boolean;
   topLevel?: boolean;
   parent?: string;
+  /** M7: --waiting and --ready-to-check (check-again days). */
+  waiting?: boolean;
+  readyToCheck?: boolean;
+  /** M7: include or only; archived tasks are left out without it. */
+  archived?: string;
   sort?: string;
   limit?: string;
   cursor?: string;
@@ -235,6 +304,9 @@ export interface ListOptions {
 export async function listTasks(context: CommandContext, options: ListOptions): Promise<void> {
   if (options.mine && options.assignee !== undefined) {
     throw usageError('Use either --mine or --assignee, not both.');
+  }
+  if (options.waiting && options.readyToCheck) {
+    throw usageError('Use either --waiting or --ready-to-check, not both.');
   }
   const milestoneNone = options.milestone !== undefined && isNone(options.milestone);
   // Only a milestone name needs a project; then this clone's project fills in for --project.
@@ -257,6 +329,9 @@ export async function listTasks(context: CommandContext, options: ListOptions): 
     ...(options.blocked !== undefined ? { blocked: options.blocked } : {}),
     ...(options.topLevel ? { topLevel: true } : {}),
     ...(options.parent !== undefined ? { parent: options.parent } : {}),
+    ...(options.waiting ? { checkAgain: 'waiting' } : {}),
+    ...(options.readyToCheck ? { checkAgain: 'ready' } : {}),
+    ...(options.archived !== undefined ? { archived: normalizeChoice(options.archived) } : {}),
     ...(options.sort !== undefined ? { sort: normalizeChoice(options.sort) } : {}),
     ...(options.limit !== undefined ? { limit: options.limit } : {}),
     ...(options.cursor !== undefined ? { cursor: options.cursor } : {}),
@@ -345,6 +420,19 @@ export async function listTasks(context: CommandContext, options: ListOptions): 
           (t) => (t.blocked ? 'blocked' : ''),
           (_t, cell) => style.warn(cell),
         ),
+        // M7: the check-again day (marked once it has come), the newest request and the archive date.
+        ...optional(
+          'CHECK AGAIN',
+          (t) => t.checkAgain?.on ?? '',
+          (t, cell) => (t.checkAgain && t.checkAgain.on <= today ? style.warn(cell) : cell),
+        ),
+        ...optional('REQUEST', (t) => {
+          if (!t.pullRequest) return '';
+          const more = (t.pullRequestCount ?? 1) - 1;
+          const ref = requestRef(t.pullRequest.provider, t.pullRequest.number);
+          return `${ref} ${pullRequestStateLabel(t.pullRequest.state)}${more > 0 ? ` +${more}` : ''}`;
+        }),
+        ...optional('ARCHIVED', (t) => (t.archivedAt ? formatDate(t.archivedAt) : '')),
         { header: 'TITLE', value: (t) => t.title },
       ],
       style,
@@ -431,13 +519,16 @@ export async function showTask(
       fields(
         [
           ['Status', statusField(context, t)],
+          ...archiveEntries(context, t),
           ['Priority', style.priority(t.priority, priorityLabel(t.priority))],
           ['Assignee', assigneeLabel(t.assignee)],
+          ...checkAgainEntries(context, t),
           ...planningFields(t),
           ...fieldEntries(t),
           ...subtaskEntries(t),
           ...relatedEntries('Blocked by', t.blockedBy ?? []),
           ...relatedEntries('Blocks', t.blocks ?? []),
+          ...requestEntries(t),
           ...workProgressEntries(t),
           ['Project', `${t.project.key}  ${t.project.name}`],
           ...backlogFields(t),
@@ -543,10 +634,14 @@ export interface UpdateOptions extends UpdateWorkOptions {
   parent?: string;
   blockedBy?: string[];
   unblock?: string[];
-  /** --waive-ac, --waive-dod and --reason in typed order (all three hold the same list). */
+  /**
+   * --waive-ac, --waive-dod, --reason, --check-again and --no-check-again in typed order (all of
+   * them hold the same list).
+   */
   waiveAc?: WaiveToken[];
   waiveDod?: WaiveToken[];
   reason?: WaiveToken[];
+  checkAgain?: WaiveToken[];
   /** --append-notes: a work note written after the update; repeated ones join into one note. */
   appendNotes?: string[];
 }
@@ -561,7 +656,9 @@ export async function updateTask(
   }
   checkStdinFlags(options);
   const read = stdinReader(context);
-  const waives = resolveWaives(options.waiveAc ?? options.waiveDod ?? options.reason ?? []);
+  const waives = resolveWaives(
+    options.waiveAc ?? options.waiveDod ?? options.reason ?? options.checkAgain ?? [],
+  );
   const milestoneNone = options.milestone !== undefined && isNone(options.milestone);
   const ref = await taskRef(context, key, options.project);
   const work = await updateWorkFields(options, waives, read);
@@ -583,6 +680,7 @@ export async function updateTask(
     ...(options.parent !== undefined ? { parent: valueOrNull(options.parent) } : {}),
     ...(options.blockedBy?.length ? { addBlockers: options.blockedBy } : {}),
     ...(options.unblock?.length ? { removeBlockers: options.unblock } : {}),
+    ...(waives.checkAgain !== undefined ? { checkAgain: waives.checkAgain } : {}),
     ...work,
   };
   if (typeof draft.status === 'string') context.target = { ...context.target, status: draft.status };
@@ -648,4 +746,58 @@ export async function updateTask(
       note ? `\nAdded note ${context.style.bold(note.id)}\n` : '',
     ].join(''),
   );
+}
+
+// ---------------------------------------------------------------------------
+// zamu tasks archive | restore (M7)
+// ---------------------------------------------------------------------------
+
+/** Task keys from the arguments, each one also comma-separated: `PAY-12 PAY-13` or `PAY-12,PAY-13`. */
+function bulkKeys(values: readonly string[]): string[] {
+  return values.reduce<string[]>((keys, value) => collectKeys(value, keys), []);
+}
+
+/** "Archived 2 tasks" then one line per task. */
+function bulkSummary(context: CommandContext, head: string, data: TaskBulkResult, tail = ''): string {
+  const { style } = context;
+  const count = data.items.length === 1 ? '1 task' : `${data.items.length} tasks`;
+  const lines = data.items.map(
+    (task) =>
+      `  ${style.bold(task.key)}  ${task.title} (${style.status(task.status, statusLabel(task.status))})`,
+  );
+  return `${head} ${count}.${tail}\n${lines.join('\n')}\n`;
+}
+
+/** The key the error messages name when the command works on one task. */
+function singleTarget(context: CommandContext, keys: readonly string[]): void {
+  const [only] = keys;
+  if (keys.length === 1 && only) context.target = { ...context.target, task: { key: only } };
+}
+
+/**
+ * zamu tasks archive KEY...: archives tasks in any status, all or nothing. Archived tasks leave lists,
+ * boards and Home and refuse every write until restored.
+ */
+export async function archiveTasks(context: CommandContext, values: string[]): Promise<void> {
+  const input = parseInput(ArchiveTasksInput, { keys: bulkKeys(values) });
+  singleTarget(context, input.keys);
+  const client = await context.client();
+  const result = await client.tasks.archive(input);
+  emit(context, 'tasks.archive', result, (data) =>
+    bulkSummary(
+      context,
+      'Archived',
+      data,
+      ` Archived tasks are read-only and left out of lists; zamu tasks restore ${data.items.map((t) => t.key).join(' ')} brings them back.`,
+    ),
+  );
+}
+
+/** zamu tasks restore KEY...: takes tasks out of the archive, all or nothing. */
+export async function restoreTasks(context: CommandContext, values: string[]): Promise<void> {
+  const input = parseInput(RestoreTasksInput, { keys: bulkKeys(values) });
+  singleTarget(context, input.keys);
+  const client = await context.client();
+  const result = await client.tasks.restore(input);
+  emit(context, 'tasks.restore', result, (data) => bulkSummary(context, 'Restored', data));
 }

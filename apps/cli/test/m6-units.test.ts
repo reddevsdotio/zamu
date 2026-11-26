@@ -97,7 +97,9 @@ describe('--waive-ac, --waive-dod and --reason', () => {
 
   it('refuses a waive without any reason and a reason without a waive', () => {
     expect(() => resolveWaives([waive(2, 'done')])).toThrow('--waive-dod 2 needs a reason');
-    expect(() => resolveWaives([reason('a')])).toThrow('--reason goes with --waive-ac N or --waive-dod N.');
+    expect(() => resolveWaives([reason('a')])).toThrow(
+      '--reason goes with --check-again DAY, --waive-ac N or --waive-dod N.',
+    );
   });
 
   it('reads item numbers, one or comma-separated, from 1', () => {

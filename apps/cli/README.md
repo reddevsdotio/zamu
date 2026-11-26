@@ -167,6 +167,7 @@ zamu dashboard --everyone                         # the whole workspace
 zamu dashboard --json                             # { schema: 'zamu.v1.dashboard', data: Dashboard }
 
 zamu projects list                                # with each project's linked repository
+zamu projects show PAY                            # repository, close on merge, webhook, hourly check, archive days
 zamu projects delete PAY --confirm PAY            # owners and admins; cannot be undone
 
 zamu tasks list                                   # every project you can read
@@ -206,6 +207,16 @@ zamu tasks update PAY-142 --append-notes "Migration written and tested"
 zamu tasks update PAY-142 --check-ac 6 --final-summary - --status in_review < summary.md
 zamu notes add PAY-142 "Backoff schedule covered by tests"
 
+zamu pr link PAY-142 https://github.com/northwind/payments/pull/482
+zamu pr link PAY-142 https://gitlab.example.com/northwind/payments/-/merge_requests/12 --dry-run
+zamu pr unlink PAY-142 482
+zamu tasks archive PAY-140 PAY-141                # or PAY-140,PAY-141
+zamu tasks restore PAY-140
+zamu tasks update PAY-142 --check-again 2026-12-03 --reason "Waiting for the bank's answer"
+zamu tasks update PAY-142 --no-check-again
+zamu tasks list --mine --ready-to-check           # or --waiting
+zamu tasks list --project PAY --archived only     # or include; archived tasks are left out without it
+
 zamu labels list --project PAY                           # with the number of tasks using each
 zamu labels create --project PAY "Needs design" --color 4
 zamu labels update "needs design" --project PAY --name design --color 7
@@ -234,7 +245,7 @@ zamu backlog status --problems                    # every file skipped or read w
 zamu backlog refresh                              # queue a read of the default branch now
 zamu backlog refresh --wait                       # wait for it (up to 5 minutes) and report how it went
 zamu backlog export --project PAY --dry-run       # what the export would write and remove
-zamu backlog export                               # write backlog/tasks and backlog/milestones at the repository root
+zamu backlog export                               # write backlog/tasks, backlog/archive/tasks and backlog/milestones
 
 zamu instructions finishing                       # the guide for finishing a task
 
@@ -400,13 +411,45 @@ summary. The flags use the names of the Backlog.md CLI.
 - On a task mirrored from Backlog.md the work record is read-only (`[x]` lines marked "from Backlog.md,
   read-only"). Writing it, or a note, exits 6 with the `backlog task edit` command, as for other fields.
 
+### Pull requests, archive and check-again days
+
+- A pull or merge request links to a task in three ways: the task was started (`--status in_progress`
+  or `in_review`) from the request's head branch, which zamu sends as `x-zamu-branch`; the request's
+  description has a line such as `Closes: PAY-142, PAY-150`; or `zamu pr link`. Opening a request moves
+  its tasks to In review. A merge into the default branch moves them to Done when the project closes on
+  merge (`zamu projects show` says whether it does). Zamu reads the host and never writes to it.
+- `zamu pr link TASK URL` takes the request's web address in the project's repository.
+  `--dry-run` shows the request as it would link and writes nothing (`zamu.v1.pr.link`, `dryRun: true`).
+  A request of another repository fails with `REQUEST_OTHER_REPOSITORY` and an address that is not a
+  request with `NOT_A_REQUEST` (both exit 1); a request the host doesn't know fails with
+  `REQUEST_NOT_FOUND` (exit 3).
+- `zamu pr unlink TASK NUMBER` removes a link (`482`, `#482` or `!12`). Neither the branch nor a
+  `Closes:` line brings it back; `zamu pr link` does. GitHub and Forgejo requests read `#482`, GitLab
+  merge requests `!12`.
+- `zamu tasks archive KEY...` and `zamu tasks restore KEY...` take up to 100 keys, all or nothing
+  (`zamu.v1.tasks.archive`, `zamu.v1.tasks.restore`). An archived task is left out of lists and refuses
+  every write, comments and notes included: `zamu: PAY-12 is archived. Restore it first: zamu tasks
+  restore PAY-12` (`TASK_ARCHIVED`, exit 1). Tasks of a mirrored project follow Backlog.md's
+  `archive/tasks/` folder instead (exit 6).
+- `--check-again YYYY-MM-DD --reason "..."` on `zamu tasks update` sets a day to look at the task again;
+  the reason is required, and a day without one exits 1 before anything is sent. `--no-check-again`
+  clears it, and so does moving the task to Done or Canceled. `--reason` pairs with the `--check-again`,
+  `--waive-ac` and `--waive-dod` before it, as for waives.
+- `zamu tasks list --waiting` lists tasks whose day is still ahead, `--ready-to-check` those whose day
+  has come. `--archived include` adds archived tasks and `--archived only` lists just them.
+- `zamu tasks show` lists the work branch, the requests (number, title, state, how each was linked and
+  its address), the check-again day, the archive date and "Merged with 2 open criteria" when a merge
+  closed the task with items open. History names the host for request events ("GitHub moved this to In
+  review · #482 opened by claude-dev") and Zamu for the nightly archive job.
+
 ### Offline queue
 
 Every request has 5 seconds to connect and answer. When the server doesn't answer (it is down,
 restarting or unreachable), some writes on a task that already exists wait in a queue instead of failing:
 - `--check-ac`, `--uncheck-ac`, `--waive-ac`, `--unwaive-ac` and the same four with `-dod`;
-- `--status`;
-- `zamu notes add`, `--append-notes` and `zamu comments add`.
+- `--status`, `--check-again` and `--no-check-again`;
+- `zamu notes add`, `--append-notes` and `zamu comments add`;
+- `zamu tasks archive`, `zamu tasks restore`, `zamu pr link` (not with `--dry-run`) and `zamu pr unlink`.
 
 zamu prints `Queued: the server didn't answer. It will be sent on your next zamu command.` and exits with
 code 7 (`zamu.v1.queued` with `--json`). Everything else fails with exit code 5 and queues nothing:
@@ -534,11 +577,16 @@ Every command takes `--json` and prints one versioned result:
 | `zamu workspaces`        | `zamu.v1.workspaces`        |
 | `zamu dashboard`         | `zamu.v1.dashboard`         |
 | `zamu projects list`     | `zamu.v1.projects.list`     |
+| `zamu projects show`     | `zamu.v1.projects.show`     |
 | `zamu projects delete`   | `zamu.v1.projects.delete`   |
 | `zamu tasks list`        | `zamu.v1.tasks.list`        |
 | `zamu tasks show`        | `zamu.v1.tasks.show`        |
 | `zamu tasks create`      | `zamu.v1.tasks.create`      |
 | `zamu tasks update`      | `zamu.v1.tasks.update`      |
+| `zamu tasks archive`     | `zamu.v1.tasks.archive`     |
+| `zamu tasks restore`     | `zamu.v1.tasks.restore`     |
+| `zamu pr link`           | `zamu.v1.pr.link`           |
+| `zamu pr unlink`         | `zamu.v1.pr.unlink`         |
 | `zamu comments list`     | `zamu.v1.comments.list`     |
 | `zamu comments add`      | `zamu.v1.comments.add`      |
 | `zamu comments edit`     | `zamu.v1.comments.edit`     |
@@ -572,7 +620,8 @@ indented at a terminal.
 
 With `--json`, failures print `zamu.v1.error` on stdout: an RFC 9457 problem with `code`, `status`,
 `detail`, and `requestId` and `issues` when the server sent them (`field`, `file`, `backlogId` and `hint`
-for the Backlog.md mirror errors, `loop` for `DEPENDENCY_LOOP`, `openItems` for `OPEN_ITEMS`). The exit
+for the Backlog.md mirror errors, `loop` for `DEPENDENCY_LOOP`, `openItems` for `OPEN_ITEMS`, `repository`
+for `REQUEST_OTHER_REPOSITORY`). The exit
 code is still non-zero.
 
 `zamu.v1.projects.delete` is `{ "deleted": "PAY" }`. `zamu.v1.labels.delete` is the label as it was and
@@ -585,7 +634,14 @@ the number of tasks it was on:
 `zamu.v1.tasks.show` keeps `activity` for v1 readers and adds `timeline`: activity, comments and notes in
 one list, oldest first, told apart by `kind` (`activity`, `comment` or `note`), and `timelineCounts` with
 the size of each filter (`all`, `comments`, `notes`, `history`). The task carries its work record:
-`criteria`, `doneItems`, `plan`, `planMeta`, `finalSummary` and `finalSummaryMeta`.
+`criteria`, `doneItems`, `plan`, `planMeta`, `finalSummary` and `finalSummaryMeta`. From M7 it also carries
+`workBranch`, `pullRequests`, `checkAgain`, `closedAt`, `archivedAt`, `archivedBy` and `mergedOpen`, and
+activity entries `cause` and `system` (who acted when no person did: the git host, Zamu or Backlog.md).
+
+`zamu.v1.projects.show` is `{ "project": ..., "repository": ... }`: the project with `archiveAfterDays`
+(null is off) and its repository settings, null when the key may not read them. `zamu.v1.pr.link` is
+`{ "task": "PAY-142", "pullRequest": ..., "dryRun": false }` and `zamu.v1.pr.unlink` is
+`{ "task": "PAY-142", "number": 482 }`.
 
 `zamu.v1.login` adds `replaced` (a login for that server and workspace existed) and `default`.
 `zamu.v1.logout` adds `removed`: every login removed, without keys. `zamu.v1.whoami` adds
