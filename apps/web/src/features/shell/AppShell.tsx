@@ -10,12 +10,18 @@ import { DeletedProjectToast } from '~/features/project-settings/DeleteProjectDi
 import { NewProjectDialogHost } from '~/features/projects/NewProjectDialogHost';
 import { meQuery, projectsQuery } from '~/features/projects/queries';
 import { TaskFieldToast } from '~/features/task-fields';
-import { rememberView } from '~/features/tasks/list-memory';
+import { rememberProjectView } from '~/features/tasks/list-memory';
 import { QuickCreateDialog } from '~/features/tasks/QuickCreateDialog';
 import { ThemeErrorToast, useThemeChoice } from '~/features/theme/ThemeChoice';
 import { useSystemTheme } from '~/features/theme/theme';
 import { FinishingHost } from '~/features/work-record/FinishingHost';
+import { NewWorkspaceDialogHost } from '~/features/workspaces/NewWorkspaceHost';
+import { WorkspaceNoticeToast } from '~/features/workspaces/notice';
+import { generalSettingsHref } from '~/features/workspaces/paths';
+import { myWorkspacesQuery } from '~/features/workspaces/queries';
 import { useSignOut } from '~/lib/auth-client';
+import { useApi, useWorkspace, useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
+import { asWorkspaceSlug, workspacePath } from '~/lib/workspace-paths';
 import { AppFrame, Sidebar, type SidebarProject } from '~/ui';
 import { homeCountLabel, useHomeCount, useRefreshCountsAfterEdits } from './home-count';
 import { useGoToHotkeys, useShellHotkeys } from './hotkeys';
@@ -23,15 +29,17 @@ import { NewProjectMenu, PersonMenu, WorkspaceMenu } from './menus';
 import { NewProjectProvider, useNewProject } from './new-project';
 import { PageSearchProvider } from './page-search';
 import {
-  HOME_HREF,
-  MEMBERS_HREF,
-  MY_KEYS_HREF,
+  homeHref,
+  isHomePath,
+  isSettingsPath,
+  membersHref,
+  myKeysHref,
   type ProjectPage,
   projectHref,
   projectKeyFromPath,
   projectPageFromLocation,
   projectPageHref,
-  SETTINGS_HREF,
+  projectViewOfHref,
 } from './paths';
 import { QuickCreateProvider, useQuickCreate } from './quick-create';
 import { useRememberOpenedTask } from './remember-task';
@@ -60,17 +68,18 @@ export interface AppShellProps {
  * whose tasks come from Backlog.md, with the New button's tooltip text.
  */
 export function AppShell({ user, children }: AppShellProps) {
+  const api = useApi();
   const queryClient = useQueryClient();
-  const me = useQuery(meQuery());
+  const me = useQuery(meQuery(api));
   const userId = me.data?.user.id ?? user.id;
   const refuse = useCallback(
     (projectKey: string) => {
       const project = queryClient
-        .getQueryData(projectsQuery().queryKey)
+        .getQueryData(projectsQuery(api).queryKey)
         ?.items.find((item) => item.key === projectKey);
       return project && isMirrored(project) ? createRefusalText(project.name) : null;
     },
-    [queryClient],
+    [queryClient, api],
   );
   return (
     <QuickCreateProvider refuse={refuse}>
@@ -87,6 +96,7 @@ export function AppShell({ user, children }: AppShellProps) {
               <FinishingHost />
               <NewProjectDialogHost />
               <FromBacklogHost />
+              <NewWorkspaceDialogHost />
             </SidebarStateProvider>
           </ShortcutsProvider>
         </PageSearchProvider>
@@ -111,14 +121,15 @@ function byName(projects: readonly ProjectWithCounts[]): ProjectWithCounts[] {
 }
 
 function ShellFrame({ user, userId, children }: AppShellProps & { userId: string | undefined }) {
+  const api = useApi();
   const location = useRouterState({ select: (state) => state.location });
   const pathname = location.pathname;
   const router = useRouter();
   const navigate = useCallback((href: string) => void router.navigate({ href }), [router]);
   const currentKey = projectKeyFromPath(pathname);
   const currentPage = projectPageFromLocation(pathname, location.search as { view?: unknown });
-  const me = useQuery(meQuery());
-  const projectsData = useQuery(projectsQuery()).data?.items;
+  const me = useQuery(meQuery(api));
+  const projectsData = useQuery(projectsQuery(api)).data?.items;
   const projects = useMemo(() => byName(projectsData ?? []), [projectsData]);
   const signOut = useSignOut();
   const theme = useThemeChoice();
@@ -127,7 +138,9 @@ function ShellFrame({ user, userId, children }: AppShellProps & { userId: string
   const shortcuts = useShortcuts();
   const quickCreate = useQuickCreate();
   const newProject = useNewProject();
-  const onHome = pathname === HOME_HREF;
+  const workspace = useWorkspaceSlug();
+  const workspaceId = useWorkspaceId();
+  const onHome = isHomePath(pathname);
 
   // The last project visited: G then L, B, M, Y use it outside a project.
   const lastProject = useRef<string | undefined>(currentKey);
@@ -137,16 +150,16 @@ function ShellFrame({ user, userId, children }: AppShellProps & { userId: string
     (page: ProjectPage) => {
       const key = currentKey ?? lastProject.current;
       if (!key) return;
-      if (page === 'list' || page === 'board') rememberView(key, page);
-      navigate(projectPageHref(key, page));
+      if (page === 'list' || page === 'board') rememberProjectView(workspaceId, key, page);
+      navigate(projectPageHref(workspace, key, page));
     },
-    [currentKey, navigate],
+    [currentKey, navigate, workspace, workspaceId],
   );
 
   // Home spans every project: C there starts with the project picker instead of a guess.
   useShellHotkeys(currentKey, onHome ? { pickProject: true } : undefined);
   useGoToHotkeys({
-    h: () => navigate(HOME_HREF),
+    h: () => navigate(homeHref(workspace)),
     p: () => openPalette({ kind: 'projects' }),
     l: () => goToPage('list'),
     b: () => goToPage('board'),
@@ -155,10 +168,23 @@ function ShellFrame({ user, userId, children }: AppShellProps & { userId: string
   });
   const homeCount = useHomeCount();
   useRefreshCountsAfterEdits();
-  useRememberOpenedTask(userId, pathname);
+  // Recent tasks are kept per workspace: PAY-1 in one is not PAY-1 in another.
+  const current = useWorkspace();
+  // The switcher and the palette list every workspace of the person; until the list answers, the
+  // switcher shows this one alone.
+  const mine = useQuery(myWorkspacesQuery()).data;
+  const otherWorkspaces = useMemo(
+    () => (mine?.items ?? []).filter((item) => item.id !== workspaceId),
+    [mine, workspaceId],
+  );
+  const canCreateWorkspace = mine?.canCreate ?? false;
+  const generalHref = generalSettingsHref(workspace);
+  const recentScope = userId ? `${userId}:${workspaceId}` : undefined;
+  useRememberOpenedTask(recentScope, pathname);
 
   const resolvedTheme = theme.value === 'system' ? (system ?? 'light') : theme.value;
   useShellCommands({
+    workspace,
     projects,
     currentProjectKey: currentKey,
     theme: theme.value,
@@ -166,8 +192,8 @@ function ShellFrame({ user, userId, children }: AppShellProps & { userId: string
     sidebarCollapsed: sidebar.collapsed,
     navigate: (href) => {
       // The palette's List and Board pages pin the choice, like the sidebar links.
-      const match = /^\/p\/([^/?]+)(\?view=board)?$/.exec(href);
-      if (match?.[1]) rememberView(decodeURIComponent(match[1]), match[2] ? 'board' : 'list');
+      const view = projectViewOfHref(href);
+      if (view) rememberProjectView(workspaceId, view.projectKey, view.view);
       navigate(href);
     },
     createTask: (title) =>
@@ -177,28 +203,34 @@ function ShellFrame({ user, userId, children }: AppShellProps & { userId: string
       }),
     createProject: newProject.open,
     createFromBacklog: newProject.openFromBacklog,
+    otherWorkspaces,
+    canCreateWorkspace,
+    createWorkspace: newProject.openWorkspace,
     setTheme: theme.change,
     toggleSidebar: sidebar.toggle,
     openShortcuts: shortcuts.open,
   });
 
-  const workspaceName = me.data?.workspace.name ?? 'Workspace';
+  // me answers after a rename; the route context holds the name the page was entered with.
+  const workspaceName = me.data?.workspace.name ?? current.name;
   const sidebarProjects: SidebarProject[] = projects.map((project) => {
     const isCurrent = project.key === currentKey;
     return {
       key: project.key,
       name: project.name,
       openCount: project.openCount,
-      href: projectHref(project.key),
+      href: projectHref(workspace, project.key),
       isCurrent,
       isExpanded: isCurrent,
       mirrored: isMirrored(project),
       pages: projectPages(project).map((page) => ({
         id: page,
         label: pageLabel(page),
-        href: projectPageHref(project.key, page),
+        href: projectPageHref(workspace, project.key, page),
         isCurrent: isCurrent && currentPage === page,
-        ...(page === 'list' || page === 'board' ? { onPress: () => rememberView(project.key, page) } : {}),
+        ...(page === 'list' || page === 'board'
+          ? { onPress: () => rememberProjectView(workspaceId, project.key, page) }
+          : {}),
       })),
     };
   });
@@ -210,20 +242,29 @@ function ShellFrame({ user, userId, children }: AppShellProps & { userId: string
           collapsed={sidebar.collapsed}
           workspace={
             <WorkspaceMenu
-              name={workspaceName}
-              settingsHref={SETTINGS_HREF}
-              inviteHref={MEMBERS_HREF}
+              current={{ id: workspaceId, name: workspaceName, slug: workspace }}
+              workspaces={mine?.items}
+              canCreate={canCreateWorkspace}
+              workspaceHref={(slug) => workspacePath(asWorkspaceSlug(slug))}
+              settingsHref={generalHref}
+              inviteHref={membersHref(workspace)}
+              onNewWorkspace={newProject.openWorkspace}
               onNewProject={newProject.open}
               onNewFromBacklog={newProject.openFromBacklog}
             />
           }
           onSearch={() => openPalette()}
-          home={{ href: HOME_HREF, isCurrent: onHome, count: homeCount, countLabel: homeCountLabel }}
+          home={{
+            href: homeHref(workspace),
+            isCurrent: onHome,
+            count: homeCount,
+            countLabel: homeCountLabel,
+          }}
           projects={sidebarProjects}
           projectsAction={
             <NewProjectMenu onNewProject={newProject.open} onNewFromBacklog={newProject.openFromBacklog} />
           }
-          settings={{ href: SETTINGS_HREF, isCurrent: pathname.startsWith('/settings') }}
+          settings={{ href: generalHref, isCurrent: isSettingsPath(pathname) }}
           person={
             <PersonMenu
               user={{
@@ -234,7 +275,7 @@ function ShellFrame({ user, userId, children }: AppShellProps & { userId: string
               subtitle={me.data ? personMenuSubtitle(me.data) : undefined}
               theme={theme.value}
               onThemeChange={theme.change}
-              myKeysHref={MY_KEYS_HREF}
+              myKeysHref={myKeysHref(workspace)}
               onShortcuts={shortcuts.open}
               onSignOut={() => void signOut()}
             />
@@ -243,9 +284,10 @@ function ShellFrame({ user, userId, children }: AppShellProps & { userId: string
       }
     >
       {children}
-      <CommandPalette userId={userId} suggested={suggestedCommandIds(projects, currentKey)} />
+      <CommandPalette userId={recentScope} suggested={suggestedCommandIds(projects, currentKey)} />
       <ThemeErrorToast error={theme.error} onDismiss={theme.dismissError} />
       <DeletedProjectToast />
+      <WorkspaceNoticeToast />
     </AppFrame>
   );
 }

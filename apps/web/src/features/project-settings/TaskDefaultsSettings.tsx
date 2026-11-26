@@ -11,6 +11,7 @@ import { Button as AriaButton } from 'react-aria-components';
 import { isMirrored, useProjectSummary } from '~/features/project-header';
 import { meQuery } from '~/features/projects/queries';
 import { isAdminRole } from '~/features/settings/format';
+import { useApi } from '~/lib/workspace';
 import {
   Banner,
   Button,
@@ -38,8 +39,9 @@ import {
 
 /** The Task defaults page wired to the API. */
 export function TaskDefaultsSettings({ projectKey }: { projectKey: string }) {
+  const api = useApi();
   const project = useProjectSummary(projectKey);
-  const me = useQuery(meQuery());
+  const me = useQuery(meQuery(api));
   const save = useSaveDefaultDoneItems(projectKey);
   // The list as last edited, shown until the save that carries it comes back; saves run one after another
   // so the server ends on the last edit.

@@ -1,11 +1,13 @@
-// /settings/members: people and agents with tabs, invite person, add agent, row actions.
+// /settings/members: people and agents with tabs, invite person, add agent, row actions. Removing a
+// person who is responsible for agents here is refused; the dialog lists those agents.
 
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import type { Member } from '@zamu/contracts';
 import { useCallback, useMemo, useState } from 'react';
+import { ConfirmAction } from '~/features/workspaces/ConfirmAction';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
 import { Banner, Button, copyText, PageHeader, Tab, TabList, TabPanel, Tabs } from '~/ui';
-import { ConfirmDialog } from './ConfirmDialog';
 import { AgentCreation } from './CreationFlows';
 import { isAdminRole, membersSummary } from './format';
 import { InviteDialog } from './InviteDialog';
@@ -25,12 +27,14 @@ import { errorMessage } from './result';
 type TabId = 'all' | 'people' | 'agents';
 
 export function MembersPage() {
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
   const navigate = useNavigate();
-  const me = useQuery(meQuery());
-  const members = useQuery(membersQuery());
-  const invitations = useQuery(invitationsQuery());
+  const me = useQuery(meQuery(api));
+  const members = useQuery(membersQuery(api));
+  const invitations = useQuery(invitationsQuery(api));
   const isAdmin = isAdminRole(me.data?.role);
-  const projects = useQuery({ ...projectsQuery(), enabled: isAdmin });
+  const projects = useQuery({ ...projectsQuery(api), enabled: isAdmin });
 
   const [tab, setTab] = useState<TabId>('all');
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -62,7 +66,11 @@ export function MembersPage() {
       setActionError(null);
       switch (action.type) {
         case 'manage-keys':
-          void navigate({ to: '/settings/api-keys', search: { owner: action.member.id } });
+          void navigate({
+            to: '/w/$workspace/settings/api-keys',
+            params: { workspace },
+            search: { owner: action.member.id },
+          });
           break;
         case 'remove':
           setRemoving(action.member);
@@ -77,7 +85,7 @@ export function MembersPage() {
           break;
       }
     },
-    [navigate, cancelInvitation.mutate],
+    [navigate, cancelInvitation.mutate, workspace],
   );
 
   const loadError = members.error ?? invitations.error;
@@ -170,7 +178,7 @@ export function MembersPage() {
         projects={projects.data?.items ?? []}
         onSubmit={createAgent}
       />
-      <ConfirmDialog
+      <ConfirmAction
         isOpen={removing !== null}
         onOpenChange={(open) => {
           if (!open) setRemoving(null);
@@ -178,11 +186,25 @@ export function MembersPage() {
         title={removing ? `Remove ${removing.name}?` : 'Remove member'}
         confirmLabel="Remove"
         onConfirm={() => (removing ? removeMember.mutateAsync(removing.id) : Promise.resolve())}
+        refusalHelp={() => (
+          <div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onPress={() => {
+                setRemoving(null);
+                setTab('agents');
+              }}
+            >
+              Show agents
+            </Button>
+          </div>
+        )}
       >
         {removing?.kind === 'agent'
           ? 'The agent loses access to this workspace and its API keys stop working. Its tasks and activity stay.'
           : `${removing?.name ?? 'This person'} loses access to ${me.data?.workspace.name ?? 'this workspace'}. Their tasks and activity stay.`}
-      </ConfirmDialog>
+      </ConfirmAction>
     </>
   );
 }

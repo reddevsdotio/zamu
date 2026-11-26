@@ -11,6 +11,8 @@ import { act, configure, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { useMemo } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 import { UIProvider, useHotkeys } from '~/ui';
 import { CommandPalette } from './CommandPalette';
 import { RECENT_LIMIT, rememberTask, resetRecentForTests } from './recent';
@@ -35,8 +37,8 @@ const api = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const client = {
     tasks: {
       list: async (input: { q?: string; limit?: number }) => {
@@ -57,8 +59,8 @@ vi.mock('~/lib/orpc', async () => {
       },
     },
   };
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 const ran = vi.hoisted(() => ({ calls: [] as string[] }));
 
@@ -161,7 +163,7 @@ function renderPalette(extra?: readonly Command[]) {
     createRoute({ getParentRoute: () => root, path: '/', component: () => <p>home</p> }),
     createRoute({
       getParentRoute: () => root,
-      path: '/p/$projectKey/$taskKey',
+      path: '/w/$workspace/p/$projectKey/$taskKey',
       component: () => <p>task page</p>,
     }),
   ];
@@ -171,7 +173,9 @@ function renderPalette(extra?: readonly Command[]) {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <WorkspaceProvider workspace={workspace}>
+        <RouterProvider router={router} />
+      </WorkspaceProvider>
     </QueryClientProvider>,
   );
   return { router };
@@ -264,7 +268,7 @@ describe('command palette', () => {
     await user.keyboard('{Backspace>6/}');
     await waitFor(() => expect(optionNames()).toHaveLength(2));
     await user.keyboard('{ArrowDown}{Enter}');
-    await waitFor(() => expect(router.state.location.pathname).toBe('/p/HBR/HBR-48'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/w/acme/p/HBR/HBR-48'));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 

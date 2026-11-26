@@ -20,6 +20,8 @@ import {
   useTaskSelection,
   workItemNoun,
 } from '~/features/views';
+import { useApi, useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
+import { workspacePath } from '~/lib/workspace-paths';
 import {
   Avatar,
   BlockedMarker,
@@ -102,9 +104,12 @@ export function PlanningTaskTable({
   renderEmptyState,
   ...props
 }: PlanningTaskTableProps) {
+  const workspaceId = useWorkspaceId();
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
   const navigate = useNavigate();
   const location = useRouterState({ select: (state) => state.location.href });
-  const viewerId = useQuery(meQuery()).data?.user.id ?? null;
+  const viewerId = useQuery(meQuery(api)).data?.user.id ?? null;
   const now = useNow();
   const groupBy = planningGroupBy(display.groupBy, hide);
   const groups = useMemo(
@@ -141,15 +146,18 @@ export function PlanningTaskTable({
   const fieldKeys = useTaskFieldKeys({ targets, anchors: focusedRow });
 
   const remember = useCallback(
-    (key: string) => rememberTaskNavigation({ keys, from, returnTo: location }, key),
-    [keys, from, location],
+    (key: string) => rememberTaskNavigation(workspaceId, { keys, from, returnTo: location }, key),
+    [workspaceId, keys, from, location],
   );
   const open = useCallback(
     (key: string) => {
       remember(key);
-      void navigate({ to: '/p/$projectKey/$taskKey', params: { projectKey, taskKey: key } });
+      void navigate({
+        to: '/w/$workspace/p/$projectKey/$taskKey',
+        params: { workspace, projectKey, taskKey: key },
+      });
     },
-    [remember, navigate, projectKey],
+    [remember, navigate, projectKey, workspace],
   );
 
   const focusedKey = selection.focusedKey;
@@ -289,6 +297,7 @@ function TaskRow({
   onClick,
   onLinkPress,
 }: TaskRowProps) {
+  const workspace = useWorkspaceSlug();
   const shows = (property: Parameters<typeof showsProperty>[1]) =>
     showsProperty(display, property, task, viewerId);
   const subtasks = task.subtaskProgress;
@@ -313,7 +322,10 @@ function TaskRow({
       ) : null}
       <StatusGlyph status={task.status} />
       <Link
-        href={`/p/${encodeURIComponent(projectKey)}/${encodeURIComponent(task.key)}`}
+        href={workspacePath(
+          workspace,
+          `/p/${encodeURIComponent(projectKey)}/${encodeURIComponent(task.key)}`,
+        )}
         onPress={onLinkPress}
         className="min-w-0 flex-1 cursor-pointer truncate font-[450] text-fg outline-none focus-visible:underline"
       >

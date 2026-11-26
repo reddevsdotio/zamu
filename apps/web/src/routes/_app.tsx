@@ -1,9 +1,9 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router';
-import { meQuery, projectsQuery } from '../features/projects/queries';
-import { AppShell } from '../features/shell/AppShell';
 import { requireSession } from '../lib/session';
 
-// Signed-in layout: the sidebar, the palette and the global shortcuts around every page under routes/_app/.
+// Signed-in pages: everything under routes/_app/ needs a session (else /signin, or /setup on first run).
+// The workspace pages and their shell live under routes/_app/w/$workspace/; `/`, /welcome and the
+// pre-0.10 paths sit beside them and redirect or stand alone.
 type SessionContext = Awaited<ReturnType<typeof requireSession>>;
 
 // Last session seen in the browser. Search-only changes on the same page (filters, the selected task)
@@ -17,21 +17,5 @@ export const Route = createFileRoute('/_app')({
     if (typeof window !== 'undefined') lastBrowserSession = result;
     return result;
   },
-  // Prefetch what the sidebar shows so the first render (and SSR) has it; failures surface in the pages.
-  loader: async ({ context }) => {
-    await Promise.all([
-      context.queryClient.prefetchQuery(meQuery()),
-      context.queryClient.prefetchQuery(projectsQuery()),
-    ]);
-  },
-  component: AppLayout,
+  component: Outlet,
 });
-
-function AppLayout() {
-  const { session } = Route.useRouteContext();
-  return (
-    <AppShell user={{ id: session.user.id, name: session.user.name }}>
-      <Outlet />
-    </AppShell>
-  );
-}

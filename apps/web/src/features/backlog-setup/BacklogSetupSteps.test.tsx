@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type {
   BacklogDetection,
@@ -10,6 +10,7 @@ import type {
 } from '@zamu/contracts';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import { renderInWorkspace as render } from '~/lib/testing';
 import type { AgentSuggestion } from './agent-suggestions';
 import type { InviteDraft } from './assignee-hints';
 import { InviteFromMappings } from './InviteFromMappings';

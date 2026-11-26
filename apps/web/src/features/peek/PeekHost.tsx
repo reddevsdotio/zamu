@@ -23,6 +23,7 @@ import { TaskFileBadge } from '~/features/tasks/MirroredTask';
 import { membersQuery, taskQuery, timelineQuery } from '~/features/tasks/queries';
 import { projectOfKey } from '~/features/tasks/TaskPageRelations';
 import { progressOfItems, rememberTaskNavigation, type WorkItemKind, workItemNoun } from '~/features/views';
+import { useApi, useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
 import {
   Avatar,
   Button,
@@ -135,20 +136,24 @@ function usePeekKeys(request: PeekRequest, panel: RefObject<HTMLElement | null>,
 }
 
 function Peek({ request }: { request: PeekRequest }) {
+  const workspaceId = useWorkspaceId();
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
   const router = useRouter();
   const location = useRouterState({ select: (state) => state.location });
   const panel = useRef<HTMLElement>(null);
-  const result = useQuery(taskQuery(request.key));
+  const result = useQuery(taskQuery(api, request.key));
   const task = result.data;
   const open = () => {
     rememberTaskNavigation(
+      workspaceId,
       { keys: request.keys, from: request.from, returnTo: `${location.pathname}${location.searchStr ?? ''}` },
       request.key,
     );
     closePeek();
     void router.navigate({
-      to: '/p/$projectKey/$taskKey',
-      params: { projectKey: task?.project.key ?? projectOfKey(request.key), taskKey: request.key },
+      to: '/w/$workspace/p/$projectKey/$taskKey',
+      params: { workspace, projectKey: task?.project.key ?? projectOfKey(request.key), taskKey: request.key },
     });
   };
   usePeekKeys(request, panel, open);
@@ -280,10 +285,11 @@ function PropertyChip({
 }
 
 function PeekBody({ task, isMirrored }: { task: Task; isMirrored: boolean }) {
+  const api = useApi();
   const now = useNow();
   const time = atTime(formatRelative, now);
-  const timeline = useQuery(timelineQuery(task.key)).data?.items;
-  const members = useQuery(membersQuery()).data?.items ?? [];
+  const timeline = useQuery(timelineQuery(api, task.key)).data?.items;
+  const members = useQuery(membersQuery(api)).data?.items ?? [];
   const comments = (timeline ?? []).filter(
     (item): item is TimelineItem & { kind: 'comment' } => item.kind === 'comment' && item.body != null,
   );

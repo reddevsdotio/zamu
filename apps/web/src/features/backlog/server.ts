@@ -1,12 +1,11 @@
 // TanStack Start server functions for Backlog.md setup and the Backlog.md section of project settings
 // (M3), and the switch of a mirrored project to Zamu (M6). Settings-only data, so the screens call @zamu/core through these thin adapters: validate with
-// the contract schema, build the actor from the request, call core, return a SettingsResult (unwrap
+// the contract schema, build the actor from the request in the page's workspace, call core, return a SettingsResult (unwrap
 // it in the browser with `unwrap` from features/settings/result). Product data (tasks, the status a
 // header shows) stays on /api/v1: GET /projects/{project}/backlog is `orpc.backlog.status`.
 // Handler bodies (and the server-only imports they use) are stripped from the client bundle.
 
 import { createServerFn } from '@tanstack/react-start';
-import { getRequestHeaders } from '@tanstack/react-start/server';
 import {
   BacklogProjectInput,
   BacklogWebhookInfoInput,
@@ -23,8 +22,6 @@ import {
   UpdateBacklogMappingsInput,
 } from '@zamu/contracts';
 import {
-  type Actor,
-  type CoreContext,
   checkBacklogSwitch,
   createProjectFromBacklog,
   detectBacklog,
@@ -40,12 +37,7 @@ import {
   switchBacklogToZamu,
   updateBacklogMappings,
 } from '@zamu/core';
-import { getServerContext } from '../../server/context';
-import { runForRequest } from '../settings/adapter';
-
-function run<T>(service: (core: CoreContext, actor: Actor) => Promise<T>) {
-  return runForRequest(getServerContext(), new Headers(getRequestHeaders()), service);
-}
+import { inWorkspace, runInWorkspace as run } from '../../lib/server-fn';
 
 // ---------------------------------------------------------------------------
 // Setup (five steps) and New project from Backlog.md
@@ -57,34 +49,38 @@ function run<T>(service: (core: CoreContext, actor: Actor) => Promise<T>) {
  * -> BacklogDetection
  */
 export const detectBacklogFn = createServerFn({ method: 'POST' })
-  .validator(DetectBacklogInput)
-  .handler(({ data }) => run((core, actor) => detectBacklog(core, actor, data)));
+  .validator(inWorkspace(DetectBacklogInput))
+  .handler(({ data }) => run(data.workspace, (core, actor) => detectBacklog(core, actor, data.input)));
 
 /** Step 4: a dry run of the first read with the mappings. Writes nothing. -> BacklogPreview */
 export const previewBacklogFn = createServerFn({ method: 'POST' })
-  .validator(PreviewBacklogInput)
-  .handler(({ data }) => run((core, actor) => previewBacklog(core, actor, data)));
+  .validator(inWorkspace(PreviewBacklogInput))
+  .handler(({ data }) => run(data.workspace, (core, actor) => previewBacklog(core, actor, data.input)));
 
 /**
  * Step 5: creates the source, turns milestones on and queues the first read (an import detaches
  * after it). PROJECT_NOT_EMPTY when the project has tasks. -> BacklogSourceStatus
  */
 export const startBacklogFn = createServerFn({ method: 'POST' })
-  .validator(StartBacklogInput)
-  .handler(({ data }) => run((core, actor) => startBacklog(core, actor, data)));
+  .validator(inWorkspace(StartBacklogInput))
+  .handler(({ data }) => run(data.workspace, (core, actor) => startBacklog(core, actor, data.input)));
 
 /**
  * New project from Backlog.md, before the project exists: the step 2 read on the pasted repository,
  * so the dialog can prefill name and key from config.yml. Writes nothing. -> BacklogDetection
  */
 export const detectBacklogRepositoryFn = createServerFn({ method: 'POST' })
-  .validator(DetectBacklogRepositoryInput)
-  .handler(({ data }) => run((core, actor) => detectBacklogRepository(core, actor, data)));
+  .validator(inWorkspace(DetectBacklogRepositoryInput))
+  .handler(({ data }) =>
+    run(data.workspace, (core, actor) => detectBacklogRepository(core, actor, data.input)),
+  );
 
 /** Creates the project for "New project from Backlog.md"; setup continues at Mappings. -> Project */
 export const createProjectFromBacklogFn = createServerFn({ method: 'POST' })
-  .validator(CreateProjectFromBacklogInput)
-  .handler(({ data }) => run((core, actor) => createProjectFromBacklog(core, actor, data)));
+  .validator(inWorkspace(CreateProjectFromBacklogInput))
+  .handler(({ data }) =>
+    run(data.workspace, (core, actor) => createProjectFromBacklog(core, actor, data.input)),
+  );
 
 // ---------------------------------------------------------------------------
 // Project settings: Backlog.md section
@@ -92,44 +88,52 @@ export const createProjectFromBacklogFn = createServerFn({ method: 'POST' })
 
 /** The source as the settings page shows it (the first page of problems). -> BacklogSourceStatus */
 export const backlogSettingsStatusFn = createServerFn({ method: 'GET' })
-  .validator(BacklogProjectInput)
-  .handler(({ data }) => run((core, actor) => getBacklogSettingsStatus(core, actor, data)));
+  .validator(inWorkspace(BacklogProjectInput))
+  .handler(({ data }) =>
+    run(data.workspace, (core, actor) => getBacklogSettingsStatus(core, actor, data.input)),
+  );
 
 /** New mappings, applied to every task on the next refresh. -> BacklogSourceStatus */
 export const updateBacklogMappingsFn = createServerFn({ method: 'POST' })
-  .validator(UpdateBacklogMappingsInput)
-  .handler(({ data }) => run((core, actor) => updateBacklogMappings(core, actor, data)));
+  .validator(inWorkspace(UpdateBacklogMappingsInput))
+  .handler(({ data }) =>
+    run(data.workspace, (core, actor) => updateBacklogMappings(core, actor, data.input)),
+  );
 
 /** Sets the folder by hand; null goes back to detecting it. -> BacklogSourceStatus */
 export const setBacklogFolderFn = createServerFn({ method: 'POST' })
-  .validator(SetBacklogFolderInput)
-  .handler(({ data }) => run((core, actor) => setBacklogFolder(core, actor, data)));
+  .validator(inWorkspace(SetBacklogFolderInput))
+  .handler(({ data }) => run(data.workspace, (core, actor) => setBacklogFolder(core, actor, data.input)));
 
 /** Reads through another connection (a paused mirror whose connection was deleted). -> BacklogSourceStatus */
 export const setBacklogConnectionFn = createServerFn({ method: 'POST' })
-  .validator(SetBacklogConnectionInput)
-  .handler(({ data }) => run((core, actor) => setBacklogConnection(core, actor, data)));
+  .validator(inWorkspace(SetBacklogConnectionInput))
+  .handler(({ data }) => run(data.workspace, (core, actor) => setBacklogConnection(core, actor, data.input)));
 
 /** Refresh now (trigger manual). BACKLOG_PAUSED or BACKLOG_DETACHED when it cannot. -> BacklogRefreshResult */
 export const refreshBacklogNowFn = createServerFn({ method: 'POST' })
-  .validator(RefreshBacklogNowInput)
-  .handler(({ data }) => run((core, actor) => refreshBacklogNow(core, actor, data)));
+  .validator(inWorkspace(RefreshBacklogNowInput))
+  .handler(({ data }) => run(data.workspace, (core, actor) => refreshBacklogNow(core, actor, data.input)));
 
 /**
  * The webhook URL (always), the secret (owners and admins; null for others and after detach), the
  * provider and the last delivery. The webhook dialog polls it. -> BacklogWebhookInfo
  */
 export const backlogWebhookInfoFn = createServerFn({ method: 'GET' })
-  .validator(BacklogWebhookInfoInput)
-  .handler(({ data }) => run((core, actor) => getBacklogWebhookInfo(core, actor, data)));
+  .validator(inWorkspace(BacklogWebhookInfoInput))
+  .handler(({ data }) =>
+    run(data.workspace, (core, actor) => getBacklogWebhookInfo(core, actor, data.input)),
+  );
 
 /**
  * A new webhook secret for a mirror (owners and admins); the URL stays. The old secret stops working
  * at once. Callers keep the secret out of the query cache. -> BacklogWebhookSecret
  */
 export const reissueBacklogWebhookSecretFn = createServerFn({ method: 'POST' })
-  .validator(ReissueBacklogWebhookSecretInput)
-  .handler(({ data }) => run((core, actor) => reissueBacklogWebhookSecret(core, actor, data)));
+  .validator(inWorkspace(ReissueBacklogWebhookSecretInput))
+  .handler(({ data }) =>
+    run(data.workspace, (core, actor) => reissueBacklogWebhookSecret(core, actor, data.input)),
+  );
 
 // ---------------------------------------------------------------------------
 // Project settings: the switch to Zamu (M6)
@@ -141,13 +145,13 @@ export const reissueBacklogWebhookSecretFn = createServerFn({ method: 'POST' })
  * Owners and admins. -> BacklogSwitchCheck
  */
 export const checkBacklogSwitchFn = createServerFn({ method: 'POST' })
-  .validator(BacklogProjectInput)
-  .handler(({ data }) => run((core, actor) => checkBacklogSwitch(core, actor, data)));
+  .validator(inWorkspace(BacklogProjectInput))
+  .handler(({ data }) => run(data.workspace, (core, actor) => checkBacklogSwitch(core, actor, data.input)));
 
 /**
  * Switches a mirrored project to Zamu for good after the typed key: the mirror stops and every task
  * becomes editable here. Owners and admins. -> BacklogSwitchResult (when, by whom, the new status)
  */
 export const switchBacklogToZamuFn = createServerFn({ method: 'POST' })
-  .validator(DetachBacklogInput)
-  .handler(({ data }) => run((core, actor) => switchBacklogToZamu(core, actor, data)));
+  .validator(inWorkspace(DetachBacklogInput))
+  .handler(({ data }) => run(data.workspace, (core, actor) => switchBacklogToZamu(core, actor, data.input)));

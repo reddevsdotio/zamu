@@ -3,7 +3,9 @@ import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { appendResponseHeader, getRequestHeaders } from '@tanstack/react-start/server';
 import {
   AcceptInvitationError,
+  type AcceptInvitationErrorCode,
   type Auth,
+  acceptInvitationAsMember,
   acceptInvitationWithSignUp,
   authConfigOf,
   BootstrapError,
@@ -14,6 +16,7 @@ import {
 } from '@zamu/auth';
 import { AcceptInvitationInput, SetupInput, WorkspaceFields } from '@zamu/contracts';
 import type { Db } from '@zamu/db';
+import { z } from 'zod';
 import { type AuthPage, type AuthState, authRedirect } from '../routes/(auth)/-auth/guards';
 import { loadInstanceName, loadInvitation } from '../routes/(auth)/-auth/queries';
 import type { SignInOptions } from '../routes/(auth)/-auth/sso';
@@ -37,16 +40,13 @@ export const getAuthContext = createServerOnlyFn((): AuthContext => getServerCon
 /** The signed-in user and session, safe to send to the browser. */
 export interface SessionInfo {
   user: { id: string; name: string; email: string; image: string | null };
-  session: { id: string; expiresAt: Date; activeWorkspaceId: string | null };
+  session: { id: string; expiresAt: Date };
 }
 
 async function readSession(): Promise<SessionInfo | null> {
   const { auth } = getAuthContext();
   const result = await auth.api.getSession({ headers: getRequestHeaders() });
   if (!result) return null;
-  // Better Auth 1.7 types activeOrganizationId only with teams or dynamic access control; it exists at runtime.
-  const activeWorkspaceId =
-    (result.session as { activeOrganizationId?: string | null }).activeOrganizationId ?? null;
   return {
     user: {
       id: result.user.id,
@@ -54,7 +54,7 @@ async function readSession(): Promise<SessionInfo | null> {
       email: result.user.email,
       image: result.user.image ?? null,
     },
-    session: { id: result.session.id, expiresAt: result.session.expiresAt, activeWorkspaceId },
+    session: { id: result.session.id, expiresAt: result.session.expiresAt },
   };
 }
 
@@ -217,7 +217,8 @@ export type AcceptInvitationResult =
   | { ok: true }
   | {
       ok: false;
-      code: 'INVITATION_NOT_USABLE' | 'ACCOUNT_EXISTS' | 'INVALID_INPUT' | 'PASSWORD_LOGIN_DISABLED';
+      /** INVITATION_NOT_USABLE, ACCOUNT_EXISTS, INVALID_INPUT or PASSWORD_LOGIN_DISABLED in practice. */
+      code: AcceptInvitationErrorCode;
       message: string;
     };
 
@@ -238,6 +239,34 @@ export const acceptInvitation = createServerFn({ method: 'POST' })
     } catch (error) {
       if (error instanceof AcceptInvitationError) {
         return { ok: false, code: error.code, message: error.message };
+      }
+      throw error;
+    }
+  });
+
+export type JoinInvitationResult =
+  | { ok: true; workspaceSlug: string }
+  | { ok: false; code: 'INVITATION_NOT_USABLE' | 'NOT_SIGNED_IN' | 'WRONG_ACCOUNT'; message: string };
+
+/**
+ * Invitation accept for someone who already has an account: the signed-in person, with the invited
+ * email, joins the workspace (acceptInvitationAsMember), which becomes the one they used last. Never
+ * accepts for another account.
+ */
+export const joinInvitation = createServerFn({ method: 'POST' })
+  .validator(z.object({ invitationId: z.uuid() }))
+  .handler(async ({ data }): Promise<JoinInvitationResult> => {
+    try {
+      const result = await acceptInvitationAsMember(getAuthContext(), data.invitationId, {
+        headers: getRequestHeaders(),
+      });
+      return { ok: true, workspaceSlug: result.workspaceSlug };
+    } catch (error) {
+      if (error instanceof AcceptInvitationError) {
+        const { code, message } = error;
+        if (code === 'INVITATION_NOT_USABLE' || code === 'NOT_SIGNED_IN' || code === 'WRONG_ACCOUNT') {
+          return { ok: false, code, message };
+        }
       }
       throw error;
     }

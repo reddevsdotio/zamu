@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { OPEN_TASK_STATUSES, type RelatedTask, type Task, type TaskListItem } from '@zamu/contracts';
 import { useRef, useState } from 'react';
 import { relatedOf, taskQuery } from '~/features/tasks/queries';
-import { orpc } from '~/lib/orpc';
+import { useApi } from '~/lib/workspace';
 import { PickerMenu, type PickerMenuItem, type PickerMenuSection, StatusGlyph } from '~/ui';
 import { useFieldChange } from './apply';
 import type { FieldPickerProps } from './StatusPicker';
@@ -30,8 +30,9 @@ export function loopRefusal(error: unknown, task: string, blocker: string): stri
 
 /** Open tasks of a project matching `q`, for the blocker and subtask pickers. */
 export function useTaskSearch(projectKey: string, q: string, extra: { topLevel?: boolean } = {}) {
+  const api = useApi();
   return useQuery({
-    ...orpc.tasks.list.queryOptions({
+    ...api.orpc.tasks.list.queryOptions({
       input: {
         project: [projectKey],
         status: [...OPEN_TASK_STATUSES],
@@ -172,10 +173,11 @@ export function BlockerMenu({
 const hasRelations = (target: FieldTarget): target is Task => 'blockedBy' in target && 'createdBy' in target;
 
 function BlockerPickerContent({ target, close }: { target: FieldTarget; close: () => void }) {
+  const api = useApi();
   const [query, setQuery] = useState('');
   const [refusals, setRefusals] = useState<Map<string, string>>(() => new Map());
   // Rows don't carry their blockers: read the detail (cached when the task view is open).
-  const detail = useQuery({ ...taskQuery(target.key), enabled: !hasRelations(target) }).data;
+  const detail = useQuery({ ...taskQuery(api, target.key), enabled: !hasRelations(target) }).data;
   const task: Task | undefined = detail ?? (hasRelations(target) ? target : undefined);
   const search = useTaskSearch(target.project.key, query);
   const { apply } = useFieldChange();

@@ -92,10 +92,10 @@ export {
   forgetTaskNavigation,
   readTaskNavigation,
   rememberTaskNavigation,
-  TASK_NAV_STORAGE_KEY,
   type TaskNavigation,
   type TaskNavigationList,
   taskNavigationFor,
+  taskNavStorageKey,
   useTaskNavigation,
 } from './navigation';
 export { requestDisplayOptions, requestFilterMenu } from './requests';

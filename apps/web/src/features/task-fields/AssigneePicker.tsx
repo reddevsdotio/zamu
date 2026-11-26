@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { AssigneeRef, Member } from '@zamu/contracts';
 import { membersQuery, meQuery } from '~/features/tasks/queries';
+import { useApi } from '~/lib/workspace';
 import { Avatar, PickerMenu, type PickerMenuItem, type PickerMenuSection, UnassignedAvatar } from '~/ui';
 import { useFieldChange } from './apply';
 import type { FieldPickerProps } from './StatusPicker';
@@ -104,10 +105,11 @@ export function AssigneeMenu({
 }
 
 export function AssigneePicker({ targets, onChanged, ...anchor }: FieldPickerProps) {
+  const api = useApi();
   const list = toTargets(targets);
   const { apply } = useFieldChange();
-  const members = useQuery(membersQuery()).data?.items;
-  const meId = useQuery(meQuery()).data?.user.id;
+  const members = useQuery(membersQuery(api)).data?.items;
+  const meId = useQuery(meQuery(api)).data?.user.id;
   const reason = fieldRefusal(list, 'assignee');
   return (
     <FieldPopover label="Assignee" width={274} {...anchor}>

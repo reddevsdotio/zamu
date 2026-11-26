@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 import type { ReactElement } from 'react';
+import { testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 
-// Test support for features/views (imported by its *.test.tsx only). The tests mock ~/lib/orpc with
-// orpcMock(), backed by the small in-memory API below, and render inside a QueryClientProvider.
+// Test support for features/views (imported by its *.test.tsx only). Screens render inside the test
+// workspace (viewsWorkspace), backed by the small in-memory API below, and a QueryClientProvider.
 //
-//   vi.mock('~/lib/orpc', async () => (await import('./testing')).orpcMock());
+//   await renderWithQuery(<DisplayButton … />);
 
 export const VIEWER = {
   id: '9f0c0a52-0000-4000-8000-000000000001',
@@ -100,9 +102,12 @@ export const fakeViewsClient = {
   },
 };
 
-export async function orpcMock() {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
-  return { client: fakeViewsClient, orpc: createTanstackQueryUtils(fakeViewsClient as never) };
+/** The test workspace (/w/acme) with the in-memory API behind it. */
+export const viewsWorkspace = testWorkspace(fakeViewsClient);
+
+/** `ui` inside the test workspace. */
+export function inWorkspace(ui: ReactElement): ReactElement {
+  return <WorkspaceProvider workspace={viewsWorkspace}>{ui}</WorkspaceProvider>;
 }
 
 export function newQueryClient() {
@@ -115,7 +120,7 @@ export function newQueryClient() {
 export async function renderWithQuery(ui: ReactElement) {
   const queryClient = newQueryClient();
   const { meQuery } = await import('~/features/tasks/queries');
-  await queryClient.prefetchQuery(meQuery());
-  const result = render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  await queryClient.prefetchQuery(meQuery(viewsWorkspace.api));
+  const result = render(<QueryClientProvider client={queryClient}>{inWorkspace(ui)}</QueryClientProvider>);
   return { ...result, queryClient };
 }

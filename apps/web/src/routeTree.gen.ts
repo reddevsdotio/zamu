@@ -16,31 +16,41 @@ import { Route as authSigninRouteImport } from './routes/(auth)/signin'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppMyTasksRouteImport } from './routes/_app/my-tasks'
-import { Route as AppSettingsRouteRouteImport } from './routes/_app/settings/route'
+import { Route as AppProjectsRouteImport } from './routes/_app/projects'
+import { Route as AppWelcomeRouteImport } from './routes/_app/welcome'
 import { Route as ApiHealthzRouteImport } from './routes/api/healthz'
 import { Route as authInviteIdRouteImport } from './routes/(auth)/invite.$id'
-import { Route as AppProjectsIndexRouteImport } from './routes/_app/projects/index'
+import { Route as AppPSplatRouteImport } from './routes/_app/p/$'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
-import { Route as AppSettingsApiKeysRouteImport } from './routes/_app/settings/api-keys'
-import { Route as AppSettingsAppearanceRouteImport } from './routes/_app/settings/appearance'
-import { Route as AppSettingsConnectionsRouteImport } from './routes/_app/settings/connections'
-import { Route as AppSettingsMembersRouteImport } from './routes/_app/settings/members'
-import { Route as AppSettingsMyKeysRouteImport } from './routes/_app/settings/my-keys'
+import { Route as AppSettingsSplatRouteImport } from './routes/_app/settings/$'
+import { Route as AppWWorkspaceRouteRouteImport } from './routes/_app/w/$workspace/route'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiV1SplatRouteImport } from './routes/api/v1/$'
-import { Route as AppPProjectKeyIndexRouteImport } from './routes/_app/p/$projectKey/index'
-import { Route as AppPProjectKeyTaskKeyRouteImport } from './routes/_app/p/$projectKey/$taskKey'
-import { Route as AppPProjectKeyBacklogSetupRouteImport } from './routes/_app/p/$projectKey/backlog-setup'
-import { Route as AppPProjectKeySettingsRouteRouteImport } from './routes/_app/p/$projectKey/settings/route'
+import { Route as AppWWorkspaceIndexRouteImport } from './routes/_app/w/$workspace/index'
+import { Route as AppWWorkspaceDashboardRouteImport } from './routes/_app/w/$workspace/dashboard'
+import { Route as AppWWorkspaceMyTasksRouteImport } from './routes/_app/w/$workspace/my-tasks'
+import { Route as AppWWorkspaceSettingsRouteRouteImport } from './routes/_app/w/$workspace/settings/route'
 import { Route as ApiWebhooksBacklogWebhookIdRouteImport } from './routes/api/webhooks/backlog/$webhookId'
-import { Route as AppPProjectKeyCyclesIndexRouteImport } from './routes/_app/p/$projectKey/cycles/index'
-import { Route as AppPProjectKeyCyclesCycleNumberRouteImport } from './routes/_app/p/$projectKey/cycles/$cycleNumber'
-import { Route as AppPProjectKeyMilestonesIndexRouteImport } from './routes/_app/p/$projectKey/milestones/index'
-import { Route as AppPProjectKeyMilestonesMilestoneIdRouteImport } from './routes/_app/p/$projectKey/milestones/$milestoneId'
-import { Route as AppPProjectKeySettingsIndexRouteImport } from './routes/_app/p/$projectKey/settings/index'
-import { Route as AppPProjectKeySettingsBacklogRouteImport } from './routes/_app/p/$projectKey/settings/backlog'
-import { Route as AppPProjectKeySettingsDefaultsRouteImport } from './routes/_app/p/$projectKey/settings/defaults'
-import { Route as AppPProjectKeySettingsLabelsRouteImport } from './routes/_app/p/$projectKey/settings/labels'
+import { Route as AppWWorkspaceProjectsIndexRouteImport } from './routes/_app/w/$workspace/projects/index'
+import { Route as AppWWorkspaceSettingsIndexRouteImport } from './routes/_app/w/$workspace/settings/index'
+import { Route as AppWWorkspaceSettingsApiKeysRouteImport } from './routes/_app/w/$workspace/settings/api-keys'
+import { Route as AppWWorkspaceSettingsAppearanceRouteImport } from './routes/_app/w/$workspace/settings/appearance'
+import { Route as AppWWorkspaceSettingsConnectionsRouteImport } from './routes/_app/w/$workspace/settings/connections'
+import { Route as AppWWorkspaceSettingsGeneralRouteImport } from './routes/_app/w/$workspace/settings/general'
+import { Route as AppWWorkspaceSettingsMembersRouteImport } from './routes/_app/w/$workspace/settings/members'
+import { Route as AppWWorkspaceSettingsMyKeysRouteImport } from './routes/_app/w/$workspace/settings/my-keys'
+import { Route as AppWWorkspacePProjectKeyIndexRouteImport } from './routes/_app/w/$workspace/p/$projectKey/index'
+import { Route as AppWWorkspacePProjectKeyTaskKeyRouteImport } from './routes/_app/w/$workspace/p/$projectKey/$taskKey'
+import { Route as AppWWorkspacePProjectKeyBacklogSetupRouteImport } from './routes/_app/w/$workspace/p/$projectKey/backlog-setup'
+import { Route as AppWWorkspacePProjectKeySettingsRouteRouteImport } from './routes/_app/w/$workspace/p/$projectKey/settings/route'
+import { Route as AppWWorkspacePProjectKeyCyclesIndexRouteImport } from './routes/_app/w/$workspace/p/$projectKey/cycles/index'
+import { Route as AppWWorkspacePProjectKeyCyclesCycleNumberRouteImport } from './routes/_app/w/$workspace/p/$projectKey/cycles/$cycleNumber'
+import { Route as AppWWorkspacePProjectKeyMilestonesIndexRouteImport } from './routes/_app/w/$workspace/p/$projectKey/milestones/index'
+import { Route as AppWWorkspacePProjectKeyMilestonesMilestoneIdRouteImport } from './routes/_app/w/$workspace/p/$projectKey/milestones/$milestoneId'
+import { Route as AppWWorkspacePProjectKeySettingsIndexRouteImport } from './routes/_app/w/$workspace/p/$projectKey/settings/index'
+import { Route as AppWWorkspacePProjectKeySettingsBacklogRouteImport } from './routes/_app/w/$workspace/p/$projectKey/settings/backlog'
+import { Route as AppWWorkspacePProjectKeySettingsDefaultsRouteImport } from './routes/_app/w/$workspace/p/$projectKey/settings/defaults'
+import { Route as AppWWorkspacePProjectKeySettingsLabelsRouteImport } from './routes/_app/w/$workspace/p/$projectKey/settings/labels'
 
 const _uiRoute = _uiRouteImport.update({
   id: '/__ui',
@@ -76,9 +86,14 @@ const AppMyTasksRoute = AppMyTasksRouteImport.update({
   path: '/my-tasks',
   getParentRoute: () => AppRoute,
 } as any)
-const AppSettingsRouteRoute = AppSettingsRouteRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+const AppProjectsRoute = AppProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWelcomeRoute = AppWelcomeRouteImport.update({
+  id: '/welcome',
+  path: '/welcome',
   getParentRoute: () => AppRoute,
 } as any)
 const ApiHealthzRoute = ApiHealthzRouteImport.update({
@@ -91,40 +106,25 @@ const authInviteIdRoute = authInviteIdRouteImport.update({
   path: '/invite/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
-  id: '/projects/',
-  path: '/projects/',
+const AppPSplatRoute = AppPSplatRouteImport.update({
+  id: '/p/$',
+  path: '/p/$',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AppSettingsRouteRoute,
+  id: '/settings/',
+  path: '/settings/',
+  getParentRoute: () => AppRoute,
 } as any)
-const AppSettingsApiKeysRoute = AppSettingsApiKeysRouteImport.update({
-  id: '/api-keys',
-  path: '/api-keys',
-  getParentRoute: () => AppSettingsRouteRoute,
+const AppSettingsSplatRoute = AppSettingsSplatRouteImport.update({
+  id: '/settings/$',
+  path: '/settings/$',
+  getParentRoute: () => AppRoute,
 } as any)
-const AppSettingsAppearanceRoute = AppSettingsAppearanceRouteImport.update({
-  id: '/appearance',
-  path: '/appearance',
-  getParentRoute: () => AppSettingsRouteRoute,
-} as any)
-const AppSettingsConnectionsRoute = AppSettingsConnectionsRouteImport.update({
-  id: '/connections',
-  path: '/connections',
-  getParentRoute: () => AppSettingsRouteRoute,
-} as any)
-const AppSettingsMembersRoute = AppSettingsMembersRouteImport.update({
-  id: '/members',
-  path: '/members',
-  getParentRoute: () => AppSettingsRouteRoute,
-} as any)
-const AppSettingsMyKeysRoute = AppSettingsMyKeysRouteImport.update({
-  id: '/my-keys',
-  path: '/my-keys',
-  getParentRoute: () => AppSettingsRouteRoute,
+const AppWWorkspaceRouteRoute = AppWWorkspaceRouteRouteImport.update({
+  id: '/w/$workspace',
+  path: '/w/$workspace',
+  getParentRoute: () => AppRoute,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
@@ -136,27 +136,26 @@ const ApiV1SplatRoute = ApiV1SplatRouteImport.update({
   path: '/api/v1/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppPProjectKeyIndexRoute = AppPProjectKeyIndexRouteImport.update({
-  id: '/p/$projectKey/',
-  path: '/p/$projectKey/',
-  getParentRoute: () => AppRoute,
+const AppWWorkspaceIndexRoute = AppWWorkspaceIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppWWorkspaceRouteRoute,
 } as any)
-const AppPProjectKeyTaskKeyRoute = AppPProjectKeyTaskKeyRouteImport.update({
-  id: '/p/$projectKey/$taskKey',
-  path: '/p/$projectKey/$taskKey',
-  getParentRoute: () => AppRoute,
+const AppWWorkspaceDashboardRoute = AppWWorkspaceDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AppWWorkspaceRouteRoute,
 } as any)
-const AppPProjectKeyBacklogSetupRoute =
-  AppPProjectKeyBacklogSetupRouteImport.update({
-    id: '/p/$projectKey/backlog-setup',
-    path: '/p/$projectKey/backlog-setup',
-    getParentRoute: () => AppRoute,
-  } as any)
-const AppPProjectKeySettingsRouteRoute =
-  AppPProjectKeySettingsRouteRouteImport.update({
-    id: '/p/$projectKey/settings',
-    path: '/p/$projectKey/settings',
-    getParentRoute: () => AppRoute,
+const AppWWorkspaceMyTasksRoute = AppWWorkspaceMyTasksRouteImport.update({
+  id: '/my-tasks',
+  path: '/my-tasks',
+  getParentRoute: () => AppWWorkspaceRouteRoute,
+} as any)
+const AppWWorkspaceSettingsRouteRoute =
+  AppWWorkspaceSettingsRouteRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => AppWWorkspaceRouteRoute,
   } as any)
 const ApiWebhooksBacklogWebhookIdRoute =
   ApiWebhooksBacklogWebhookIdRouteImport.update({
@@ -164,87 +163,169 @@ const ApiWebhooksBacklogWebhookIdRoute =
     path: '/api/webhooks/backlog/$webhookId',
     getParentRoute: () => rootRouteImport,
   } as any)
-const AppPProjectKeyCyclesIndexRoute =
-  AppPProjectKeyCyclesIndexRouteImport.update({
-    id: '/p/$projectKey/cycles/',
-    path: '/p/$projectKey/cycles/',
-    getParentRoute: () => AppRoute,
+const AppWWorkspaceProjectsIndexRoute =
+  AppWWorkspaceProjectsIndexRouteImport.update({
+    id: '/projects/',
+    path: '/projects/',
+    getParentRoute: () => AppWWorkspaceRouteRoute,
   } as any)
-const AppPProjectKeyCyclesCycleNumberRoute =
-  AppPProjectKeyCyclesCycleNumberRouteImport.update({
-    id: '/p/$projectKey/cycles/$cycleNumber',
-    path: '/p/$projectKey/cycles/$cycleNumber',
-    getParentRoute: () => AppRoute,
-  } as any)
-const AppPProjectKeyMilestonesIndexRoute =
-  AppPProjectKeyMilestonesIndexRouteImport.update({
-    id: '/p/$projectKey/milestones/',
-    path: '/p/$projectKey/milestones/',
-    getParentRoute: () => AppRoute,
-  } as any)
-const AppPProjectKeyMilestonesMilestoneIdRoute =
-  AppPProjectKeyMilestonesMilestoneIdRouteImport.update({
-    id: '/p/$projectKey/milestones/$milestoneId',
-    path: '/p/$projectKey/milestones/$milestoneId',
-    getParentRoute: () => AppRoute,
-  } as any)
-const AppPProjectKeySettingsIndexRoute =
-  AppPProjectKeySettingsIndexRouteImport.update({
+const AppWWorkspaceSettingsIndexRoute =
+  AppWWorkspaceSettingsIndexRouteImport.update({
     id: '/',
     path: '/',
-    getParentRoute: () => AppPProjectKeySettingsRouteRoute,
+    getParentRoute: () => AppWWorkspaceSettingsRouteRoute,
   } as any)
-const AppPProjectKeySettingsBacklogRoute =
-  AppPProjectKeySettingsBacklogRouteImport.update({
+const AppWWorkspaceSettingsApiKeysRoute =
+  AppWWorkspaceSettingsApiKeysRouteImport.update({
+    id: '/api-keys',
+    path: '/api-keys',
+    getParentRoute: () => AppWWorkspaceSettingsRouteRoute,
+  } as any)
+const AppWWorkspaceSettingsAppearanceRoute =
+  AppWWorkspaceSettingsAppearanceRouteImport.update({
+    id: '/appearance',
+    path: '/appearance',
+    getParentRoute: () => AppWWorkspaceSettingsRouteRoute,
+  } as any)
+const AppWWorkspaceSettingsConnectionsRoute =
+  AppWWorkspaceSettingsConnectionsRouteImport.update({
+    id: '/connections',
+    path: '/connections',
+    getParentRoute: () => AppWWorkspaceSettingsRouteRoute,
+  } as any)
+const AppWWorkspaceSettingsGeneralRoute =
+  AppWWorkspaceSettingsGeneralRouteImport.update({
+    id: '/general',
+    path: '/general',
+    getParentRoute: () => AppWWorkspaceSettingsRouteRoute,
+  } as any)
+const AppWWorkspaceSettingsMembersRoute =
+  AppWWorkspaceSettingsMembersRouteImport.update({
+    id: '/members',
+    path: '/members',
+    getParentRoute: () => AppWWorkspaceSettingsRouteRoute,
+  } as any)
+const AppWWorkspaceSettingsMyKeysRoute =
+  AppWWorkspaceSettingsMyKeysRouteImport.update({
+    id: '/my-keys',
+    path: '/my-keys',
+    getParentRoute: () => AppWWorkspaceSettingsRouteRoute,
+  } as any)
+const AppWWorkspacePProjectKeyIndexRoute =
+  AppWWorkspacePProjectKeyIndexRouteImport.update({
+    id: '/p/$projectKey/',
+    path: '/p/$projectKey/',
+    getParentRoute: () => AppWWorkspaceRouteRoute,
+  } as any)
+const AppWWorkspacePProjectKeyTaskKeyRoute =
+  AppWWorkspacePProjectKeyTaskKeyRouteImport.update({
+    id: '/p/$projectKey/$taskKey',
+    path: '/p/$projectKey/$taskKey',
+    getParentRoute: () => AppWWorkspaceRouteRoute,
+  } as any)
+const AppWWorkspacePProjectKeyBacklogSetupRoute =
+  AppWWorkspacePProjectKeyBacklogSetupRouteImport.update({
+    id: '/p/$projectKey/backlog-setup',
+    path: '/p/$projectKey/backlog-setup',
+    getParentRoute: () => AppWWorkspaceRouteRoute,
+  } as any)
+const AppWWorkspacePProjectKeySettingsRouteRoute =
+  AppWWorkspacePProjectKeySettingsRouteRouteImport.update({
+    id: '/p/$projectKey/settings',
+    path: '/p/$projectKey/settings',
+    getParentRoute: () => AppWWorkspaceRouteRoute,
+  } as any)
+const AppWWorkspacePProjectKeyCyclesIndexRoute =
+  AppWWorkspacePProjectKeyCyclesIndexRouteImport.update({
+    id: '/p/$projectKey/cycles/',
+    path: '/p/$projectKey/cycles/',
+    getParentRoute: () => AppWWorkspaceRouteRoute,
+  } as any)
+const AppWWorkspacePProjectKeyCyclesCycleNumberRoute =
+  AppWWorkspacePProjectKeyCyclesCycleNumberRouteImport.update({
+    id: '/p/$projectKey/cycles/$cycleNumber',
+    path: '/p/$projectKey/cycles/$cycleNumber',
+    getParentRoute: () => AppWWorkspaceRouteRoute,
+  } as any)
+const AppWWorkspacePProjectKeyMilestonesIndexRoute =
+  AppWWorkspacePProjectKeyMilestonesIndexRouteImport.update({
+    id: '/p/$projectKey/milestones/',
+    path: '/p/$projectKey/milestones/',
+    getParentRoute: () => AppWWorkspaceRouteRoute,
+  } as any)
+const AppWWorkspacePProjectKeyMilestonesMilestoneIdRoute =
+  AppWWorkspacePProjectKeyMilestonesMilestoneIdRouteImport.update({
+    id: '/p/$projectKey/milestones/$milestoneId',
+    path: '/p/$projectKey/milestones/$milestoneId',
+    getParentRoute: () => AppWWorkspaceRouteRoute,
+  } as any)
+const AppWWorkspacePProjectKeySettingsIndexRoute =
+  AppWWorkspacePProjectKeySettingsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AppWWorkspacePProjectKeySettingsRouteRoute,
+  } as any)
+const AppWWorkspacePProjectKeySettingsBacklogRoute =
+  AppWWorkspacePProjectKeySettingsBacklogRouteImport.update({
     id: '/backlog',
     path: '/backlog',
-    getParentRoute: () => AppPProjectKeySettingsRouteRoute,
+    getParentRoute: () => AppWWorkspacePProjectKeySettingsRouteRoute,
   } as any)
-const AppPProjectKeySettingsDefaultsRoute =
-  AppPProjectKeySettingsDefaultsRouteImport.update({
+const AppWWorkspacePProjectKeySettingsDefaultsRoute =
+  AppWWorkspacePProjectKeySettingsDefaultsRouteImport.update({
     id: '/defaults',
     path: '/defaults',
-    getParentRoute: () => AppPProjectKeySettingsRouteRoute,
+    getParentRoute: () => AppWWorkspacePProjectKeySettingsRouteRoute,
   } as any)
-const AppPProjectKeySettingsLabelsRoute =
-  AppPProjectKeySettingsLabelsRouteImport.update({
+const AppWWorkspacePProjectKeySettingsLabelsRoute =
+  AppWWorkspacePProjectKeySettingsLabelsRouteImport.update({
     id: '/labels',
     path: '/labels',
-    getParentRoute: () => AppPProjectKeySettingsRouteRoute,
+    getParentRoute: () => AppWWorkspacePProjectKeySettingsRouteRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
   '/__ui': typeof _uiRoute
   '/': typeof AppIndexRoute
-  '/settings': typeof AppSettingsRouteRouteWithChildren
   '/setup': typeof authSetupRoute
   '/signin': typeof authSigninRoute
   '/dashboard': typeof AppDashboardRoute
   '/my-tasks': typeof AppMyTasksRoute
+  '/projects': typeof AppProjectsRoute
+  '/welcome': typeof AppWelcomeRoute
   '/api/healthz': typeof ApiHealthzRoute
+  '/w/$workspace': typeof AppWWorkspaceRouteRouteWithChildren
   '/invite/$id': typeof authInviteIdRoute
-  '/settings/api-keys': typeof AppSettingsApiKeysRoute
-  '/settings/appearance': typeof AppSettingsAppearanceRoute
-  '/settings/connections': typeof AppSettingsConnectionsRoute
-  '/settings/members': typeof AppSettingsMembersRoute
-  '/settings/my-keys': typeof AppSettingsMyKeysRoute
+  '/p/$': typeof AppPSplatRoute
+  '/settings/$': typeof AppSettingsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/v1/$': typeof ApiV1SplatRoute
-  '/projects/': typeof AppProjectsIndexRoute
   '/settings/': typeof AppSettingsIndexRoute
-  '/p/$projectKey/settings': typeof AppPProjectKeySettingsRouteRouteWithChildren
-  '/p/$projectKey/$taskKey': typeof AppPProjectKeyTaskKeyRoute
-  '/p/$projectKey/backlog-setup': typeof AppPProjectKeyBacklogSetupRoute
+  '/w/$workspace/settings': typeof AppWWorkspaceSettingsRouteRouteWithChildren
+  '/w/$workspace/dashboard': typeof AppWWorkspaceDashboardRoute
+  '/w/$workspace/my-tasks': typeof AppWWorkspaceMyTasksRoute
   '/api/webhooks/backlog/$webhookId': typeof ApiWebhooksBacklogWebhookIdRoute
-  '/p/$projectKey/': typeof AppPProjectKeyIndexRoute
-  '/p/$projectKey/cycles/$cycleNumber': typeof AppPProjectKeyCyclesCycleNumberRoute
-  '/p/$projectKey/milestones/$milestoneId': typeof AppPProjectKeyMilestonesMilestoneIdRoute
-  '/p/$projectKey/settings/backlog': typeof AppPProjectKeySettingsBacklogRoute
-  '/p/$projectKey/settings/defaults': typeof AppPProjectKeySettingsDefaultsRoute
-  '/p/$projectKey/settings/labels': typeof AppPProjectKeySettingsLabelsRoute
-  '/p/$projectKey/cycles/': typeof AppPProjectKeyCyclesIndexRoute
-  '/p/$projectKey/milestones/': typeof AppPProjectKeyMilestonesIndexRoute
-  '/p/$projectKey/settings/': typeof AppPProjectKeySettingsIndexRoute
+  '/w/$workspace/': typeof AppWWorkspaceIndexRoute
+  '/w/$workspace/settings/api-keys': typeof AppWWorkspaceSettingsApiKeysRoute
+  '/w/$workspace/settings/appearance': typeof AppWWorkspaceSettingsAppearanceRoute
+  '/w/$workspace/settings/connections': typeof AppWWorkspaceSettingsConnectionsRoute
+  '/w/$workspace/settings/general': typeof AppWWorkspaceSettingsGeneralRoute
+  '/w/$workspace/settings/members': typeof AppWWorkspaceSettingsMembersRoute
+  '/w/$workspace/settings/my-keys': typeof AppWWorkspaceSettingsMyKeysRoute
+  '/w/$workspace/projects/': typeof AppWWorkspaceProjectsIndexRoute
+  '/w/$workspace/settings/': typeof AppWWorkspaceSettingsIndexRoute
+  '/w/$workspace/p/$projectKey/settings': typeof AppWWorkspacePProjectKeySettingsRouteRouteWithChildren
+  '/w/$workspace/p/$projectKey/$taskKey': typeof AppWWorkspacePProjectKeyTaskKeyRoute
+  '/w/$workspace/p/$projectKey/backlog-setup': typeof AppWWorkspacePProjectKeyBacklogSetupRoute
+  '/w/$workspace/p/$projectKey/': typeof AppWWorkspacePProjectKeyIndexRoute
+  '/w/$workspace/p/$projectKey/cycles/$cycleNumber': typeof AppWWorkspacePProjectKeyCyclesCycleNumberRoute
+  '/w/$workspace/p/$projectKey/milestones/$milestoneId': typeof AppWWorkspacePProjectKeyMilestonesMilestoneIdRoute
+  '/w/$workspace/p/$projectKey/settings/backlog': typeof AppWWorkspacePProjectKeySettingsBacklogRoute
+  '/w/$workspace/p/$projectKey/settings/defaults': typeof AppWWorkspacePProjectKeySettingsDefaultsRoute
+  '/w/$workspace/p/$projectKey/settings/labels': typeof AppWWorkspacePProjectKeySettingsLabelsRoute
+  '/w/$workspace/p/$projectKey/cycles/': typeof AppWWorkspacePProjectKeyCyclesIndexRoute
+  '/w/$workspace/p/$projectKey/milestones/': typeof AppWWorkspacePProjectKeyMilestonesIndexRoute
+  '/w/$workspace/p/$projectKey/settings/': typeof AppWWorkspacePProjectKeySettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/__ui': typeof _uiRoute
@@ -252,100 +333,129 @@ export interface FileRoutesByTo {
   '/signin': typeof authSigninRoute
   '/dashboard': typeof AppDashboardRoute
   '/my-tasks': typeof AppMyTasksRoute
+  '/projects': typeof AppProjectsRoute
+  '/welcome': typeof AppWelcomeRoute
   '/api/healthz': typeof ApiHealthzRoute
   '/': typeof AppIndexRoute
   '/invite/$id': typeof authInviteIdRoute
-  '/settings/api-keys': typeof AppSettingsApiKeysRoute
-  '/settings/appearance': typeof AppSettingsAppearanceRoute
-  '/settings/connections': typeof AppSettingsConnectionsRoute
-  '/settings/members': typeof AppSettingsMembersRoute
-  '/settings/my-keys': typeof AppSettingsMyKeysRoute
+  '/p/$': typeof AppPSplatRoute
+  '/settings/$': typeof AppSettingsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/v1/$': typeof ApiV1SplatRoute
-  '/projects': typeof AppProjectsIndexRoute
   '/settings': typeof AppSettingsIndexRoute
-  '/p/$projectKey/$taskKey': typeof AppPProjectKeyTaskKeyRoute
-  '/p/$projectKey/backlog-setup': typeof AppPProjectKeyBacklogSetupRoute
+  '/w/$workspace/dashboard': typeof AppWWorkspaceDashboardRoute
+  '/w/$workspace/my-tasks': typeof AppWWorkspaceMyTasksRoute
   '/api/webhooks/backlog/$webhookId': typeof ApiWebhooksBacklogWebhookIdRoute
-  '/p/$projectKey': typeof AppPProjectKeyIndexRoute
-  '/p/$projectKey/cycles/$cycleNumber': typeof AppPProjectKeyCyclesCycleNumberRoute
-  '/p/$projectKey/milestones/$milestoneId': typeof AppPProjectKeyMilestonesMilestoneIdRoute
-  '/p/$projectKey/settings/backlog': typeof AppPProjectKeySettingsBacklogRoute
-  '/p/$projectKey/settings/defaults': typeof AppPProjectKeySettingsDefaultsRoute
-  '/p/$projectKey/settings/labels': typeof AppPProjectKeySettingsLabelsRoute
-  '/p/$projectKey/cycles': typeof AppPProjectKeyCyclesIndexRoute
-  '/p/$projectKey/milestones': typeof AppPProjectKeyMilestonesIndexRoute
-  '/p/$projectKey/settings': typeof AppPProjectKeySettingsIndexRoute
+  '/w/$workspace': typeof AppWWorkspaceIndexRoute
+  '/w/$workspace/settings/api-keys': typeof AppWWorkspaceSettingsApiKeysRoute
+  '/w/$workspace/settings/appearance': typeof AppWWorkspaceSettingsAppearanceRoute
+  '/w/$workspace/settings/connections': typeof AppWWorkspaceSettingsConnectionsRoute
+  '/w/$workspace/settings/general': typeof AppWWorkspaceSettingsGeneralRoute
+  '/w/$workspace/settings/members': typeof AppWWorkspaceSettingsMembersRoute
+  '/w/$workspace/settings/my-keys': typeof AppWWorkspaceSettingsMyKeysRoute
+  '/w/$workspace/projects': typeof AppWWorkspaceProjectsIndexRoute
+  '/w/$workspace/settings': typeof AppWWorkspaceSettingsIndexRoute
+  '/w/$workspace/p/$projectKey/$taskKey': typeof AppWWorkspacePProjectKeyTaskKeyRoute
+  '/w/$workspace/p/$projectKey/backlog-setup': typeof AppWWorkspacePProjectKeyBacklogSetupRoute
+  '/w/$workspace/p/$projectKey': typeof AppWWorkspacePProjectKeyIndexRoute
+  '/w/$workspace/p/$projectKey/cycles/$cycleNumber': typeof AppWWorkspacePProjectKeyCyclesCycleNumberRoute
+  '/w/$workspace/p/$projectKey/milestones/$milestoneId': typeof AppWWorkspacePProjectKeyMilestonesMilestoneIdRoute
+  '/w/$workspace/p/$projectKey/settings/backlog': typeof AppWWorkspacePProjectKeySettingsBacklogRoute
+  '/w/$workspace/p/$projectKey/settings/defaults': typeof AppWWorkspacePProjectKeySettingsDefaultsRoute
+  '/w/$workspace/p/$projectKey/settings/labels': typeof AppWWorkspacePProjectKeySettingsLabelsRoute
+  '/w/$workspace/p/$projectKey/cycles': typeof AppWWorkspacePProjectKeyCyclesIndexRoute
+  '/w/$workspace/p/$projectKey/milestones': typeof AppWWorkspacePProjectKeyMilestonesIndexRoute
+  '/w/$workspace/p/$projectKey/settings': typeof AppWWorkspacePProjectKeySettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/__ui': typeof _uiRoute
   '/_app': typeof AppRouteWithChildren
-  '/_app/settings': typeof AppSettingsRouteRouteWithChildren
   '/(auth)/setup': typeof authSetupRoute
   '/(auth)/signin': typeof authSigninRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/my-tasks': typeof AppMyTasksRoute
+  '/_app/projects': typeof AppProjectsRoute
+  '/_app/welcome': typeof AppWelcomeRoute
   '/api/healthz': typeof ApiHealthzRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/w/$workspace': typeof AppWWorkspaceRouteRouteWithChildren
   '/(auth)/invite/$id': typeof authInviteIdRoute
-  '/_app/settings/api-keys': typeof AppSettingsApiKeysRoute
-  '/_app/settings/appearance': typeof AppSettingsAppearanceRoute
-  '/_app/settings/connections': typeof AppSettingsConnectionsRoute
-  '/_app/settings/members': typeof AppSettingsMembersRoute
-  '/_app/settings/my-keys': typeof AppSettingsMyKeysRoute
+  '/_app/p/$': typeof AppPSplatRoute
+  '/_app/settings/$': typeof AppSettingsSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/v1/$': typeof ApiV1SplatRoute
-  '/_app/projects/': typeof AppProjectsIndexRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
-  '/_app/p/$projectKey/settings': typeof AppPProjectKeySettingsRouteRouteWithChildren
-  '/_app/p/$projectKey/$taskKey': typeof AppPProjectKeyTaskKeyRoute
-  '/_app/p/$projectKey/backlog-setup': typeof AppPProjectKeyBacklogSetupRoute
+  '/_app/w/$workspace/settings': typeof AppWWorkspaceSettingsRouteRouteWithChildren
+  '/_app/w/$workspace/dashboard': typeof AppWWorkspaceDashboardRoute
+  '/_app/w/$workspace/my-tasks': typeof AppWWorkspaceMyTasksRoute
   '/api/webhooks/backlog/$webhookId': typeof ApiWebhooksBacklogWebhookIdRoute
-  '/_app/p/$projectKey/': typeof AppPProjectKeyIndexRoute
-  '/_app/p/$projectKey/cycles/$cycleNumber': typeof AppPProjectKeyCyclesCycleNumberRoute
-  '/_app/p/$projectKey/milestones/$milestoneId': typeof AppPProjectKeyMilestonesMilestoneIdRoute
-  '/_app/p/$projectKey/settings/backlog': typeof AppPProjectKeySettingsBacklogRoute
-  '/_app/p/$projectKey/settings/defaults': typeof AppPProjectKeySettingsDefaultsRoute
-  '/_app/p/$projectKey/settings/labels': typeof AppPProjectKeySettingsLabelsRoute
-  '/_app/p/$projectKey/cycles/': typeof AppPProjectKeyCyclesIndexRoute
-  '/_app/p/$projectKey/milestones/': typeof AppPProjectKeyMilestonesIndexRoute
-  '/_app/p/$projectKey/settings/': typeof AppPProjectKeySettingsIndexRoute
+  '/_app/w/$workspace/': typeof AppWWorkspaceIndexRoute
+  '/_app/w/$workspace/settings/api-keys': typeof AppWWorkspaceSettingsApiKeysRoute
+  '/_app/w/$workspace/settings/appearance': typeof AppWWorkspaceSettingsAppearanceRoute
+  '/_app/w/$workspace/settings/connections': typeof AppWWorkspaceSettingsConnectionsRoute
+  '/_app/w/$workspace/settings/general': typeof AppWWorkspaceSettingsGeneralRoute
+  '/_app/w/$workspace/settings/members': typeof AppWWorkspaceSettingsMembersRoute
+  '/_app/w/$workspace/settings/my-keys': typeof AppWWorkspaceSettingsMyKeysRoute
+  '/_app/w/$workspace/projects/': typeof AppWWorkspaceProjectsIndexRoute
+  '/_app/w/$workspace/settings/': typeof AppWWorkspaceSettingsIndexRoute
+  '/_app/w/$workspace/p/$projectKey/settings': typeof AppWWorkspacePProjectKeySettingsRouteRouteWithChildren
+  '/_app/w/$workspace/p/$projectKey/$taskKey': typeof AppWWorkspacePProjectKeyTaskKeyRoute
+  '/_app/w/$workspace/p/$projectKey/backlog-setup': typeof AppWWorkspacePProjectKeyBacklogSetupRoute
+  '/_app/w/$workspace/p/$projectKey/': typeof AppWWorkspacePProjectKeyIndexRoute
+  '/_app/w/$workspace/p/$projectKey/cycles/$cycleNumber': typeof AppWWorkspacePProjectKeyCyclesCycleNumberRoute
+  '/_app/w/$workspace/p/$projectKey/milestones/$milestoneId': typeof AppWWorkspacePProjectKeyMilestonesMilestoneIdRoute
+  '/_app/w/$workspace/p/$projectKey/settings/backlog': typeof AppWWorkspacePProjectKeySettingsBacklogRoute
+  '/_app/w/$workspace/p/$projectKey/settings/defaults': typeof AppWWorkspacePProjectKeySettingsDefaultsRoute
+  '/_app/w/$workspace/p/$projectKey/settings/labels': typeof AppWWorkspacePProjectKeySettingsLabelsRoute
+  '/_app/w/$workspace/p/$projectKey/cycles/': typeof AppWWorkspacePProjectKeyCyclesIndexRoute
+  '/_app/w/$workspace/p/$projectKey/milestones/': typeof AppWWorkspacePProjectKeyMilestonesIndexRoute
+  '/_app/w/$workspace/p/$projectKey/settings/': typeof AppWWorkspacePProjectKeySettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/__ui'
     | '/'
-    | '/settings'
     | '/setup'
     | '/signin'
     | '/dashboard'
     | '/my-tasks'
+    | '/projects'
+    | '/welcome'
     | '/api/healthz'
+    | '/w/$workspace'
     | '/invite/$id'
-    | '/settings/api-keys'
-    | '/settings/appearance'
-    | '/settings/connections'
-    | '/settings/members'
-    | '/settings/my-keys'
+    | '/p/$'
+    | '/settings/$'
     | '/api/auth/$'
     | '/api/v1/$'
-    | '/projects/'
     | '/settings/'
-    | '/p/$projectKey/settings'
-    | '/p/$projectKey/$taskKey'
-    | '/p/$projectKey/backlog-setup'
+    | '/w/$workspace/settings'
+    | '/w/$workspace/dashboard'
+    | '/w/$workspace/my-tasks'
     | '/api/webhooks/backlog/$webhookId'
-    | '/p/$projectKey/'
-    | '/p/$projectKey/cycles/$cycleNumber'
-    | '/p/$projectKey/milestones/$milestoneId'
-    | '/p/$projectKey/settings/backlog'
-    | '/p/$projectKey/settings/defaults'
-    | '/p/$projectKey/settings/labels'
-    | '/p/$projectKey/cycles/'
-    | '/p/$projectKey/milestones/'
-    | '/p/$projectKey/settings/'
+    | '/w/$workspace/'
+    | '/w/$workspace/settings/api-keys'
+    | '/w/$workspace/settings/appearance'
+    | '/w/$workspace/settings/connections'
+    | '/w/$workspace/settings/general'
+    | '/w/$workspace/settings/members'
+    | '/w/$workspace/settings/my-keys'
+    | '/w/$workspace/projects/'
+    | '/w/$workspace/settings/'
+    | '/w/$workspace/p/$projectKey/settings'
+    | '/w/$workspace/p/$projectKey/$taskKey'
+    | '/w/$workspace/p/$projectKey/backlog-setup'
+    | '/w/$workspace/p/$projectKey/'
+    | '/w/$workspace/p/$projectKey/cycles/$cycleNumber'
+    | '/w/$workspace/p/$projectKey/milestones/$milestoneId'
+    | '/w/$workspace/p/$projectKey/settings/backlog'
+    | '/w/$workspace/p/$projectKey/settings/defaults'
+    | '/w/$workspace/p/$projectKey/settings/labels'
+    | '/w/$workspace/p/$projectKey/cycles/'
+    | '/w/$workspace/p/$projectKey/milestones/'
+    | '/w/$workspace/p/$projectKey/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/__ui'
@@ -353,64 +463,83 @@ export interface FileRouteTypes {
     | '/signin'
     | '/dashboard'
     | '/my-tasks'
+    | '/projects'
+    | '/welcome'
     | '/api/healthz'
     | '/'
     | '/invite/$id'
-    | '/settings/api-keys'
-    | '/settings/appearance'
-    | '/settings/connections'
-    | '/settings/members'
-    | '/settings/my-keys'
+    | '/p/$'
+    | '/settings/$'
     | '/api/auth/$'
     | '/api/v1/$'
-    | '/projects'
     | '/settings'
-    | '/p/$projectKey/$taskKey'
-    | '/p/$projectKey/backlog-setup'
+    | '/w/$workspace/dashboard'
+    | '/w/$workspace/my-tasks'
     | '/api/webhooks/backlog/$webhookId'
-    | '/p/$projectKey'
-    | '/p/$projectKey/cycles/$cycleNumber'
-    | '/p/$projectKey/milestones/$milestoneId'
-    | '/p/$projectKey/settings/backlog'
-    | '/p/$projectKey/settings/defaults'
-    | '/p/$projectKey/settings/labels'
-    | '/p/$projectKey/cycles'
-    | '/p/$projectKey/milestones'
-    | '/p/$projectKey/settings'
+    | '/w/$workspace'
+    | '/w/$workspace/settings/api-keys'
+    | '/w/$workspace/settings/appearance'
+    | '/w/$workspace/settings/connections'
+    | '/w/$workspace/settings/general'
+    | '/w/$workspace/settings/members'
+    | '/w/$workspace/settings/my-keys'
+    | '/w/$workspace/projects'
+    | '/w/$workspace/settings'
+    | '/w/$workspace/p/$projectKey/$taskKey'
+    | '/w/$workspace/p/$projectKey/backlog-setup'
+    | '/w/$workspace/p/$projectKey'
+    | '/w/$workspace/p/$projectKey/cycles/$cycleNumber'
+    | '/w/$workspace/p/$projectKey/milestones/$milestoneId'
+    | '/w/$workspace/p/$projectKey/settings/backlog'
+    | '/w/$workspace/p/$projectKey/settings/defaults'
+    | '/w/$workspace/p/$projectKey/settings/labels'
+    | '/w/$workspace/p/$projectKey/cycles'
+    | '/w/$workspace/p/$projectKey/milestones'
+    | '/w/$workspace/p/$projectKey/settings'
   id:
     | '__root__'
     | '/__ui'
     | '/_app'
-    | '/_app/settings'
     | '/(auth)/setup'
     | '/(auth)/signin'
     | '/_app/dashboard'
     | '/_app/my-tasks'
+    | '/_app/projects'
+    | '/_app/welcome'
     | '/api/healthz'
     | '/_app/'
+    | '/_app/w/$workspace'
     | '/(auth)/invite/$id'
-    | '/_app/settings/api-keys'
-    | '/_app/settings/appearance'
-    | '/_app/settings/connections'
-    | '/_app/settings/members'
-    | '/_app/settings/my-keys'
+    | '/_app/p/$'
+    | '/_app/settings/$'
     | '/api/auth/$'
     | '/api/v1/$'
-    | '/_app/projects/'
     | '/_app/settings/'
-    | '/_app/p/$projectKey/settings'
-    | '/_app/p/$projectKey/$taskKey'
-    | '/_app/p/$projectKey/backlog-setup'
+    | '/_app/w/$workspace/settings'
+    | '/_app/w/$workspace/dashboard'
+    | '/_app/w/$workspace/my-tasks'
     | '/api/webhooks/backlog/$webhookId'
-    | '/_app/p/$projectKey/'
-    | '/_app/p/$projectKey/cycles/$cycleNumber'
-    | '/_app/p/$projectKey/milestones/$milestoneId'
-    | '/_app/p/$projectKey/settings/backlog'
-    | '/_app/p/$projectKey/settings/defaults'
-    | '/_app/p/$projectKey/settings/labels'
-    | '/_app/p/$projectKey/cycles/'
-    | '/_app/p/$projectKey/milestones/'
-    | '/_app/p/$projectKey/settings/'
+    | '/_app/w/$workspace/'
+    | '/_app/w/$workspace/settings/api-keys'
+    | '/_app/w/$workspace/settings/appearance'
+    | '/_app/w/$workspace/settings/connections'
+    | '/_app/w/$workspace/settings/general'
+    | '/_app/w/$workspace/settings/members'
+    | '/_app/w/$workspace/settings/my-keys'
+    | '/_app/w/$workspace/projects/'
+    | '/_app/w/$workspace/settings/'
+    | '/_app/w/$workspace/p/$projectKey/settings'
+    | '/_app/w/$workspace/p/$projectKey/$taskKey'
+    | '/_app/w/$workspace/p/$projectKey/backlog-setup'
+    | '/_app/w/$workspace/p/$projectKey/'
+    | '/_app/w/$workspace/p/$projectKey/cycles/$cycleNumber'
+    | '/_app/w/$workspace/p/$projectKey/milestones/$milestoneId'
+    | '/_app/w/$workspace/p/$projectKey/settings/backlog'
+    | '/_app/w/$workspace/p/$projectKey/settings/defaults'
+    | '/_app/w/$workspace/p/$projectKey/settings/labels'
+    | '/_app/w/$workspace/p/$projectKey/cycles/'
+    | '/_app/w/$workspace/p/$projectKey/milestones/'
+    | '/_app/w/$workspace/p/$projectKey/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -476,11 +605,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppMyTasksRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/settings': {
-      id: '/_app/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AppSettingsRouteRouteImport
+    '/_app/projects': {
+      id: '/_app/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof AppProjectsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/welcome': {
+      id: '/_app/welcome'
+      path: '/welcome'
+      fullPath: '/welcome'
+      preLoaderRoute: typeof AppWelcomeRouteImport
       parentRoute: typeof AppRoute
     }
     '/api/healthz': {
@@ -497,54 +633,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof authInviteIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/projects/': {
-      id: '/_app/projects/'
-      path: '/projects'
-      fullPath: '/projects/'
-      preLoaderRoute: typeof AppProjectsIndexRouteImport
+    '/_app/p/$': {
+      id: '/_app/p/$'
+      path: '/p/$'
+      fullPath: '/p/$'
+      preLoaderRoute: typeof AppPSplatRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/settings/': {
       id: '/_app/settings/'
-      path: '/'
+      path: '/settings'
       fullPath: '/settings/'
       preLoaderRoute: typeof AppSettingsIndexRouteImport
-      parentRoute: typeof AppSettingsRouteRoute
+      parentRoute: typeof AppRoute
     }
-    '/_app/settings/api-keys': {
-      id: '/_app/settings/api-keys'
-      path: '/api-keys'
-      fullPath: '/settings/api-keys'
-      preLoaderRoute: typeof AppSettingsApiKeysRouteImport
-      parentRoute: typeof AppSettingsRouteRoute
+    '/_app/settings/$': {
+      id: '/_app/settings/$'
+      path: '/settings/$'
+      fullPath: '/settings/$'
+      preLoaderRoute: typeof AppSettingsSplatRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_app/settings/appearance': {
-      id: '/_app/settings/appearance'
-      path: '/appearance'
-      fullPath: '/settings/appearance'
-      preLoaderRoute: typeof AppSettingsAppearanceRouteImport
-      parentRoute: typeof AppSettingsRouteRoute
-    }
-    '/_app/settings/connections': {
-      id: '/_app/settings/connections'
-      path: '/connections'
-      fullPath: '/settings/connections'
-      preLoaderRoute: typeof AppSettingsConnectionsRouteImport
-      parentRoute: typeof AppSettingsRouteRoute
-    }
-    '/_app/settings/members': {
-      id: '/_app/settings/members'
-      path: '/members'
-      fullPath: '/settings/members'
-      preLoaderRoute: typeof AppSettingsMembersRouteImport
-      parentRoute: typeof AppSettingsRouteRoute
-    }
-    '/_app/settings/my-keys': {
-      id: '/_app/settings/my-keys'
-      path: '/my-keys'
-      fullPath: '/settings/my-keys'
-      preLoaderRoute: typeof AppSettingsMyKeysRouteImport
-      parentRoute: typeof AppSettingsRouteRoute
+    '/_app/w/$workspace': {
+      id: '/_app/w/$workspace'
+      path: '/w/$workspace'
+      fullPath: '/w/$workspace'
+      preLoaderRoute: typeof AppWWorkspaceRouteRouteImport
+      parentRoute: typeof AppRoute
     }
     '/api/auth/$': {
       id: '/api/auth/$'
@@ -560,33 +675,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/p/$projectKey/': {
-      id: '/_app/p/$projectKey/'
-      path: '/p/$projectKey'
-      fullPath: '/p/$projectKey/'
-      preLoaderRoute: typeof AppPProjectKeyIndexRouteImport
-      parentRoute: typeof AppRoute
+    '/_app/w/$workspace/': {
+      id: '/_app/w/$workspace/'
+      path: '/'
+      fullPath: '/w/$workspace/'
+      preLoaderRoute: typeof AppWWorkspaceIndexRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
     }
-    '/_app/p/$projectKey/$taskKey': {
-      id: '/_app/p/$projectKey/$taskKey'
-      path: '/p/$projectKey/$taskKey'
-      fullPath: '/p/$projectKey/$taskKey'
-      preLoaderRoute: typeof AppPProjectKeyTaskKeyRouteImport
-      parentRoute: typeof AppRoute
+    '/_app/w/$workspace/dashboard': {
+      id: '/_app/w/$workspace/dashboard'
+      path: '/dashboard'
+      fullPath: '/w/$workspace/dashboard'
+      preLoaderRoute: typeof AppWWorkspaceDashboardRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
     }
-    '/_app/p/$projectKey/backlog-setup': {
-      id: '/_app/p/$projectKey/backlog-setup'
-      path: '/p/$projectKey/backlog-setup'
-      fullPath: '/p/$projectKey/backlog-setup'
-      preLoaderRoute: typeof AppPProjectKeyBacklogSetupRouteImport
-      parentRoute: typeof AppRoute
+    '/_app/w/$workspace/my-tasks': {
+      id: '/_app/w/$workspace/my-tasks'
+      path: '/my-tasks'
+      fullPath: '/w/$workspace/my-tasks'
+      preLoaderRoute: typeof AppWWorkspaceMyTasksRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
     }
-    '/_app/p/$projectKey/settings': {
-      id: '/_app/p/$projectKey/settings'
-      path: '/p/$projectKey/settings'
-      fullPath: '/p/$projectKey/settings'
-      preLoaderRoute: typeof AppPProjectKeySettingsRouteRouteImport
-      parentRoute: typeof AppRoute
+    '/_app/w/$workspace/settings': {
+      id: '/_app/w/$workspace/settings'
+      path: '/settings'
+      fullPath: '/w/$workspace/settings'
+      preLoaderRoute: typeof AppWWorkspaceSettingsRouteRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
     }
     '/api/webhooks/backlog/$webhookId': {
       id: '/api/webhooks/backlog/$webhookId'
@@ -595,138 +710,263 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhooksBacklogWebhookIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/p/$projectKey/cycles/': {
-      id: '/_app/p/$projectKey/cycles/'
-      path: '/p/$projectKey/cycles'
-      fullPath: '/p/$projectKey/cycles/'
-      preLoaderRoute: typeof AppPProjectKeyCyclesIndexRouteImport
-      parentRoute: typeof AppRoute
+    '/_app/w/$workspace/projects/': {
+      id: '/_app/w/$workspace/projects/'
+      path: '/projects'
+      fullPath: '/w/$workspace/projects/'
+      preLoaderRoute: typeof AppWWorkspaceProjectsIndexRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
     }
-    '/_app/p/$projectKey/cycles/$cycleNumber': {
-      id: '/_app/p/$projectKey/cycles/$cycleNumber'
-      path: '/p/$projectKey/cycles/$cycleNumber'
-      fullPath: '/p/$projectKey/cycles/$cycleNumber'
-      preLoaderRoute: typeof AppPProjectKeyCyclesCycleNumberRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/p/$projectKey/milestones/': {
-      id: '/_app/p/$projectKey/milestones/'
-      path: '/p/$projectKey/milestones'
-      fullPath: '/p/$projectKey/milestones/'
-      preLoaderRoute: typeof AppPProjectKeyMilestonesIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/p/$projectKey/milestones/$milestoneId': {
-      id: '/_app/p/$projectKey/milestones/$milestoneId'
-      path: '/p/$projectKey/milestones/$milestoneId'
-      fullPath: '/p/$projectKey/milestones/$milestoneId'
-      preLoaderRoute: typeof AppPProjectKeyMilestonesMilestoneIdRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/p/$projectKey/settings/': {
-      id: '/_app/p/$projectKey/settings/'
+    '/_app/w/$workspace/settings/': {
+      id: '/_app/w/$workspace/settings/'
       path: '/'
-      fullPath: '/p/$projectKey/settings/'
-      preLoaderRoute: typeof AppPProjectKeySettingsIndexRouteImport
-      parentRoute: typeof AppPProjectKeySettingsRouteRoute
+      fullPath: '/w/$workspace/settings/'
+      preLoaderRoute: typeof AppWWorkspaceSettingsIndexRouteImport
+      parentRoute: typeof AppWWorkspaceSettingsRouteRoute
     }
-    '/_app/p/$projectKey/settings/backlog': {
-      id: '/_app/p/$projectKey/settings/backlog'
+    '/_app/w/$workspace/settings/api-keys': {
+      id: '/_app/w/$workspace/settings/api-keys'
+      path: '/api-keys'
+      fullPath: '/w/$workspace/settings/api-keys'
+      preLoaderRoute: typeof AppWWorkspaceSettingsApiKeysRouteImport
+      parentRoute: typeof AppWWorkspaceSettingsRouteRoute
+    }
+    '/_app/w/$workspace/settings/appearance': {
+      id: '/_app/w/$workspace/settings/appearance'
+      path: '/appearance'
+      fullPath: '/w/$workspace/settings/appearance'
+      preLoaderRoute: typeof AppWWorkspaceSettingsAppearanceRouteImport
+      parentRoute: typeof AppWWorkspaceSettingsRouteRoute
+    }
+    '/_app/w/$workspace/settings/connections': {
+      id: '/_app/w/$workspace/settings/connections'
+      path: '/connections'
+      fullPath: '/w/$workspace/settings/connections'
+      preLoaderRoute: typeof AppWWorkspaceSettingsConnectionsRouteImport
+      parentRoute: typeof AppWWorkspaceSettingsRouteRoute
+    }
+    '/_app/w/$workspace/settings/general': {
+      id: '/_app/w/$workspace/settings/general'
+      path: '/general'
+      fullPath: '/w/$workspace/settings/general'
+      preLoaderRoute: typeof AppWWorkspaceSettingsGeneralRouteImport
+      parentRoute: typeof AppWWorkspaceSettingsRouteRoute
+    }
+    '/_app/w/$workspace/settings/members': {
+      id: '/_app/w/$workspace/settings/members'
+      path: '/members'
+      fullPath: '/w/$workspace/settings/members'
+      preLoaderRoute: typeof AppWWorkspaceSettingsMembersRouteImport
+      parentRoute: typeof AppWWorkspaceSettingsRouteRoute
+    }
+    '/_app/w/$workspace/settings/my-keys': {
+      id: '/_app/w/$workspace/settings/my-keys'
+      path: '/my-keys'
+      fullPath: '/w/$workspace/settings/my-keys'
+      preLoaderRoute: typeof AppWWorkspaceSettingsMyKeysRouteImport
+      parentRoute: typeof AppWWorkspaceSettingsRouteRoute
+    }
+    '/_app/w/$workspace/p/$projectKey/': {
+      id: '/_app/w/$workspace/p/$projectKey/'
+      path: '/p/$projectKey'
+      fullPath: '/w/$workspace/p/$projectKey/'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeyIndexRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
+    }
+    '/_app/w/$workspace/p/$projectKey/$taskKey': {
+      id: '/_app/w/$workspace/p/$projectKey/$taskKey'
+      path: '/p/$projectKey/$taskKey'
+      fullPath: '/w/$workspace/p/$projectKey/$taskKey'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeyTaskKeyRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
+    }
+    '/_app/w/$workspace/p/$projectKey/backlog-setup': {
+      id: '/_app/w/$workspace/p/$projectKey/backlog-setup'
+      path: '/p/$projectKey/backlog-setup'
+      fullPath: '/w/$workspace/p/$projectKey/backlog-setup'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeyBacklogSetupRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
+    }
+    '/_app/w/$workspace/p/$projectKey/settings': {
+      id: '/_app/w/$workspace/p/$projectKey/settings'
+      path: '/p/$projectKey/settings'
+      fullPath: '/w/$workspace/p/$projectKey/settings'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeySettingsRouteRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
+    }
+    '/_app/w/$workspace/p/$projectKey/cycles/': {
+      id: '/_app/w/$workspace/p/$projectKey/cycles/'
+      path: '/p/$projectKey/cycles'
+      fullPath: '/w/$workspace/p/$projectKey/cycles/'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeyCyclesIndexRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
+    }
+    '/_app/w/$workspace/p/$projectKey/cycles/$cycleNumber': {
+      id: '/_app/w/$workspace/p/$projectKey/cycles/$cycleNumber'
+      path: '/p/$projectKey/cycles/$cycleNumber'
+      fullPath: '/w/$workspace/p/$projectKey/cycles/$cycleNumber'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeyCyclesCycleNumberRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
+    }
+    '/_app/w/$workspace/p/$projectKey/milestones/': {
+      id: '/_app/w/$workspace/p/$projectKey/milestones/'
+      path: '/p/$projectKey/milestones'
+      fullPath: '/w/$workspace/p/$projectKey/milestones/'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeyMilestonesIndexRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
+    }
+    '/_app/w/$workspace/p/$projectKey/milestones/$milestoneId': {
+      id: '/_app/w/$workspace/p/$projectKey/milestones/$milestoneId'
+      path: '/p/$projectKey/milestones/$milestoneId'
+      fullPath: '/w/$workspace/p/$projectKey/milestones/$milestoneId'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeyMilestonesMilestoneIdRouteImport
+      parentRoute: typeof AppWWorkspaceRouteRoute
+    }
+    '/_app/w/$workspace/p/$projectKey/settings/': {
+      id: '/_app/w/$workspace/p/$projectKey/settings/'
+      path: '/'
+      fullPath: '/w/$workspace/p/$projectKey/settings/'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeySettingsIndexRouteImport
+      parentRoute: typeof AppWWorkspacePProjectKeySettingsRouteRoute
+    }
+    '/_app/w/$workspace/p/$projectKey/settings/backlog': {
+      id: '/_app/w/$workspace/p/$projectKey/settings/backlog'
       path: '/backlog'
-      fullPath: '/p/$projectKey/settings/backlog'
-      preLoaderRoute: typeof AppPProjectKeySettingsBacklogRouteImport
-      parentRoute: typeof AppPProjectKeySettingsRouteRoute
+      fullPath: '/w/$workspace/p/$projectKey/settings/backlog'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeySettingsBacklogRouteImport
+      parentRoute: typeof AppWWorkspacePProjectKeySettingsRouteRoute
     }
-    '/_app/p/$projectKey/settings/defaults': {
-      id: '/_app/p/$projectKey/settings/defaults'
+    '/_app/w/$workspace/p/$projectKey/settings/defaults': {
+      id: '/_app/w/$workspace/p/$projectKey/settings/defaults'
       path: '/defaults'
-      fullPath: '/p/$projectKey/settings/defaults'
-      preLoaderRoute: typeof AppPProjectKeySettingsDefaultsRouteImport
-      parentRoute: typeof AppPProjectKeySettingsRouteRoute
+      fullPath: '/w/$workspace/p/$projectKey/settings/defaults'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeySettingsDefaultsRouteImport
+      parentRoute: typeof AppWWorkspacePProjectKeySettingsRouteRoute
     }
-    '/_app/p/$projectKey/settings/labels': {
-      id: '/_app/p/$projectKey/settings/labels'
+    '/_app/w/$workspace/p/$projectKey/settings/labels': {
+      id: '/_app/w/$workspace/p/$projectKey/settings/labels'
       path: '/labels'
-      fullPath: '/p/$projectKey/settings/labels'
-      preLoaderRoute: typeof AppPProjectKeySettingsLabelsRouteImport
-      parentRoute: typeof AppPProjectKeySettingsRouteRoute
+      fullPath: '/w/$workspace/p/$projectKey/settings/labels'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeySettingsLabelsRouteImport
+      parentRoute: typeof AppWWorkspacePProjectKeySettingsRouteRoute
     }
   }
 }
 
-interface AppSettingsRouteRouteChildren {
-  AppSettingsApiKeysRoute: typeof AppSettingsApiKeysRoute
-  AppSettingsAppearanceRoute: typeof AppSettingsAppearanceRoute
-  AppSettingsConnectionsRoute: typeof AppSettingsConnectionsRoute
-  AppSettingsMembersRoute: typeof AppSettingsMembersRoute
-  AppSettingsMyKeysRoute: typeof AppSettingsMyKeysRoute
+interface AppWWorkspaceSettingsRouteRouteChildren {
+  AppWWorkspaceSettingsApiKeysRoute: typeof AppWWorkspaceSettingsApiKeysRoute
+  AppWWorkspaceSettingsAppearanceRoute: typeof AppWWorkspaceSettingsAppearanceRoute
+  AppWWorkspaceSettingsConnectionsRoute: typeof AppWWorkspaceSettingsConnectionsRoute
+  AppWWorkspaceSettingsGeneralRoute: typeof AppWWorkspaceSettingsGeneralRoute
+  AppWWorkspaceSettingsMembersRoute: typeof AppWWorkspaceSettingsMembersRoute
+  AppWWorkspaceSettingsMyKeysRoute: typeof AppWWorkspaceSettingsMyKeysRoute
+  AppWWorkspaceSettingsIndexRoute: typeof AppWWorkspaceSettingsIndexRoute
+}
+
+const AppWWorkspaceSettingsRouteRouteChildren: AppWWorkspaceSettingsRouteRouteChildren =
+  {
+    AppWWorkspaceSettingsApiKeysRoute: AppWWorkspaceSettingsApiKeysRoute,
+    AppWWorkspaceSettingsAppearanceRoute: AppWWorkspaceSettingsAppearanceRoute,
+    AppWWorkspaceSettingsConnectionsRoute:
+      AppWWorkspaceSettingsConnectionsRoute,
+    AppWWorkspaceSettingsGeneralRoute: AppWWorkspaceSettingsGeneralRoute,
+    AppWWorkspaceSettingsMembersRoute: AppWWorkspaceSettingsMembersRoute,
+    AppWWorkspaceSettingsMyKeysRoute: AppWWorkspaceSettingsMyKeysRoute,
+    AppWWorkspaceSettingsIndexRoute: AppWWorkspaceSettingsIndexRoute,
+  }
+
+const AppWWorkspaceSettingsRouteRouteWithChildren =
+  AppWWorkspaceSettingsRouteRoute._addFileChildren(
+    AppWWorkspaceSettingsRouteRouteChildren,
+  )
+
+interface AppWWorkspacePProjectKeySettingsRouteRouteChildren {
+  AppWWorkspacePProjectKeySettingsBacklogRoute: typeof AppWWorkspacePProjectKeySettingsBacklogRoute
+  AppWWorkspacePProjectKeySettingsDefaultsRoute: typeof AppWWorkspacePProjectKeySettingsDefaultsRoute
+  AppWWorkspacePProjectKeySettingsLabelsRoute: typeof AppWWorkspacePProjectKeySettingsLabelsRoute
+  AppWWorkspacePProjectKeySettingsIndexRoute: typeof AppWWorkspacePProjectKeySettingsIndexRoute
+}
+
+const AppWWorkspacePProjectKeySettingsRouteRouteChildren: AppWWorkspacePProjectKeySettingsRouteRouteChildren =
+  {
+    AppWWorkspacePProjectKeySettingsBacklogRoute:
+      AppWWorkspacePProjectKeySettingsBacklogRoute,
+    AppWWorkspacePProjectKeySettingsDefaultsRoute:
+      AppWWorkspacePProjectKeySettingsDefaultsRoute,
+    AppWWorkspacePProjectKeySettingsLabelsRoute:
+      AppWWorkspacePProjectKeySettingsLabelsRoute,
+    AppWWorkspacePProjectKeySettingsIndexRoute:
+      AppWWorkspacePProjectKeySettingsIndexRoute,
+  }
+
+const AppWWorkspacePProjectKeySettingsRouteRouteWithChildren =
+  AppWWorkspacePProjectKeySettingsRouteRoute._addFileChildren(
+    AppWWorkspacePProjectKeySettingsRouteRouteChildren,
+  )
+
+interface AppWWorkspaceRouteRouteChildren {
+  AppWWorkspaceSettingsRouteRoute: typeof AppWWorkspaceSettingsRouteRouteWithChildren
+  AppWWorkspaceDashboardRoute: typeof AppWWorkspaceDashboardRoute
+  AppWWorkspaceMyTasksRoute: typeof AppWWorkspaceMyTasksRoute
+  AppWWorkspaceIndexRoute: typeof AppWWorkspaceIndexRoute
+  AppWWorkspaceProjectsIndexRoute: typeof AppWWorkspaceProjectsIndexRoute
+  AppWWorkspacePProjectKeySettingsRouteRoute: typeof AppWWorkspacePProjectKeySettingsRouteRouteWithChildren
+  AppWWorkspacePProjectKeyTaskKeyRoute: typeof AppWWorkspacePProjectKeyTaskKeyRoute
+  AppWWorkspacePProjectKeyBacklogSetupRoute: typeof AppWWorkspacePProjectKeyBacklogSetupRoute
+  AppWWorkspacePProjectKeyIndexRoute: typeof AppWWorkspacePProjectKeyIndexRoute
+  AppWWorkspacePProjectKeyCyclesCycleNumberRoute: typeof AppWWorkspacePProjectKeyCyclesCycleNumberRoute
+  AppWWorkspacePProjectKeyMilestonesMilestoneIdRoute: typeof AppWWorkspacePProjectKeyMilestonesMilestoneIdRoute
+  AppWWorkspacePProjectKeyCyclesIndexRoute: typeof AppWWorkspacePProjectKeyCyclesIndexRoute
+  AppWWorkspacePProjectKeyMilestonesIndexRoute: typeof AppWWorkspacePProjectKeyMilestonesIndexRoute
+}
+
+const AppWWorkspaceRouteRouteChildren: AppWWorkspaceRouteRouteChildren = {
+  AppWWorkspaceSettingsRouteRoute: AppWWorkspaceSettingsRouteRouteWithChildren,
+  AppWWorkspaceDashboardRoute: AppWWorkspaceDashboardRoute,
+  AppWWorkspaceMyTasksRoute: AppWWorkspaceMyTasksRoute,
+  AppWWorkspaceIndexRoute: AppWWorkspaceIndexRoute,
+  AppWWorkspaceProjectsIndexRoute: AppWWorkspaceProjectsIndexRoute,
+  AppWWorkspacePProjectKeySettingsRouteRoute:
+    AppWWorkspacePProjectKeySettingsRouteRouteWithChildren,
+  AppWWorkspacePProjectKeyTaskKeyRoute: AppWWorkspacePProjectKeyTaskKeyRoute,
+  AppWWorkspacePProjectKeyBacklogSetupRoute:
+    AppWWorkspacePProjectKeyBacklogSetupRoute,
+  AppWWorkspacePProjectKeyIndexRoute: AppWWorkspacePProjectKeyIndexRoute,
+  AppWWorkspacePProjectKeyCyclesCycleNumberRoute:
+    AppWWorkspacePProjectKeyCyclesCycleNumberRoute,
+  AppWWorkspacePProjectKeyMilestonesMilestoneIdRoute:
+    AppWWorkspacePProjectKeyMilestonesMilestoneIdRoute,
+  AppWWorkspacePProjectKeyCyclesIndexRoute:
+    AppWWorkspacePProjectKeyCyclesIndexRoute,
+  AppWWorkspacePProjectKeyMilestonesIndexRoute:
+    AppWWorkspacePProjectKeyMilestonesIndexRoute,
+}
+
+const AppWWorkspaceRouteRouteWithChildren =
+  AppWWorkspaceRouteRoute._addFileChildren(AppWWorkspaceRouteRouteChildren)
+
+interface AppRouteChildren {
+  AppDashboardRoute: typeof AppDashboardRoute
+  AppMyTasksRoute: typeof AppMyTasksRoute
+  AppProjectsRoute: typeof AppProjectsRoute
+  AppWelcomeRoute: typeof AppWelcomeRoute
+  AppIndexRoute: typeof AppIndexRoute
+  AppWWorkspaceRouteRoute: typeof AppWWorkspaceRouteRouteWithChildren
+  AppPSplatRoute: typeof AppPSplatRoute
+  AppSettingsSplatRoute: typeof AppSettingsSplatRoute
   AppSettingsIndexRoute: typeof AppSettingsIndexRoute
 }
 
-const AppSettingsRouteRouteChildren: AppSettingsRouteRouteChildren = {
-  AppSettingsApiKeysRoute: AppSettingsApiKeysRoute,
-  AppSettingsAppearanceRoute: AppSettingsAppearanceRoute,
-  AppSettingsConnectionsRoute: AppSettingsConnectionsRoute,
-  AppSettingsMembersRoute: AppSettingsMembersRoute,
-  AppSettingsMyKeysRoute: AppSettingsMyKeysRoute,
-  AppSettingsIndexRoute: AppSettingsIndexRoute,
-}
-
-const AppSettingsRouteRouteWithChildren =
-  AppSettingsRouteRoute._addFileChildren(AppSettingsRouteRouteChildren)
-
-interface AppPProjectKeySettingsRouteRouteChildren {
-  AppPProjectKeySettingsBacklogRoute: typeof AppPProjectKeySettingsBacklogRoute
-  AppPProjectKeySettingsDefaultsRoute: typeof AppPProjectKeySettingsDefaultsRoute
-  AppPProjectKeySettingsLabelsRoute: typeof AppPProjectKeySettingsLabelsRoute
-  AppPProjectKeySettingsIndexRoute: typeof AppPProjectKeySettingsIndexRoute
-}
-
-const AppPProjectKeySettingsRouteRouteChildren: AppPProjectKeySettingsRouteRouteChildren =
-  {
-    AppPProjectKeySettingsBacklogRoute: AppPProjectKeySettingsBacklogRoute,
-    AppPProjectKeySettingsDefaultsRoute: AppPProjectKeySettingsDefaultsRoute,
-    AppPProjectKeySettingsLabelsRoute: AppPProjectKeySettingsLabelsRoute,
-    AppPProjectKeySettingsIndexRoute: AppPProjectKeySettingsIndexRoute,
-  }
-
-const AppPProjectKeySettingsRouteRouteWithChildren =
-  AppPProjectKeySettingsRouteRoute._addFileChildren(
-    AppPProjectKeySettingsRouteRouteChildren,
-  )
-
-interface AppRouteChildren {
-  AppSettingsRouteRoute: typeof AppSettingsRouteRouteWithChildren
-  AppDashboardRoute: typeof AppDashboardRoute
-  AppMyTasksRoute: typeof AppMyTasksRoute
-  AppIndexRoute: typeof AppIndexRoute
-  AppProjectsIndexRoute: typeof AppProjectsIndexRoute
-  AppPProjectKeySettingsRouteRoute: typeof AppPProjectKeySettingsRouteRouteWithChildren
-  AppPProjectKeyTaskKeyRoute: typeof AppPProjectKeyTaskKeyRoute
-  AppPProjectKeyBacklogSetupRoute: typeof AppPProjectKeyBacklogSetupRoute
-  AppPProjectKeyIndexRoute: typeof AppPProjectKeyIndexRoute
-  AppPProjectKeyCyclesCycleNumberRoute: typeof AppPProjectKeyCyclesCycleNumberRoute
-  AppPProjectKeyMilestonesMilestoneIdRoute: typeof AppPProjectKeyMilestonesMilestoneIdRoute
-  AppPProjectKeyCyclesIndexRoute: typeof AppPProjectKeyCyclesIndexRoute
-  AppPProjectKeyMilestonesIndexRoute: typeof AppPProjectKeyMilestonesIndexRoute
-}
-
 const AppRouteChildren: AppRouteChildren = {
-  AppSettingsRouteRoute: AppSettingsRouteRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
   AppMyTasksRoute: AppMyTasksRoute,
+  AppProjectsRoute: AppProjectsRoute,
+  AppWelcomeRoute: AppWelcomeRoute,
   AppIndexRoute: AppIndexRoute,
-  AppProjectsIndexRoute: AppProjectsIndexRoute,
-  AppPProjectKeySettingsRouteRoute:
-    AppPProjectKeySettingsRouteRouteWithChildren,
-  AppPProjectKeyTaskKeyRoute: AppPProjectKeyTaskKeyRoute,
-  AppPProjectKeyBacklogSetupRoute: AppPProjectKeyBacklogSetupRoute,
-  AppPProjectKeyIndexRoute: AppPProjectKeyIndexRoute,
-  AppPProjectKeyCyclesCycleNumberRoute: AppPProjectKeyCyclesCycleNumberRoute,
-  AppPProjectKeyMilestonesMilestoneIdRoute:
-    AppPProjectKeyMilestonesMilestoneIdRoute,
-  AppPProjectKeyCyclesIndexRoute: AppPProjectKeyCyclesIndexRoute,
-  AppPProjectKeyMilestonesIndexRoute: AppPProjectKeyMilestonesIndexRoute,
+  AppWWorkspaceRouteRoute: AppWWorkspaceRouteRouteWithChildren,
+  AppPSplatRoute: AppPSplatRoute,
+  AppSettingsSplatRoute: AppSettingsSplatRoute,
+  AppSettingsIndexRoute: AppSettingsIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

@@ -12,6 +12,7 @@ import {
 } from '~/features/palette/registry';
 import { createFakeApi, type FakeApi } from '~/features/tasks/fake-api';
 import { taskListQuery } from '~/features/tasks/queries';
+import { testWorkspace } from '~/lib/testing';
 import { renderWith } from './test-utils';
 import { resetFieldToastForTests } from './toast';
 import { type UseTaskFieldKeysOptions, useTaskFieldKeys } from './useTaskFieldKeys';
@@ -21,8 +22,8 @@ vi.setConfig({ testTimeout: 30_000 });
 
 const api = vi.hoisted(() => ({ current: null as FakeApi | null }));
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const forward = (path: string[]): unknown =>
     new Proxy(() => {}, {
       get: (_target, key) => (typeof key === 'string' ? forward([...path, key]) : undefined),
@@ -33,8 +34,8 @@ vi.mock('~/lib/orpc', async () => {
       },
     });
   const client = forward([]);
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 const fake = () => api.current as FakeApi;
 
@@ -46,7 +47,7 @@ beforeEach(() => {
 
 /** A list screen in miniature: the selected rows, a focused row as the anchor, the palette's state. */
 function Screen({ keys, anchored = true }: { keys: string[]; anchored?: boolean }) {
-  const list = useQuery(taskListQuery({ project: ['PAY'] })).data;
+  const list = useQuery(taskListQuery(workspace.api, { project: ['PAY'] })).data;
   const targets = (list?.items ?? []).filter((item) => keys.includes(item.key));
   const row = useRef<HTMLDivElement>(null);
   const options: UseTaskFieldKeysOptions = { targets, ...(anchored ? { anchors: row } : {}) };
@@ -79,7 +80,7 @@ function Screen({ keys, anchored = true }: { keys: string[]; anchored?: boolean 
 
 async function renderScreen(keys: string[], anchored = true) {
   const user = userEvent.setup();
-  renderWith(<Screen keys={keys} anchored={anchored} />);
+  renderWith(workspace, <Screen keys={keys} anchored={anchored} />);
   await screen.findByText(new RegExp(`^${keys[0]} `));
   return user;
 }
@@ -195,6 +196,7 @@ describe('palette commands', () => {
 
   it('runs a step from the palette', async () => {
     renderWith(
+      workspace,
       <>
         <Screen keys={['PAY-1']} />
         <CommandsSpy />
@@ -237,10 +239,10 @@ function CommandsSpy() {
 }
 
 it('unregisters the commands on unmount', async () => {
-  const view = renderWith(<Screen keys={['PAY-1']} />);
+  const view = renderWith(workspace, <Screen keys={['PAY-1']} />);
   await screen.findByText(/^PAY-1 /);
   view.unmount();
-  const spy = renderWith(<CommandsSpy />);
+  const spy = renderWith(workspace, <CommandsSpy />);
   expect(spied).toEqual([]);
   spy.unmount();
 });

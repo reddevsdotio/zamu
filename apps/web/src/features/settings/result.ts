@@ -11,6 +11,35 @@ export interface SettingsFailure {
 
 export type SettingsResult<T> = { ok: true; data: T } | { ok: false; error: SettingsFailure };
 
+/**
+ * The form field a problem code is about, for codes core raises without field issues: a taken or
+ * reserved slug belongs under the slug field of the New workspace dialog and General settings.
+ */
+export const PROBLEM_FIELDS: Partial<Record<ProblemCode, string>> = {
+  SLUG_TAKEN: 'slug',
+  SLUG_RESERVED: 'slug',
+};
+
+/**
+ * Codes that mean the request's workspace is not the person's (any more): the screen sends them to
+ * `/`, which lands in a workspace they belong to.
+ */
+export const LEFT_WORKSPACE_CODES: readonly ProblemCode[] = ['NOT_A_MEMBER', 'WORKSPACE_MISMATCH'];
+
+/** A failed SettingsResult. Without issues, codes in PROBLEM_FIELDS get one on their field. */
+export function failure(
+  code: ProblemCode,
+  message: string,
+  issues: ProblemIssue[] = [],
+): {
+  ok: false;
+  error: SettingsFailure;
+} {
+  const field = PROBLEM_FIELDS[code];
+  const withField = issues.length === 0 && field ? [{ path: field, message }] : issues;
+  return { ok: false, error: { code, message, issues: withField } };
+}
+
 /** A failed settings call, thrown in the browser by `unwrap`. */
 export class SettingsError extends Error {
   readonly code: ProblemCode;
@@ -21,6 +50,11 @@ export class SettingsError extends Error {
     this.name = 'SettingsError';
     this.code = code;
     this.issues = issues;
+  }
+
+  /** True when the person is not a member of the request's workspace: send them to `/`. */
+  get leftWorkspace(): boolean {
+    return LEFT_WORKSPACE_CODES.includes(this.code);
   }
 
   /** The message of the first issue on `path`, if any. */

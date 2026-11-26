@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { type BacklogSourceStatus, parseRepositoryUrl } from '@zamu/contracts';
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-aria-components';
+import { connectionsHref } from '~/features/shell/paths';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
 import {
   Banner,
   Button,
@@ -42,7 +44,9 @@ function Content({
   onPick,
   close,
 }: Omit<UseConnectionDialogProps, 'isOpen' | 'onOpenChange'> & { close: () => void }) {
-  const list = useQuery(connectionsQuery());
+  const api = useApi();
+  const workspace = useWorkspaceSlug();
+  const list = useQuery(connectionsQuery(api));
   const current = status.connection?.id ?? null;
   const items: OptionItem[] = (list.data?.items ?? []).map((connection) => ({
     id: connection.id,
@@ -97,7 +101,7 @@ function Content({
             <p className="m-0 text-fg-2">
               The workspace has no git connections.{' '}
               <Link
-                href="/settings/connections"
+                href={connectionsHref(workspace)}
                 className="text-accent-text outline-none hover:underline focus-visible:focus-ring"
               >
                 Add one in Settings

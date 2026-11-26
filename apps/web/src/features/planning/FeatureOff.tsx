@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useProjectSummary } from '~/features/project-header';
-import { client } from '~/lib/orpc';
+import { useApi } from '~/lib/workspace';
 import { Banner, Button, EmptyState } from '~/ui';
 import { invalidatePlanning } from './queries';
 
@@ -13,15 +13,16 @@ export interface FeatureOffProps {
 }
 
 export function FeatureOff({ projectKey, feature }: FeatureOffProps) {
+  const api = useApi();
   const project = useProjectSummary(projectKey);
   const queryClient = useQueryClient();
   const turnOn = useMutation({
     mutationFn: () =>
-      client.projects.update({
+      api.client.projects.update({
         project: projectKey,
         ...(feature === 'milestones' ? { usesMilestones: true } : { usesCycles: true }),
       }),
-    onSuccess: () => invalidatePlanning(queryClient),
+    onSuccess: () => invalidatePlanning(api, queryClient),
   });
   const name = project?.name ?? projectKey;
   const label = feature === 'milestones' ? 'Milestones' : 'Cycles';

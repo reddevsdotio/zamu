@@ -1,5 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
-import { checkServerConfig, readServerConfig, ServerConfigError, type ServerEnv } from './config';
+import { schema } from '@zamu/db';
+import { createTestDatabase, type TestDatabase } from '@zamu/db/test';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  checkServerConfig,
+  checkServerConfigWithDatabase,
+  readServerConfig,
+  ServerConfigError,
+  type ServerEnv,
+} from './config';
 
 const BASE: ServerEnv = {
   DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/zamu',
@@ -34,7 +42,26 @@ describe('readServerConfig', () => {
       timeZone: 'UTC',
       encryptionKey: undefined,
       gitHosts: { allowPrivate: false, httpHosts: [] },
+      workspaceCreation: 'everyone',
     });
+  });
+
+  it('reads WORKSPACE_CREATION and refuses other values', () => {
+    expect(readServerConfig({ ...BASE, WORKSPACE_CREATION: 'owners' }).workspaceCreation).toBe('owners');
+    expect(readServerConfig({ ...BASE, WORKSPACE_CREATION: ' Everyone ' }).workspaceCreation).toBe(
+      'everyone',
+    );
+    expect(readServerConfig({ ...BASE, WORKSPACE_CREATION: '' }).workspaceCreation).toBe('everyone');
+    expect(problems({ ...BASE, WORKSPACE_CREATION: 'admins' })).toEqual([
+      'WORKSPACE_CREATION must be "everyone" or "owners" (got "admins").',
+    ]);
+  });
+
+  it('reads OIDC_WORKSPACE with single sign-on', () => {
+    expect(readServerConfig({ ...BASE, ...SSO, OIDC_WORKSPACE: 'acme' }).auth.sso?.workspace).toBe('acme');
+    expect(problems({ ...BASE, OIDC_WORKSPACE: 'acme' })).toEqual([
+      expect.stringContaining('OIDC_WORKSPACE is set, but single sign-on is not configured'),
+    ]);
   });
 
   it('reads APP_ENCRYPTION_KEY when set and refuses a key that is not 32 bytes, without echoing it', () => {
@@ -223,5 +250,79 @@ describe('checkServerConfig', () => {
       },
     });
     expect(() => check(env, 'production')).toThrow('env exploded');
+  });
+});
+
+describe('checkServerConfigWithDatabase', () => {
+  let database: TestDatabase;
+
+  beforeAll(async () => {
+    database = await createTestDatabase({ prefix: 'pm_web_config' });
+  });
+
+  afterAll(async () => {
+    await database?.drop();
+  });
+
+  async function check(env: ServerEnv) {
+    const logger = { error: vi.fn<(message: string) => void>(), warn: vi.fn<(message: string) => void>() };
+    const exit = vi.fn<(code: 1) => void>();
+    const ok = await checkServerConfigWithDatabase({ env, logger, exit, nodeEnv: 'production' });
+    return {
+      ok,
+      errors: logger.error.mock.calls.map(([message]) => message),
+      warnings: logger.warn.mock.calls.map(([message]) => message),
+      exit,
+    };
+  }
+
+  const env = (extra: ServerEnv = {}): ServerEnv => ({
+    ...BASE,
+    ...SSO,
+    DATABASE_URL: database.url,
+    ...extra,
+  });
+
+  it('passes OIDC_WORKSPACE before setup, when no workspace can exist yet', async () => {
+    const { ok, errors, exit } = await check(env({ OIDC_WORKSPACE: 'acme' }));
+    expect(ok).toBe(true);
+    expect(errors).toEqual([]);
+    expect(exit).not.toHaveBeenCalled();
+  });
+
+  it('exits 1 once setup is done when OIDC_WORKSPACE names no workspace', async () => {
+    await database.db.insert(schema.organization).values({ name: 'Globex', slug: 'globex' });
+    const { ok, errors, exit } = await check(env({ OIDC_WORKSPACE: 'acme' }));
+    expect(ok).toBe(false);
+    expect(errors).toEqual([
+      'The server configuration is invalid:\n- OIDC_WORKSPACE is "acme", but no workspace has that slug. Set it to the slug of an existing workspace (its URL is /w/<slug>/), or unset it to use the oldest workspace.',
+    ]);
+    expect(exit).toHaveBeenCalledExactlyOnceWith(1);
+
+    const named = await check(env({ OIDC_WORKSPACE: 'globex' }));
+    expect(named.ok).toBe(true);
+    expect(named.exit).not.toHaveBeenCalled();
+  });
+
+  it('does not touch the database without OIDC_WORKSPACE', async () => {
+    const { ok, warnings } = await check({ ...BASE, DATABASE_URL: 'postgres://nobody@127.0.0.1:1/none' });
+    expect(ok).toBe(true);
+    expect(warnings).toEqual([]);
+  });
+
+  it('warns and starts when the database cannot be reached', async () => {
+    const { ok, warnings, exit } = await check(
+      env({ OIDC_WORKSPACE: 'acme', DATABASE_URL: 'postgres://nobody@127.0.0.1:1/none' }),
+    );
+    expect(ok).toBe(true);
+    expect(warnings).toEqual([expect.stringContaining('could not check OIDC_WORKSPACE')]);
+    expect(exit).not.toHaveBeenCalled();
+  });
+
+  it('stops at the environment problems without reading the database', async () => {
+    const { ok, errors, warnings } = await check(env({ OIDC_WORKSPACE: 'acme', BETTER_AUTH_SECRET: '' }));
+    expect(ok).toBe(false);
+    expect(errors).toEqual([expect.stringContaining('BETTER_AUTH_SECRET is not set.')]);
+    expect(warnings).toEqual([]);
   });
 });

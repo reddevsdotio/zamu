@@ -11,7 +11,7 @@ import { startBacklogFn, updateBacklogMappingsFn } from '~/features/backlog/serv
 import { useSubmitHint } from '~/features/projects/NewProjectDialog';
 import { errorMessage, SettingsError, unwrap } from '~/features/settings/result';
 import { projectHref } from '~/features/shell/paths';
-import { orpc } from '~/lib/orpc';
+import { useApi, useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
 import { Banner, Button, EmptyState, type SetupStep, Skeleton, useHotkeys } from '~/ui';
 import { type AgentSuggestion, assignAgent } from './agent-suggestions';
 import type { InviteDraft } from './assignee-hints';
@@ -50,7 +50,8 @@ export interface BacklogSetupScreenProps {
 }
 
 export function BacklogSetupScreen({ projectKey, search }: BacklogSetupScreenProps) {
-  const projects = useQuery(projectsQuery());
+  const api = useApi();
+  const projects = useQuery(projectsQuery(api));
   const project = projects.data?.items.find((item) => item.key === projectKey);
 
   if (!project) {
@@ -85,11 +86,12 @@ export function BacklogSetupScreen({ projectKey, search }: BacklogSetupScreenPro
 }
 
 function useSetSearch(projectKey: string) {
+  const workspace = useWorkspaceSlug();
   const navigate = useNavigate();
   return (patch: Partial<Record<keyof SetupSearch, unknown>>, options: { replace?: boolean } = {}) =>
     void navigate({
-      to: '/p/$projectKey/backlog-setup',
-      params: { projectKey },
+      to: '/w/$workspace/p/$projectKey/backlog-setup',
+      params: { workspace, projectKey },
       search: (previous: SetupSearch) => {
         const next: Record<string, unknown> = { ...previous, ...patch };
         for (const name of Object.keys(next)) if (next[name] === undefined) delete next[name];
@@ -106,31 +108,37 @@ const n = (value: number) => value.toLocaleString('en-US');
 // ---------------------------------------------------------------------------
 
 function SetupWizard({ project, search }: { project: ProjectWithCounts; search: SetupSearch }) {
+  const workspace = useWorkspaceSlug();
+  const workspaceId = useWorkspaceId();
+  const api = useApi();
   const projectKey = project.key;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const setSearch = useSetSearch(projectKey);
   const submitHint = useSubmitHint();
-  const settingsHref = projectSettingsHref(projectKey);
+  const settingsHref = projectSettingsHref(workspace, projectKey);
   const [newFromOpen, setNewFromOpen] = useState(false);
 
   const mode: BacklogMode = search.mode ?? 'mirror';
-  const status = useQuery(sourceStatusQuery(projectKey));
+  const status = useQuery(sourceStatusQuery(api, projectKey));
   const hasSource = status.isSuccess;
   const noSource = status.error instanceof SettingsError && status.error.code === 'NOT_FOUND';
   const requested = search.step ?? 'mode';
   const step: SetupStepId = hasSource ? 'read' : requested === 'read' ? 'mode' : requested;
   const beforeStart = !hasSource;
 
-  const taskCount = useQuery({ ...projectTaskCountQuery(projectKey), enabled: step === 'mode' && noSource });
+  const taskCount = useQuery({
+    ...projectTaskCountQuery(api, projectKey),
+    enabled: step === 'mode' && noSource,
+  });
 
   const needsSource = step === 'source' || step === 'mappings' || step === 'preview';
-  const connections = useQuery({ ...connectionsQuery(), enabled: needsSource && beforeStart });
+  const connections = useQuery({ ...connectionsQuery(api), enabled: needsSource && beforeStart });
   const connectionId =
     search.connection ??
     (connections.data ? (pickConnection(connections.data.items, project.repository)?.id ?? null) : null);
   const detection = useQuery({
-    ...detectionQuery({ projectKey, connectionId: connectionId ?? '', folderOverride: search.folder }),
+    ...detectionQuery(api, { projectKey, connectionId: connectionId ?? '', folderOverride: search.folder }),
     enabled: needsSource && beforeStart && Boolean(connectionId && project.repository),
   });
   const detected = detection.data;
@@ -142,22 +150,25 @@ function SetupWizard({ project, search }: { project: ProjectWithCounts; search: 
   const detectKey = `${connectionId ?? ''}|${search.folder ?? ''}`;
   const [edited, setEdited] = useState<{ key: string; view: BacklogMappingsView } | null>(null);
   const prefilled = useMemo(
-    () => (detected?.mappings ? applyManualPicks(detected.mappings, loadSavedMappings(projectKey)) : null),
-    [detected, projectKey],
+    () =>
+      detected?.mappings
+        ? applyManualPicks(detected.mappings, loadSavedMappings(workspaceId, projectKey))
+        : null,
+    [detected, workspaceId, projectKey],
   );
   const mappings = edited?.key === detectKey ? edited.view : prefilled;
   const onMappingsChange = (view: BacklogMappingsView) => {
     setEdited({ key: detectKey, view });
-    saveMappings(projectKey, toMappings(view));
+    saveMappings(workspaceId, projectKey, toMappings(view));
   };
-  const members = useQuery({ ...membersQuery(), enabled: step === 'mappings' });
+  const members = useQuery({ ...membersQuery(api), enabled: step === 'mappings' });
   const [agentDraft, setAgentDraft] = useState<AgentSuggestion | null>(null);
   const [inviteDraft, setInviteDraft] = useState<InviteDraft | null>(null);
   // Invitations made here (value to email). Screen state only: nothing maps on accept.
   const [invited, setInvited] = useState<Record<string, string>>({});
 
   const preview = useQuery({
-    ...previewQuery({
+    ...previewQuery(api, {
       projectKey,
       connectionId: connectionId ?? '',
       folderOverride: search.folder,
@@ -179,18 +190,21 @@ function SetupWizard({ project, search }: { project: ProjectWithCounts; search: 
       unwrap(
         startBacklogFn({
           data: {
-            projectKey,
-            connectionId: connectionId ?? '',
-            mode,
-            mappings: mappings ? toMappings(mappings) : { status: [], priority: [], assignee: [] },
-            ...(search.folder ? { folderOverride: search.folder } : {}),
+            workspace: api.slug,
+            input: {
+              projectKey,
+              connectionId: connectionId ?? '',
+              mode,
+              mappings: mappings ? toMappings(mappings) : { status: [], priority: [], assignee: [] },
+              ...(search.folder ? { folderOverride: search.folder } : {}),
+            },
           },
         }),
       ),
     onSuccess: (source: BacklogSourceStatus) => {
-      forgetMappings(projectKey);
-      queryClient.setQueryData(sourceStatusQuery(projectKey).queryKey, source);
-      void queryClient.invalidateQueries({ queryKey: orpc.projects.key() });
+      forgetMappings(workspaceId, projectKey);
+      queryClient.setQueryData(sourceStatusQuery(api, projectKey).queryKey, source);
+      void queryClient.invalidateQueries({ queryKey: api.orpc.projects.key() });
       setSearch({ step: 'read', mode, connection: connectionId ?? undefined }, { replace: true });
     },
   });
@@ -199,12 +213,12 @@ function SetupWizard({ project, search }: { project: ProjectWithCounts; search: 
   const phase = status.data ? readPhase(status.data) : null;
   useEffect(() => {
     if (phase && phase !== 'reading') {
-      void queryClient.invalidateQueries({ queryKey: orpc.projects.key() });
-      void queryClient.invalidateQueries({ queryKey: orpc.tasks.key() });
+      void queryClient.invalidateQueries({ queryKey: api.orpc.projects.key() });
+      void queryClient.invalidateQueries({ queryKey: api.orpc.tasks.key() });
     }
-  }, [phase, queryClient]);
+  }, [phase, queryClient, api]);
 
-  const openProject = () => void navigate({ href: projectHref(projectKey) });
+  const openProject = () => void navigate({ href: projectHref(workspace, projectKey) });
   const cancel = () => void navigate({ href: settingsHref });
   const go = (next: SetupStepId) =>
     setSearch({
@@ -390,7 +404,7 @@ function SetupWizard({ project, search }: { project: ProjectWithCounts; search: 
         status={source}
         projectName={project.name}
         settingsHref={settingsHref}
-        webhookHref={backlogWebhookHref(projectKey)}
+        webhookHref={backlogWebhookHref(workspace, projectKey)}
         expected={{
           tasks: preview.data ? previewTotal(preview.data) : null,
           milestones: preview.data
@@ -450,14 +464,16 @@ function SetupWizard({ project, search }: { project: ProjectWithCounts; search: 
 // ---------------------------------------------------------------------------
 
 function EditMappings({ project }: { project: ProjectWithCounts }) {
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
   const projectKey = project.key;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const setSearch = useSetSearch(projectKey);
   const submitHint = useSubmitHint();
-  const settingsHref = projectSettingsHref(projectKey);
-  const status = useQuery(sourceStatusQuery(projectKey));
-  const members = useQuery(membersQuery());
+  const settingsHref = projectSettingsHref(workspace, projectKey);
+  const status = useQuery(sourceStatusQuery(api, projectKey));
+  const members = useQuery(membersQuery(api));
   const [edited, setEdited] = useState<BacklogMappingsView | null>(null);
   const [agentDraft, setAgentDraft] = useState<AgentSuggestion | null>(null);
   const [inviteDraft, setInviteDraft] = useState<InviteDraft | null>(null);
@@ -469,10 +485,14 @@ function EditMappings({ project }: { project: ProjectWithCounts }) {
 
   const save = useMutation({
     mutationFn: (next: BacklogMappingsView) =>
-      unwrap(updateBacklogMappingsFn({ data: { projectKey, mappings: toMappings(next) } })),
+      unwrap(
+        updateBacklogMappingsFn({
+          data: { workspace: api.slug, input: { projectKey, mappings: toMappings(next) } },
+        }),
+      ),
     onSuccess: (source) => {
-      queryClient.setQueryData(sourceStatusQuery(projectKey).queryKey, source);
-      void queryClient.invalidateQueries({ queryKey: setupQueryKey });
+      queryClient.setQueryData(sourceStatusQuery(api, projectKey).queryKey, source);
+      void queryClient.invalidateQueries({ queryKey: setupQueryKey(api) });
       void navigate({ href: settingsHref });
     },
   });

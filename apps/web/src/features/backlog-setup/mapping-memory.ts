@@ -1,9 +1,12 @@
 import { BacklogMappings } from '@zamu/contracts';
+import { workspaceStorageKey } from '~/lib/storage-keys';
 
-// Mappings picked during setup, kept in session storage per project so a reload on Mappings or
-// Preview keeps them. Cleared once the source is created.
+// Mappings picked during setup, kept in session storage per workspace and project so a reload on
+// Mappings or Preview keeps them. Cleared once the source is created.
 
-const keyFor = (projectKey: string) => `zamu.backlog-setup.mappings.${projectKey}`;
+/** zamu:backlog-mappings:v2:<workspace id>:<project key> */
+export const mappingsStorageKey = (workspaceId: string, projectKey: string) =>
+  workspaceStorageKey('backlog-mappings', workspaceId, projectKey);
 
 function storage(): Storage | null {
   try {
@@ -13,10 +16,10 @@ function storage(): Storage | null {
   }
 }
 
-export function loadSavedMappings(projectKey: string): BacklogMappings | null {
-  const raw = storage()?.getItem(keyFor(projectKey));
-  if (!raw) return null;
+export function loadSavedMappings(workspaceId: string, projectKey: string): BacklogMappings | null {
   try {
+    const raw = storage()?.getItem(mappingsStorageKey(workspaceId, projectKey));
+    if (!raw) return null;
     const parsed = BacklogMappings.safeParse(JSON.parse(raw));
     return parsed.success ? parsed.data : null;
   } catch {
@@ -24,17 +27,17 @@ export function loadSavedMappings(projectKey: string): BacklogMappings | null {
   }
 }
 
-export function saveMappings(projectKey: string, mappings: BacklogMappings): void {
+export function saveMappings(workspaceId: string, projectKey: string, mappings: BacklogMappings): void {
   try {
-    storage()?.setItem(keyFor(projectKey), JSON.stringify(mappings));
+    storage()?.setItem(mappingsStorageKey(workspaceId, projectKey), JSON.stringify(mappings));
   } catch {
     // Full or blocked storage: the picks only last until the next reload.
   }
 }
 
-export function forgetMappings(projectKey: string): void {
+export function forgetMappings(workspaceId: string, projectKey: string): void {
   try {
-    storage()?.removeItem(keyFor(projectKey));
+    storage()?.removeItem(mappingsStorageKey(workspaceId, projectKey));
   } catch {
     // Nothing to clean up.
   }

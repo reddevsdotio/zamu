@@ -13,6 +13,8 @@ import type { Activity, Task } from '@zamu/contracts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearCommentDrafts } from '~/features/comments/CommentComposer';
 import { resetTimelinePreferences } from '~/features/comments/TaskTimeline';
+import { testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 import { UIProvider } from '~/ui';
 import { createFakeApi, FAKE_MILESTONES, FAKE_PEOPLE, type FakeApi } from './fake-api';
 import { resetFromFile } from './MirroredTask';
@@ -27,8 +29,8 @@ vi.setConfig({ testTimeout: 30_000 });
 
 const api = vi.hoisted(() => ({ current: null as FakeApi | null }));
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const forward = (path: string[]): unknown =>
     new Proxy(() => {}, {
       get: (_target, key) => (typeof key === 'string' ? forward([...path, key]) : undefined),
@@ -39,8 +41,8 @@ vi.mock('~/lib/orpc', async () => {
       },
     });
   const client = forward([]);
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 const fake = () => api.current as FakeApi;
 const FILE = 'backlog/tasks/back-1 - Retry-failed-webhook-deliveries.md';
@@ -190,12 +192,12 @@ function renderApp(url: string) {
   });
   const list = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/',
+    path: '/w/$workspace/p/$projectKey/',
     component: () => <p>List</p>,
   });
   const page = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/$taskKey',
+    path: '/w/$workspace/p/$projectKey/$taskKey',
     component: function PageRoute() {
       const { projectKey, taskKey } = page.useParams();
       return <TaskPage key={taskKey} projectKey={projectKey} taskKey={taskKey} />;
@@ -207,7 +209,9 @@ function renderApp(url: string) {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <WorkspaceProvider workspace={workspace}>
+        <RouterProvider router={router} />
+      </WorkspaceProvider>
     </QueryClientProvider>,
   );
   return { router, queryClient };
@@ -226,7 +230,7 @@ beforeEach(() => {
 describe('mirrored task in the task view', () => {
   it('shows one Backlog.md badge to the file, no banners, and the comment note', async () => {
     mirrorPay1();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     const badge = await screen.findByRole('link', { name: /Backlog\.md/ });
     expect(badge).toHaveAttribute('href', FILE_URL);
     expect(screen.queryByText(/Fields with a hatch/)).not.toBeInTheDocument();
@@ -241,7 +245,7 @@ describe('mirrored task in the task view', () => {
   it('marks owned fields and says where to change them on an edit attempt', async () => {
     const user = userEvent.setup();
     mirrorPay1();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     const status = await within(await screen.findByRole('complementary', { name: 'Properties' })).findByRole(
       'button',
       { name: 'Status, set in Backlog.md' },
@@ -266,7 +270,7 @@ describe('mirrored task in the task view', () => {
 
   it('shows the description from the file, read-only', async () => {
     mirrorPay1();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     expect(await screen.findByText(/Retries follow 30s, 1m, 2m/)).toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add a description…' })).not.toBeInTheDocument();
@@ -275,7 +279,7 @@ describe('mirrored task in the task view', () => {
   it('keeps the fields with no native home in "From the file", collapsed at first', async () => {
     const user = userEvent.setup();
     mirrorPay1();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     const section = await screen.findByRole('region', { name: 'From the file' });
     const toggle = within(section).getByRole('button', { name: /From the file/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -293,7 +297,7 @@ describe('mirrored task in the task view', () => {
 
   it('shows Backlog.md history "in the file" with commits, and the import', async () => {
     mirrorPay1();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     const region = await screen.findByRole('region', { name: 'Activity' });
     const moved = await within(region).findByText(/moved this to In progress in the file/);
     expect(moved.closest('[data-origin]')).toHaveAttribute('data-origin', 'backlog');
@@ -306,7 +310,7 @@ describe('mirrored task in the task view', () => {
 describe('hidden and detached tasks', () => {
   it('shows the removed banner on a hidden task and keeps comments', async () => {
     mirrorPay1({ hidden: true });
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     expect(await screen.findByText(/Removed from Backlog\.md/)).toBeInTheDocument();
     expect(
       await screen.findByRole('button', { name: 'Comments still work on hidden tasks.' }),
@@ -316,7 +320,7 @@ describe('hidden and detached tasks', () => {
 
   it('unlocks every field after detach', async () => {
     mirrorPay1({ detached: true });
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     const status = await within(await screen.findByRole('complementary', { name: 'Properties' })).findByRole(
       'button',
       { name: 'Status' },
@@ -333,11 +337,11 @@ describe('canonicalTaskPath', () => {
 
   it('keeps task keys of the project, upper-cased, without asking the server', async () => {
     const get = vi.spyOn(fake().client.tasks, 'get');
-    expect(await canonicalTaskPath(client(), 'pay', 'pay-1')).toEqual({
+    expect(await canonicalTaskPath(workspace.api, client(), 'pay', 'pay-1')).toEqual({
       projectKey: 'PAY',
       taskKey: 'PAY-1',
     });
-    expect(await canonicalTaskPath(client(), 'PAY', 'PAY-786.1')).toEqual({
+    expect(await canonicalTaskPath(workspace.api, client(), 'PAY', 'PAY-786.1')).toEqual({
       projectKey: 'PAY',
       taskKey: 'PAY-786.1',
     });
@@ -349,14 +353,14 @@ describe('canonicalTaskPath', () => {
       expect(input).toEqual({ key: 'BACK-007', project: 'PAY' });
       return { ...(fake().tasks[0] as Task), key: 'PAY-7' };
     };
-    expect(await canonicalTaskPath(client(), 'PAY', 'back-007')).toEqual({
+    expect(await canonicalTaskPath(workspace.api, client(), 'PAY', 'back-007')).toEqual({
       projectKey: 'PAY',
       taskKey: 'PAY-7',
     });
   });
 
   it('returns null for keys that match nothing', async () => {
-    expect(await canonicalTaskPath(client(), 'PAY', 'not a key')).toBeNull();
-    expect(await canonicalTaskPath(client(), 'PAY', 'BACK-9999')).toBeNull();
+    expect(await canonicalTaskPath(workspace.api, client(), 'PAY', 'not a key')).toBeNull();
+    expect(await canonicalTaskPath(workspace.api, client(), 'PAY', 'BACK-9999')).toBeNull();
   });
 });

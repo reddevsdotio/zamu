@@ -38,6 +38,7 @@ import {
   useViewCommands,
   type ViewLayout,
 } from '~/features/views';
+import { useApi, useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
 import {
   Banner,
   Button,
@@ -63,7 +64,7 @@ import {
   type ListTaskRow,
   orderedTaskKeys,
 } from './groups';
-import { rememberListSearch, rememberView } from './list-memory';
+import { rememberListSearch, rememberProjectView } from './list-memory';
 import { cyclesQuery, membersQuery, meQuery, milestonesQuery, taskListQuery, taskQuery } from './queries';
 import {
   GROUP_ORDER,
@@ -189,6 +190,9 @@ function initialCollapsed(statusGrouping: boolean, filter: TaskFilter): Set<stri
 }
 
 export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
+  const workspace = useWorkspaceSlug();
+  const workspaceId = useWorkspaceId();
+  const api = useApi();
   const navigate = useNavigate();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -200,7 +204,7 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
   const detached = isDetached(project);
   const wideKeys = project?.backlog != null;
   const projectName = project?.name ?? projectKey;
-  const viewerId = useQuery(meQuery()).data?.user.id ?? null;
+  const viewerId = useQuery(meQuery(api)).data?.user.id ?? null;
   const now = useNow();
   const today = useMemo(() => (now == null ? '' : localToday(new Date(now))), [now]);
 
@@ -218,7 +222,7 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
   const showHidden = search.hidden === 'only';
   const statusGrouping = display.groupBy === 'status' && !showHidden;
 
-  useEffect(() => rememberListSearch(projectKey, search), [projectKey, search]);
+  useEffect(() => rememberListSearch(workspaceId, projectKey, search), [workspaceId, projectKey, search]);
 
   const [query, setQuery, resetQuery] = useSearchText(filter.q, (q) =>
     setFilter({ ...filterRef.current, ...(q ? { q } : { q: undefined }) }),
@@ -246,21 +250,21 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
   );
 
   const mainInput = listMainInput(projectKey, filter, display, showHidden);
-  const main = useQuery(taskListQuery(mainInput));
+  const main = useQuery(taskListQuery(api, mainInput));
   const lazyStatuses =
     statusGrouping && !filter.status ? LAZY_STATUSES.filter((status) => !collapsed.has(status)) : [];
   const lazyItems = useQueries({
-    queries: lazyStatuses.map((status) => taskListQuery({ ...mainInput, status: [status] })),
+    queries: lazyStatuses.map((status) => taskListQuery(api, { ...mainInput, status: [status] })),
     combine: pickItems,
   });
   const counts = main.data?.counts;
 
-  const labels = useQuery(labelsQuery(projectKey)).data?.items;
-  const members = useQuery(membersQuery()).data?.items;
+  const labels = useQuery(labelsQuery(api, projectKey)).data?.items;
+  const members = useQuery(membersQuery(api)).data?.items;
   const wantsMilestones = display.showEmptyGroups && display.groupBy === 'milestone' && usesMilestones;
   const wantsCycles = display.showEmptyGroups && display.groupBy === 'cycle' && usesCycles;
-  const milestones = useQuery({ ...milestonesQuery(projectKey), enabled: wantsMilestones }).data?.items;
-  const cycles = useQuery({ ...cyclesQuery(projectKey), enabled: wantsCycles }).data?.items;
+  const milestones = useQuery({ ...milestonesQuery(api, projectKey), enabled: wantsMilestones }).data?.items;
+  const cycles = useQuery({ ...cyclesQuery(api, projectKey), enabled: wantsCycles }).data?.items;
 
   const lazyKey = lazyItems.map((items) => items?.length ?? -1).join(',');
   // biome-ignore lint/correctness/useExhaustiveDependencies: lazyKey stands for lazyItems' contents
@@ -431,7 +435,7 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
       placeCursor(id, { focus: true });
       return;
     }
-    const status = queryClient.getQueryData(taskQuery(key).queryKey)?.status;
+    const status = queryClient.getQueryData(taskQuery(api, key).queryKey)?.status;
     if (status && statusGrouping && collapsed.has(status)) {
       setCollapsed((previous) => {
         const next = new Set(previous);
@@ -481,10 +485,10 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
   const setView = useCallback(
     (layout: ViewLayout) => {
       if (layout !== 'board') return;
-      rememberView(projectKey, 'board');
+      rememberProjectView(workspaceId, projectKey, 'board');
       void navigate({
-        to: '/p/$projectKey',
-        params: { projectKey },
+        to: '/w/$workspace/p/$projectKey',
+        params: { workspace, projectKey },
         search: ((previous: TaskListSearch) => ({
           ...previous,
           view: 'board',
@@ -493,7 +497,7 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
         })) as never,
       });
     },
-    [navigate, projectKey],
+    [navigate, projectKey, workspace, workspaceId],
   );
   const orderedKeysRef = useRef(orderedKeys);
   orderedKeysRef.current = orderedKeys;
@@ -501,13 +505,17 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
     (key: string) => {
       const location = router.state.location;
       rememberTaskNavigation(
+        workspaceId,
         { keys: orderedKeysRef.current, from: LIST_VIEW_NAME, returnTo: location.href },
         key,
       );
       closePeek();
-      void navigate({ to: '/p/$projectKey/$taskKey', params: { projectKey, taskKey: key } });
+      void navigate({
+        to: '/w/$workspace/p/$projectKey/$taskKey',
+        params: { workspace, projectKey, taskKey: key },
+      });
     },
-    [navigate, projectKey, router],
+    [navigate, projectKey, router, workspace, workspaceId],
   );
   const peek = useCallback(
     (key: string) =>
@@ -815,8 +823,8 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
                   New task
                 </Button>
                 <Link
-                  to="/p/$projectKey/backlog-setup"
-                  params={{ projectKey }}
+                  to="/w/$workspace/p/$projectKey/backlog-setup"
+                  params={{ workspace, projectKey }}
                   className={buttonStyles({ variant: 'secondary' })}
                 >
                   Mirror Backlog.md
@@ -1085,9 +1093,10 @@ function ActionBar({
 
 /** Mirrored projects: the selected tasks' files on the git provider, one link each. */
 function OpenInBacklogMenu({ keys }: { keys: readonly string[] }) {
+  const api = useApi();
   const [open, setOpen] = useState(false);
   const tasks = useQueries({
-    queries: keys.map((key) => ({ ...taskQuery(key), enabled: open })),
+    queries: keys.map((key) => ({ ...taskQuery(api, key), enabled: open })),
     combine: (results) => results.map((result) => result.data),
   });
   return (

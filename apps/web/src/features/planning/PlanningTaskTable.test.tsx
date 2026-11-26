@@ -10,24 +10,25 @@ import {
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { TaskListItem } from '@zamu/contracts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { closePeek, isPeekOpen } from '~/features/peek/store';
 import { type DisplayOptions, defaultDisplayOptions, readTaskNavigation } from '~/features/views';
-import { newQueryClient } from '~/features/views/testing';
+import { fakeViewsClient, newQueryClient } from '~/features/views/testing';
+import { testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 import { UIProvider } from '~/ui';
 import { PlanningTaskTable, planningGroupBy, visibleKeys } from './PlanningTaskTable';
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
-  const { fakeViewsClient } = await import('~/features/views/testing');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   // The views' fake procedures, and a rejecting stub for anything else (task writes, projects).
   const never = () => Promise.reject(new Error('not in these tests'));
   const stub = new Proxy({}, { get: () => never });
   const client = new Proxy(fakeViewsClient as Record<string, unknown>, {
     get: (target, key) => (typeof key === 'string' && key in target ? target[key] : stub),
   });
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 // The Margin rows of the milestone and cycle pages: groups, keys, peek and opening the task view.
 
@@ -77,7 +78,7 @@ function renderTable(
   });
   const cycle = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/cycles/$cycleNumber',
+    path: '/w/$workspace/p/$projectKey/cycles/$cycleNumber',
     component: () => (
       <PlanningTaskTable
         aria-label="Tasks in Cycle 12"
@@ -91,14 +92,16 @@ function renderTable(
   });
   const taskPage = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/$taskKey',
+    path: '/w/$workspace/p/$projectKey/$taskKey',
     component: () => <p>Task page</p>,
   });
-  const history = createMemoryHistory({ initialEntries: ['/p/PAY/cycles/12?status=todo'] });
+  const history = createMemoryHistory({ initialEntries: ['/w/acme/p/PAY/cycles/12?status=todo'] });
   const router = createRouter({ routeTree: root.addChildren([cycle, taskPage]), history });
   const { unmount } = render(
     <QueryClientProvider client={newQueryClient()}>
-      <RouterProvider router={router} />
+      <WorkspaceProvider workspace={workspace}>
+        <RouterProvider router={router} />
+      </WorkspaceProvider>
     </QueryClientProvider>,
   );
   return Object.assign(router, { unmount });
@@ -181,11 +184,11 @@ describe('PlanningTaskTable', () => {
 
     await user.keyboard('{Enter}');
     await screen.findByText('Task page');
-    expect(router.state.location.pathname).toBe('/p/PAY/PAY-2');
-    expect(readTaskNavigation()).toEqual({
+    expect(router.state.location.pathname).toBe('/w/acme/p/PAY/PAY-2');
+    expect(readTaskNavigation(workspace.id)).toEqual({
       keys: ['PAY-1', 'PAY-2', 'PAY-3'],
       from: 'Cycle 12',
-      returnTo: '/p/PAY/cycles/12?status=todo',
+      returnTo: '/w/acme/p/PAY/cycles/12?status=todo',
     });
   });
 
@@ -200,13 +203,13 @@ describe('PlanningTaskTable', () => {
     await user.keyboard('{/Shift}');
     expect(row('PAY-2')).toHaveAttribute('data-selected');
     expect(row('PAY-3')).toHaveAttribute('data-selected');
-    expect(router.state.location.pathname).toBe('/p/PAY/cycles/12');
+    expect(router.state.location.pathname).toBe('/w/acme/p/PAY/cycles/12');
 
     await act(async () => {
       await user.click(screen.getByRole('link', { name: /Task 3/ }));
     });
-    await waitFor(() => expect(router.state.location.pathname).toBe('/p/PAY/PAY-3'));
-    expect(readTaskNavigation()?.from).toBe('Cycle 12');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/w/acme/p/PAY/PAY-3'));
+    expect(readTaskNavigation(workspace.id)?.from).toBe('Cycle 12');
   });
 });
 

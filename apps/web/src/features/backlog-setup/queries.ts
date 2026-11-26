@@ -12,19 +12,21 @@ import type {
 } from '@zamu/contracts';
 import { listConnectionsFn } from '~/features/connections/server';
 import { SettingsError, unwrap } from '~/features/settings/result';
-import { orpc } from '~/lib/orpc';
+import type { WorkspaceApi } from '~/lib/orpc';
+import { workspaceKeyPath } from '~/lib/workspace-api';
 import { backlogSettingsStatusFn, detectBacklogFn, previewBacklogFn } from '../backlog/server';
 import { READING_STATES } from './phase';
 
-const setupKey = ['backlog-setup'] as const;
+/** Setup data of one workspace: ['w', slug, 'backlog-setup', …]. */
+const setupKey = (api: WorkspaceApi) => [...workspaceKeyPath(api.slug), 'backlog-setup'] as const;
 
 /** Errors the server answered on purpose (forbidden, not found) do not get better on retry. */
 const retry = (failures: number, error: unknown) => !(error instanceof SettingsError) && failures < 1;
 
-export const connectionsQuery = () =>
+export const connectionsQuery = (api: WorkspaceApi) =>
   queryOptions({
-    queryKey: ['connections', 'list'],
-    queryFn: (): Promise<GitConnectionList> => unwrap(listConnectionsFn()),
+    queryKey: [...workspaceKeyPath(api.slug), 'connections', 'list'],
+    queryFn: (): Promise<GitConnectionList> => unwrap(listConnectionsFn({ data: { workspace: api.slug } })),
     retry,
   });
 
@@ -35,16 +37,25 @@ export interface DetectionKey {
 }
 
 /** Step 2: reads the repository (no writes). Kept for a while: Mappings reuses it. */
-export const detectionQuery = (input: DetectionKey) =>
+export const detectionQuery = (api: WorkspaceApi, input: DetectionKey) =>
   queryOptions({
-    queryKey: [...setupKey, 'detect', input.projectKey, input.connectionId, input.folderOverride ?? null],
+    queryKey: [
+      ...setupKey(api),
+      'detect',
+      input.projectKey,
+      input.connectionId,
+      input.folderOverride ?? null,
+    ],
     queryFn: (): Promise<BacklogDetection> =>
       unwrap(
         detectBacklogFn({
           data: {
-            projectKey: input.projectKey,
-            connectionId: input.connectionId,
-            ...(input.folderOverride ? { folderOverride: input.folderOverride } : {}),
+            workspace: api.slug,
+            input: {
+              projectKey: input.projectKey,
+              connectionId: input.connectionId,
+              ...(input.folderOverride ? { folderOverride: input.folderOverride } : {}),
+            },
           },
         }),
       ),
@@ -53,10 +64,10 @@ export const detectionQuery = (input: DetectionKey) =>
   });
 
 /** Step 4: a dry run with the mappings (no writes). */
-export const previewQuery = (input: DetectionKey & { mappings: BacklogMappings }) =>
+export const previewQuery = (api: WorkspaceApi, input: DetectionKey & { mappings: BacklogMappings }) =>
   queryOptions({
     queryKey: [
-      ...setupKey,
+      ...setupKey(api),
       'preview',
       input.projectKey,
       input.connectionId,
@@ -67,10 +78,13 @@ export const previewQuery = (input: DetectionKey & { mappings: BacklogMappings }
       unwrap(
         previewBacklogFn({
           data: {
-            projectKey: input.projectKey,
-            connectionId: input.connectionId,
-            mappings: input.mappings,
-            ...(input.folderOverride ? { folderOverride: input.folderOverride } : {}),
+            workspace: api.slug,
+            input: {
+              projectKey: input.projectKey,
+              connectionId: input.connectionId,
+              mappings: input.mappings,
+              ...(input.folderOverride ? { folderOverride: input.folderOverride } : {}),
+            },
           },
         }),
       ),
@@ -83,10 +97,11 @@ export const previewQuery = (input: DetectionKey & { mappings: BacklogMappings }
  * The project's source, if any (NOT_FOUND before start). Polls every 2 seconds while the first
  * read runs.
  */
-export const sourceStatusQuery = (projectKey: string) =>
+export const sourceStatusQuery = (api: WorkspaceApi, projectKey: string) =>
   queryOptions({
-    queryKey: [...setupKey, 'status', projectKey],
-    queryFn: (): Promise<BacklogSourceStatus> => unwrap(backlogSettingsStatusFn({ data: { projectKey } })),
+    queryKey: [...setupKey(api), 'status', projectKey],
+    queryFn: (): Promise<BacklogSourceStatus> =>
+      unwrap(backlogSettingsStatusFn({ data: { workspace: api.slug, input: { projectKey } } })),
     retry,
     refetchInterval: (query) => {
       const state = query.state.data?.state;
@@ -95,14 +110,14 @@ export const sourceStatusQuery = (projectKey: string) =>
   });
 
 /** Every task of the project (hidden ones too), to refuse setup on a project that has some. */
-export const projectTaskCountQuery = (projectKey: string) =>
-  orpc.tasks.list.queryOptions({
+export const projectTaskCountQuery = (api: WorkspaceApi, projectKey: string) =>
+  api.orpc.tasks.list.queryOptions({
     input: { project: projectKey, hidden: 'include', limit: 1 },
     select: (page) => Object.values(page.counts).reduce((sum, value) => sum + value, 0),
   });
 
-export const projectsQuery = () => orpc.projects.list.queryOptions();
-export const membersQuery = () => orpc.members.list.queryOptions({ staleTime: 60_000 });
+export const projectsQuery = (api: WorkspaceApi) => api.orpc.projects.list.queryOptions();
+export const membersQuery = (api: WorkspaceApi) => api.orpc.members.list.queryOptions({ staleTime: 60_000 });
 
 /** Query keys the setup invalidates after start or a mappings save. */
 export const setupQueryKey = setupKey;

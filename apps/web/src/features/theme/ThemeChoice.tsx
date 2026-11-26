@@ -1,6 +1,7 @@
 import { ORPCError } from '@orpc/client';
 import type { Theme } from '@zamu/contracts';
 import { describeError } from '~/features/tasks/errors';
+import { useWorkspaceSlug } from '~/lib/workspace';
 import { Toast } from '~/ui';
 import { useSetTheme, useUserTheme } from './theme';
 
@@ -15,7 +16,7 @@ export interface ThemeChoiceState {
 
 /** The theme switch's state for the account menu and the Appearance page. */
 export function useThemeChoice(): ThemeChoiceState {
-  const value = useUserTheme() ?? 'system';
+  const value = useUserTheme(useWorkspaceSlug()) ?? 'system';
   const save = useSetTheme();
   return {
     value,

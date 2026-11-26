@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import type { HomeDeadline } from '@zamu/contracts';
 import { useState } from 'react';
+import { useWorkspaceSlug } from '~/lib/workspace';
 import { Button, CycleGlyph, cn, MilestoneGlyph } from '~/ui';
 import { type DeadlineView, deadlineView } from './format';
 
@@ -49,6 +50,7 @@ const CARD =
   'flex min-w-0 items-center gap-2.5 rounded-md bg-surface px-3 py-2.5 whitespace-nowrap text-fg no-underline shadow-card outline-none hover:bg-surface-hover focus-visible:shadow-[var(--focus-ring)]';
 
 function DeadlineCard({ view }: { view: DeadlineView }) {
+  const workspace = useWorkspaceSlug();
   const body = (
     <>
       {view.kind === 'cycle' ? (
@@ -80,8 +82,8 @@ function DeadlineCard({ view }: { view: DeadlineView }) {
   if (to.kind === 'milestone') {
     return (
       <Link
-        to="/p/$projectKey/milestones/$milestoneId"
-        params={{ projectKey: to.projectKey, milestoneId: to.milestoneId }}
+        to="/w/$workspace/p/$projectKey/milestones/$milestoneId"
+        params={{ workspace, projectKey: to.projectKey, milestoneId: to.milestoneId }}
         aria-label={label}
         className={CARD}
       >
@@ -92,8 +94,8 @@ function DeadlineCard({ view }: { view: DeadlineView }) {
   if (to.kind === 'cycle') {
     return (
       <Link
-        to="/p/$projectKey/cycles/$cycleNumber"
-        params={{ projectKey: to.projectKey, cycleNumber: String(to.cycleNumber) }}
+        to="/w/$workspace/p/$projectKey/cycles/$cycleNumber"
+        params={{ workspace, projectKey: to.projectKey, cycleNumber: String(to.cycleNumber) }}
         aria-label={label}
         className={CARD}
       >
@@ -103,8 +105,8 @@ function DeadlineCard({ view }: { view: DeadlineView }) {
   }
   return (
     <Link
-      to="/p/$projectKey/$taskKey"
-      params={{ projectKey: to.projectKey, taskKey: to.taskKey }}
+      to="/w/$workspace/p/$projectKey/$taskKey"
+      params={{ workspace, projectKey: to.projectKey, taskKey: to.taskKey }}
       aria-label={label}
       className={CARD}
     >

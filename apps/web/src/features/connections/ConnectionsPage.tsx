@@ -6,6 +6,8 @@ import type { GitConnection, GitConnectionList } from '@zamu/contracts';
 import { type ReactNode, useState } from 'react';
 import { Link } from 'react-aria-components';
 import { useNow } from '~/features/tasks/clock';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
+import { workspacePath } from '~/lib/workspace-paths';
 import {
   Banner,
   Button,
@@ -35,8 +37,9 @@ import {
 export const ENCRYPTION_KEY_MISSING = 'Set APP_ENCRYPTION_KEY on the server to add connections.';
 
 export function ConnectionsPage() {
-  const me = useQuery(meQuery());
-  const list = useQuery(connectionsQuery());
+  const api = useApi();
+  const me = useQuery(meQuery(api));
+  const list = useQuery(connectionsQuery(api));
   const canManage = isAdminRole(me.data?.role);
   const [dialog, setDialog] = useState<ConnectionDialogTarget | null>(null);
   const [deleting, setDeleting] = useState<GitConnection | null>(null);
@@ -260,6 +263,7 @@ function ConnectionsTable({
   onTestAgain: (connection: GitConnection) => void;
   testingId: string | null;
 }) {
+  const workspace = useWorkspaceSlug();
   const now = useNow();
   // Column widths of frame 1a; the 24px page gutter is the first and last cell's padding.
   const gutter = 'first:pl-6 last:pr-6';
@@ -345,7 +349,10 @@ function ConnectionsTable({
                         {connection.usedBy.map((project) => (
                           <Link
                             key={project.key}
-                            href={`/p/${encodeURIComponent(project.key)}/settings/backlog`}
+                            href={workspacePath(
+                              workspace,
+                              `/p/${encodeURIComponent(project.key)}/settings/backlog`,
+                            )}
                             aria-label={`${project.name} (${project.key})`}
                             className="outline-none focus-visible:focus-ring"
                           >

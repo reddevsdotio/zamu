@@ -1,6 +1,7 @@
 import type { TaskListItem, TaskListPage, TaskStatus } from '@zamu/contracts';
 import { describe, expect, it } from 'vitest';
 import { cycleElapsed, cycleNote, projectViewHref } from '~/features/project-header/tabs';
+import { asWorkspaceSlug } from '~/lib/workspace-paths';
 import {
   cardsOf,
   compareBySort,
@@ -296,8 +297,8 @@ describe('project page links', () => {
     expect(cycleNote(project.currentCycle)).toBe('C12 · 3d left');
     expect(cycleNote(null)).toBeUndefined();
     expect(cycleElapsed(project.currentCycle)).toBeCloseTo(11 / 14);
-    expect(projectViewHref('PAY', 'tasks')).toBe('/p/PAY');
-    expect(projectViewHref('PAY', 'cycles')).toBe('/p/PAY/cycles');
-    expect(projectViewHref('PAY', 'settings')).toBe('/p/PAY/settings');
+    expect(projectViewHref(asWorkspaceSlug('acme'), 'PAY', 'tasks')).toBe('/w/acme/p/PAY');
+    expect(projectViewHref(asWorkspaceSlug('acme'), 'PAY', 'cycles')).toBe('/w/acme/p/PAY/cycles');
+    expect(projectViewHref(asWorkspaceSlug('acme'), 'PAY', 'settings')).toBe('/w/acme/p/PAY/settings');
   });
 });

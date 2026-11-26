@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, type RefObject, useCallback, useMemo, useState } from 'react';
 import { type Command, openPalette, useRegisterCommands } from '~/features/palette/registry';
 import { meQuery } from '~/features/tasks/queries';
+import { useApi } from '~/lib/workspace';
 import { copyText, localToday, useHotkeys } from '~/ui';
 import { AssigneePicker } from './AssigneePicker';
 import { useFieldChange } from './apply';
@@ -126,6 +127,7 @@ export function useTaskFieldKeys({
   commands: withCommands = true,
   linkOf = defaultLink,
 }: UseTaskFieldKeysOptions): TaskFieldKeys {
+  const api = useApi();
   // Screens pass new arrays on every render; the commands only change when the tasks do.
   const given = toTargets(targets);
   const signature = given.map(signatureOf).join(',');
@@ -134,7 +136,7 @@ export function useTaskFieldKeys({
   const active = enabled && list.length > 0;
   const queryClient = useQueryClient();
   const { apply } = useFieldChange();
-  const me = useQuery({ ...meQuery(), enabled: active }).data?.user;
+  const me = useQuery({ ...meQuery(api), enabled: active }).data?.user;
   const singleProject = projectKeysOf(list).length === 1 ? list[0]?.project.key : undefined;
   const planning = useProjectPlanning(singleProject, active);
   const [open, setOpen] = useState<TaskFieldKey | null>(null);
@@ -168,12 +170,12 @@ export function useTaskFieldKeys({
         showFieldToast({ text: READ_ONLY_TEXT, tone: 'error' });
         return;
       }
-      void fieldStep(field, stepContext()).then(
+      void fieldStep(api, field, stepContext()).then(
         (step) => openPalette({ kind: 'step', step }),
         () => showFieldToast({ text: "Couldn't load the choices. Try again.", tone: 'error' }),
       );
     },
-    [list, onOpenField, anchorFor, stepContext],
+    [list, onOpenField, anchorFor, stepContext, api],
   );
 
   const assignToMe = useCallback(() => {
@@ -262,7 +264,7 @@ export function useTaskFieldKeys({
         ...(meta.shortcut ? { shortcut: meta.shortcut } : {}),
         context,
         ...(refusal ? { disabledReason: refusal } : {}),
-        run: () => fieldStep(field, stepContext()),
+        run: () => fieldStep(api, field, stepContext()),
       };
     });
     const assignRefusal = fieldRefusal(list, 'assignee');
@@ -306,7 +308,7 @@ export function useTaskFieldKeys({
         },
       },
     ];
-  }, [active, withCommands, list, showsField, stepContext, assignToMe, copyKeys, copyLinks]);
+  }, [active, withCommands, list, showsField, stepContext, assignToMe, copyKeys, copyLinks, api]);
   useRegisterCommands(commands);
 
   const close = useCallback(() => setOpen(null), []);

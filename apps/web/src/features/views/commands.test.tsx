@@ -10,8 +10,6 @@ import { buildFilterFields } from './filter-fields';
 import type { TaskFilter } from './filters';
 import { LABELS } from './testing';
 
-vi.mock('~/lib/orpc', async () => (await import('./testing')).orpcMock());
-
 const fields = buildFilterFields({ scopeName: 'Harbor', labels: LABELS });
 
 function View() {

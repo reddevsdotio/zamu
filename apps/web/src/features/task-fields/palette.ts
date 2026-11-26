@@ -10,7 +10,7 @@ import {
 import { labelsQuery } from '~/features/labels/queries';
 import type { Command, PaletteStep } from '~/features/palette/registry';
 import { cyclesQuery, membersQuery, milestonesQuery, relatedOf, taskQuery } from '~/features/tasks/queries';
-import { client } from '~/lib/orpc';
+import type { WorkspaceApi } from '~/lib/orpc';
 import { toAssigneeRef } from './AssigneePicker';
 import type { FieldChange } from './apply';
 import { formatDayWithWeekday, quickPicks } from './dates';
@@ -111,7 +111,11 @@ export interface StepContext {
 const done = () => undefined;
 
 /** The palette step for a field: the choices, each applying to the targets. */
-export async function fieldStep(field: TaskFieldKey, ctx: StepContext): Promise<PaletteStep> {
+export async function fieldStep(
+  api: WorkspaceApi,
+  field: TaskFieldKey,
+  ctx: StepContext,
+): Promise<PaletteStep> {
   const { targets, apply, queryClient, context, today } = ctx;
   const meta = FIELD_COMMANDS[field];
   const command = (id: string, title: string, run: () => void, extra: Partial<Command> = {}): Command => ({
@@ -151,7 +155,7 @@ export async function fieldStep(field: TaskFieldKey, ctx: StepContext): Promise<
         ),
       );
     case 'assignee': {
-      const members = (await queryClient.ensureQueryData(membersQuery())).items;
+      const members = (await queryClient.ensureQueryData(membersQuery(api))).items;
       const assign = (assignee: AssigneeRef | null) => () => void apply(targets, { assignee });
       return step([
         command('none', 'No assignee', assign(null), { shortcut: '0', keywords: ['unassign', 'nobody'] }),
@@ -166,7 +170,7 @@ export async function fieldStep(field: TaskFieldKey, ctx: StepContext): Promise<
       ]);
     }
     case 'labels': {
-      const labels = (await queryClient.ensureQueryData(labelsQuery(projectKey))).items;
+      const labels = (await queryClient.ensureQueryData(labelsQuery(api, projectKey))).items;
       const lower = (name: string) => name.toLocaleLowerCase();
       const onAll = (name: string) =>
         targets.every((target) => (target.labels ?? []).some((label) => lower(label.name) === lower(name)));
@@ -204,7 +208,7 @@ export async function fieldStep(field: TaskFieldKey, ctx: StepContext): Promise<
         command('clear', 'Clear due date', () => void apply(targets, { dueDate: null })),
       ]);
     case 'milestone': {
-      const milestones = (await queryClient.ensureQueryData(milestonesQuery(projectKey))).items;
+      const milestones = (await queryClient.ensureQueryData(milestonesQuery(api, projectKey))).items;
       return step([
         command('none', 'No milestone', () => void apply(targets, { milestone: null })),
         ...milestones
@@ -219,7 +223,7 @@ export async function fieldStep(field: TaskFieldKey, ctx: StepContext): Promise<
       ]);
     }
     case 'cycle': {
-      const cycles = (await queryClient.ensureQueryData(cyclesQuery(projectKey))).items;
+      const cycles = (await queryClient.ensureQueryData(cyclesQuery(api, projectKey))).items;
       return step([
         command('none', 'No cycle', () => void apply(targets, { cycle: null })),
         ...cycles
@@ -235,9 +239,9 @@ export async function fieldStep(field: TaskFieldKey, ctx: StepContext): Promise<
     }
     case 'blockedBy': {
       if (!single) return step([]);
-      const task = await queryClient.ensureQueryData(taskQuery(single.key));
+      const task = await queryClient.ensureQueryData(taskQuery(api, single.key));
       const current = new Set((task.blockedBy ?? []).flatMap((blocker) => (blocker ? [blocker.key] : [])));
-      const page = await client.tasks.list({
+      const page = await api.client.tasks.list({
         project: [projectKey],
         status: [...OPEN_TASK_STATUSES],
         limit: 100,
@@ -256,7 +260,7 @@ export async function fieldStep(field: TaskFieldKey, ctx: StepContext): Promise<
     }
     case 'subtasks': {
       if (!single) return step([]);
-      const page = await client.tasks.list({
+      const page = await api.client.tasks.list({
         project: [projectKey],
         status: [...OPEN_TASK_STATUSES],
         topLevel: true,
@@ -278,7 +282,7 @@ export async function fieldStep(field: TaskFieldKey, ctx: StepContext): Promise<
     }
     case 'parent': {
       if (!single) return step([]);
-      const task = await queryClient.ensureQueryData(taskQuery(single.key));
+      const task = await queryClient.ensureQueryData(taskQuery(api, single.key));
       if ((task.subtasks?.length ?? 0) > 0) {
         return step([
           command('depth', `${task.key} has subtasks`, () => undefined, {
@@ -286,7 +290,7 @@ export async function fieldStep(field: TaskFieldKey, ctx: StepContext): Promise<
           }),
         ]);
       }
-      const page = await client.tasks.list({
+      const page = await api.client.tasks.list({
         project: [projectKey],
         status: [...OPEN_TASK_STATUSES],
         topLevel: true,

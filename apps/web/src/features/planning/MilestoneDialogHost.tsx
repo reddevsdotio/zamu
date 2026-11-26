@@ -1,5 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import type { MilestoneWithProgress } from '@zamu/contracts';
+import { useWorkspaceSlug } from '~/lib/workspace';
 import { writeFailure } from './errors';
 import { MilestoneDialog, type MilestoneField, type MilestoneValues } from './MilestoneDialog';
 import { useCreateMilestone, useDeleteMilestone, useUpdateMilestone } from './queries';
@@ -58,6 +59,7 @@ export function EditMilestoneDialog({
   onClose,
   today,
 }: EditMilestoneDialogProps) {
+  const workspace = useWorkspaceSlug();
   const update = useUpdateMilestone();
   const remove = useDeleteMilestone();
   const navigate = useNavigate();
@@ -87,7 +89,7 @@ export function EditMilestoneDialog({
       return writeFailure(error, FIELDS, 'milestone').message.replace("Couldn't save", "Couldn't delete");
     }
     onClose();
-    void navigate({ to: '/p/$projectKey/milestones', params: { projectKey } });
+    void navigate({ to: '/w/$workspace/p/$projectKey/milestones', params: { workspace, projectKey } });
     return null;
   };
 

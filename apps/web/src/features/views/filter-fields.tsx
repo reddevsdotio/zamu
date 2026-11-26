@@ -16,7 +16,7 @@ import {
 import { useMemo } from 'react';
 import { labelsQuery } from '~/features/labels/queries';
 import { membersQuery, meQuery } from '~/features/tasks/queries';
-import { orpc } from '~/lib/orpc';
+import { useApi } from '~/lib/workspace';
 import {
   Avatar,
   CycleGlyph,
@@ -359,15 +359,16 @@ export function useProjectFilterFields(
   projectKey: string,
   { projectName, usesMilestones = true, usesCycles = true, fields }: UseProjectFilterFieldsOptions = {},
 ): FilterFieldConfig[] {
-  const me = useQuery(meQuery()).data?.user;
-  const members = useQuery(membersQuery()).data?.items;
-  const labels = useQuery(labelsQuery(projectKey)).data?.items;
+  const api = useApi();
+  const me = useQuery(meQuery(api)).data?.user;
+  const members = useQuery(membersQuery(api)).data?.items;
+  const labels = useQuery(labelsQuery(api, projectKey)).data?.items;
   const milestones = useQuery({
-    ...orpc.milestones.list.queryOptions({ input: { project: projectKey } }),
+    ...api.orpc.milestones.list.queryOptions({ input: { project: projectKey } }),
     enabled: usesMilestones,
   }).data?.items;
   const cycles = useQuery({
-    ...orpc.cycles.list.queryOptions({ input: { project: projectKey } }),
+    ...api.orpc.cycles.list.queryOptions({ input: { project: projectKey } }),
     enabled: usesCycles,
   }).data?.items;
   return useMemo(

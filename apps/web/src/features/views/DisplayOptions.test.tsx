@@ -3,10 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DisplayButton } from './DisplayOptions';
 import { requestDisplayOptions } from './requests';
-import { renderWithQuery, VIEWER } from './testing';
+import { renderWithQuery, VIEWER, viewsWorkspace } from './testing';
 import { displayStorageKey, resetDisplayOptionsForTests, useDisplayOptions } from './useDisplayOptions';
-
-vi.mock('~/lib/orpc', async () => (await import('./testing')).orpcMock());
 
 /** Shows the options a view reads, next to the Display button that changes them. */
 function View({ projectKey, view }: { projectKey: string | null; view: 'list' | 'board' | 'home' }) {
@@ -73,19 +71,31 @@ describe('display options', () => {
     expect(screen.getByTestId('options-board')).toHaveAttribute('data-default', 'false');
     expect(read('list')).toMatchObject({ orderBy: 'priority' });
 
-    const stored = JSON.parse(localStorage.getItem(displayStorageKey(VIEWER.id, 'HBR', 'board')) ?? 'null');
+    const stored = JSON.parse(
+      localStorage.getItem(displayStorageKey(viewsWorkspace.id, VIEWER.id, 'HBR', 'board')) ?? 'null',
+    );
     expect(stored).toMatchObject({ orderBy: 'due', boardSubtasks: 'cards', properties: { milestone: true } });
-    expect(localStorage.getItem(`zamu:display:v1:${VIEWER.id}:HBR:board`)).not.toBeNull();
-    expect(localStorage.getItem(displayStorageKey(VIEWER.id, 'HBR', 'list'))).toBeNull();
+    expect(
+      localStorage.getItem(`zamu:display:v2:${viewsWorkspace.id}:${VIEWER.id}:HBR:board`),
+    ).not.toBeNull();
+    expect(localStorage.getItem(displayStorageKey(viewsWorkspace.id, VIEWER.id, 'HBR', 'list'))).toBeNull();
 
     await user.click(within(dialog).getByRole('button', { name: 'Reset to default' }));
     expect(read('board')).toMatchObject({ orderBy: 'priority', cards: 'expandable', milestone: false });
-    expect(localStorage.getItem(displayStorageKey(VIEWER.id, 'HBR', 'board'))).toBeNull();
+    expect(localStorage.getItem(displayStorageKey(viewsWorkspace.id, VIEWER.id, 'HBR', 'board'))).toBeNull();
+  });
+
+  it('keys the options by workspace, person, project and view', () => {
+    expect(displayStorageKey('acme-id', 'u-1', 'PAY', 'board')).toBe('zamu:display:v2:acme-id:u-1:PAY:board');
+    expect(displayStorageKey('acme-id', 'u-1', null, 'home')).toBe('zamu:display:v2:acme-id:u-1:~home:home');
+    expect(displayStorageKey('globex-id', 'u-1', 'PAY', 'board')).not.toBe(
+      displayStorageKey('acme-id', 'u-1', 'PAY', 'board'),
+    );
   });
 
   it('reads saved options back and keeps projects apart', async () => {
     localStorage.setItem(
-      displayStorageKey(VIEWER.id, 'PAY', 'list'),
+      displayStorageKey(viewsWorkspace.id, VIEWER.id, 'PAY', 'list'),
       JSON.stringify({ groupBy: 'label', hideDoneAfterDays: 0, properties: { milestone: true } }),
     );
     await renderWithQuery(
@@ -98,6 +108,14 @@ describe('display options', () => {
       expect(read('list')).toMatchObject({ groupBy: 'label', hideDone: 0, milestone: true }),
     );
     expect(read('board')).toMatchObject({ groupBy: 'status' });
+  });
+
+  it('ignores the same project in another workspace and options saved before 0.10', async () => {
+    const saved = JSON.stringify({ groupBy: 'label', hideDoneAfterDays: 0, properties: {} });
+    localStorage.setItem(displayStorageKey('globex-id', VIEWER.id, 'PAY', 'list'), saved);
+    localStorage.setItem(`zamu:display:v1:${VIEWER.id}:PAY:list`, saved);
+    await renderWithQuery(<View projectKey="PAY" view="list" />);
+    await waitFor(() => expect(read('list')).toMatchObject({ groupBy: 'status' }));
   });
 
   it('shows the list wording and the subtasks choice on the list', async () => {
@@ -136,7 +154,9 @@ describe('display options', () => {
     expect(within(dialog).getByRole('button', { name: 'Criteria', pressed: true })).toBeInTheDocument();
     expect(read('list')).toMatchObject({ criteria: true });
     expect(read('board')).toMatchObject({ criteria: false });
-    const stored = JSON.parse(localStorage.getItem(displayStorageKey(VIEWER.id, 'HBR', 'list')) ?? 'null');
+    const stored = JSON.parse(
+      localStorage.getItem(displayStorageKey(viewsWorkspace.id, VIEWER.id, 'HBR', 'list')) ?? 'null',
+    );
     expect(stored).toMatchObject({ properties: { criteria: true } });
   });
 

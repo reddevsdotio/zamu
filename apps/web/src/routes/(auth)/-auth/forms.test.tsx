@@ -2,13 +2,18 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  ErrorBanner,
   InviteForm,
+  JoinWorkspace,
   SetupForm,
   SignInForm,
+  SignInToJoin,
   signInError,
+  signInToJoinHref,
   TOO_MANY_ATTEMPTS,
   WorkspaceForm,
   WRONG_CREDENTIALS,
+  WrongAccount,
 } from './forms';
 
 function sso(result: string | null = null) {
@@ -220,5 +225,61 @@ describe('InviteForm', () => {
     await userEvent.type(screen.getByLabelText('Your name'), 'Tomás Berg');
     await userEvent.type(screen.getByLabelText('Password'), 'tomas-password-long{Enter}');
     expect(onSubmit).toHaveBeenCalledWith({ name: 'Tomás Berg', password: 'tomas-password-long' });
+  });
+});
+
+describe('joining with an existing account', () => {
+  const INVITATION = '0190b1d2-0000-7000-8000-000000000001';
+
+  it('joins with one button and shows a refusal in the banner', async () => {
+    const onJoin = vi.fn().mockResolvedValueOnce({ message: "This invitation can't be used any more." });
+    render(<JoinWorkspace workspaceName="Globex" onJoin={onJoin} />);
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Join Globex' }));
+    expect(onJoin).toHaveBeenCalledOnce();
+    expect(await screen.findByRole('alert')).toHaveTextContent("This invitation can't be used any more.");
+  });
+
+  it('offers only Sign out for another account', async () => {
+    const onSignOut = vi.fn().mockResolvedValue(undefined);
+    render(<WrongAccount onSignOut={onSignOut} />);
+    expect(screen.queryByRole('button', { name: /Join/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(onSignOut).toHaveBeenCalledOnce();
+  });
+
+  it('links to sign-in and back to the invitation, with SSO when configured', async () => {
+    const action = sso();
+    render(<SignInToJoin invitationId={INVITATION} sso={action} />);
+    expect(screen.getByRole('link', { name: 'Sign in to join' })).toHaveAttribute(
+      'href',
+      `/signin?redirect=%2Finvite%2F${INVITATION}`,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Continue with Authentik' }));
+    expect(action.onPress).toHaveBeenCalledOnce();
+  });
+
+  it('shows only the SSO button when password sign-in is off', () => {
+    render(<SignInToJoin invitationId={INVITATION} sso={sso()} passwordLogin={false} />);
+    expect(screen.queryByRole('link', { name: 'Sign in to join' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue with Authentik' })).toBeInTheDocument();
+  });
+
+  it('turns ACCOUNT_EXISTS into a way to sign in and join', () => {
+    render(
+      <ErrorBanner
+        error={{
+          message: 'An account with this email already exists.',
+          link: { href: signInToJoinHref(INVITATION), label: 'Sign in to join' },
+        }}
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'An account with this email already exists. Sign in to join',
+    );
+    expect(screen.getByRole('link', { name: 'Sign in to join' })).toHaveAttribute(
+      'href',
+      `/signin?redirect=%2Finvite%2F${INVITATION}`,
+    );
   });
 });

@@ -6,15 +6,21 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouterState } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { isMirrored, ProjectHeader, useProjectSummary } from '~/features/project-header';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
+import { type WorkspaceUrlSlug, workspacePath } from '~/lib/workspace-paths';
 import { cn, SettingsNav, SourceStatusDot } from '~/ui';
 import { sourceDot } from './format';
 import { hasTasksQuery } from './queries';
 
 export type ProjectSettingsSection = 'general' | 'labels' | 'defaults' | 'backlog';
 
-/** /p/PAY/settings, /p/PAY/settings/labels, /p/PAY/settings/defaults and /p/PAY/settings/backlog. */
-export function projectSettingsHref(projectKey: string, section: ProjectSettingsSection = 'general'): string {
-  const base = `/p/${encodeURIComponent(projectKey)}/settings`;
+/** /p/PAY/settings, /p/PAY/settings/labels, /p/PAY/settings/defaults and /p/PAY/settings/backlog, in the workspace. */
+export function projectSettingsHref(
+  workspace: WorkspaceUrlSlug,
+  projectKey: string,
+  section: ProjectSettingsSection = 'general',
+): string {
+  const base = workspacePath(workspace, `/p/${encodeURIComponent(projectKey)}/settings`);
   return section === 'general' ? base : `${base}/${section}`;
 }
 
@@ -28,13 +34,15 @@ export function settingsSection(pathname: string): ProjectSettingsSection {
 }
 
 export function ProjectSettingsLayout({ projectKey, children }: { projectKey: string; children: ReactNode }) {
+  const api = useApi();
+  const workspace = useWorkspaceSlug();
   const project = useProjectSummary(projectKey);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const section = settingsSection(pathname);
   const backlog = project?.backlog ?? null;
   // Backlog.md shows while the project has a source, or could get one (no tasks yet).
   const hasTasks = useQuery({
-    ...hasTasksQuery(projectKey),
+    ...hasTasksQuery(api, projectKey),
     enabled: project !== undefined && !backlog,
   }).data;
   const showBacklog = backlog !== null || hasTasks !== true || section === 'backlog';
@@ -44,7 +52,7 @@ export function ProjectSettingsLayout({ projectKey, children }: { projectKey: st
   const item = (id: ProjectSettingsSection, label: string, trailing?: ReactNode) => ({
     id,
     label,
-    href: projectSettingsHref(projectKey, id),
+    href: projectSettingsHref(workspace, projectKey, id),
     isCurrent: section === id,
     trailing,
   });

@@ -9,7 +9,7 @@ import type { z } from 'zod';
 import { retryOnce, withTimeout } from '~/features/tasks/errors';
 import { REQUEST_TIMEOUT_MS } from '~/features/tasks/queries';
 import { type DisplayOptions, displayListInput, type TaskFilter, toListTasksInput } from '~/features/views';
-import { client, orpc } from '~/lib/orpc';
+import type { WorkspaceApi } from '~/lib/orpc';
 
 // One query per status column: tasks.list with one status and the display options' sort (and topLevel
 // while subtasks are hidden), 50 cards per page, more on scroll. The keys sit under orpc.tasks.list.key(), so every task change that invalidates lists (the
@@ -44,15 +44,15 @@ export function boardListInput(projectKey: string, filter: TaskFilter, options: 
   return { project: projectKey, ...toListTasksInput(filter), ...displayListInput(options) };
 }
 
-export function boardColumnKey(input: BoardInput): QueryKey {
-  return [...orpc.tasks.list.key({ type: 'infinite', input }), BOARD_TAG];
+export function boardColumnKey(api: WorkspaceApi, input: BoardInput): QueryKey {
+  return [...api.orpc.tasks.list.key({ type: 'infinite', input }), BOARD_TAG];
 }
 
-export function boardColumnQuery(input: BoardInput) {
+export function boardColumnQuery(api: WorkspaceApi, input: BoardInput) {
   return infiniteQueryOptions({
-    queryKey: boardColumnKey(input),
+    queryKey: boardColumnKey(api, input),
     queryFn: ({ pageParam, signal }): Promise<TaskListPage> =>
-      client.tasks.list(
+      api.client.tasks.list(
         { ...input, limit: BOARD_PAGE_SIZE, ...(typeof pageParam === 'string' ? { cursor: pageParam } : {}) },
         { signal: withTimeout(signal, REQUEST_TIMEOUT_MS) },
       ),
@@ -83,11 +83,12 @@ function sameColumn(a: BoardInput, b: BoardInput): boolean {
  * board's own order decides where a card is.
  */
 export function boardQueries(
+  api: WorkspaceApi,
   queryClient: QueryClient,
   projectKey: string,
 ): { queryKey: QueryKey; status: TaskStatus; data: BoardColumnData; active: boolean }[] {
   const found = queryClient.getQueryCache().findAll({
-    queryKey: orpc.tasks.list.key(),
+    queryKey: api.orpc.tasks.list.key(),
     predicate: (query) => query.queryKey.at(-1) === BOARD_TAG,
   });
   const result: { queryKey: QueryKey; status: TaskStatus; data: BoardColumnData; active: boolean }[] = [];
@@ -102,17 +103,17 @@ export function boardQueries(
 }
 
 /** Refetches the project's board columns (after moves settle). */
-export async function invalidateBoard(queryClient: QueryClient, projectKey: string) {
+export async function invalidateBoard(api: WorkspaceApi, queryClient: QueryClient, projectKey: string) {
   const isBoard = (queryKey: QueryKey) =>
     queryKey.at(-1) === BOARD_TAG && (inputOf(queryKey)?.project.includes(projectKey) ?? false);
   // A first load still running (a column unfolded by the move) started before the move was saved:
   // drop it, or the refetch below would reuse its answer.
   await queryClient.cancelQueries({
-    queryKey: orpc.tasks.list.key(),
+    queryKey: api.orpc.tasks.list.key(),
     predicate: (query) => isBoard(query.queryKey) && query.state.data === undefined,
   });
   await queryClient.invalidateQueries({
-    queryKey: orpc.tasks.list.key(),
+    queryKey: api.orpc.tasks.list.key(),
     predicate: (query) => isBoard(query.queryKey),
   });
 }

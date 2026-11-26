@@ -1,11 +1,16 @@
-import { useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { workspaceStorageKey } from '~/lib/storage-keys';
 
 // Navigation memory (plan call 6, shortcuts.md "Task view"): when a task is opened from a view, the
 // view's task keys in order and its name are kept in sessionStorage (per tab), so the task view can
-// walk them with J / K and show "12 of 40 in List".
-//   sessionStorage zamu:task-nav:v1 = { keys: [...], from: "List", returnTo?: "/p/PAY?status=todo" }
+// walk them with J / K and show "12 of 40 in List". One list per workspace: PAY-12 in one workspace is
+// another task than PAY-12 in the next.
+//   sessionStorage zamu:task-nav:v2:<workspace id> = { keys: [...], from: "List", returnTo?: "/w/acme/p/PAY?status=todo" }
 
-export const TASK_NAV_STORAGE_KEY = 'zamu:task-nav:v1';
+/** The sessionStorage key of a workspace's list. */
+export function taskNavStorageKey(workspaceId: string): string {
+  return workspaceStorageKey('task-nav', workspaceId);
+}
 /** Longer lists keep the keys around the opened task. */
 const MAX_KEYS = 2000;
 
@@ -27,16 +32,18 @@ function storage(): Storage | null {
 }
 
 const listeners = new Set<() => void>();
-let cached: { raw: string | null; value: TaskNavigationList | null } = { raw: null, value: null };
+const cache = new Map<string, { raw: string | null; value: TaskNavigationList | null }>();
 
-function read(): TaskNavigationList | null {
+function read(workspaceId: string): TaskNavigationList | null {
+  const key = taskNavStorageKey(workspaceId);
   let raw: string | null = null;
   try {
-    raw = storage()?.getItem(TASK_NAV_STORAGE_KEY) ?? null;
+    raw = storage()?.getItem(key) ?? null;
   } catch {
     raw = null;
   }
-  if (raw === cached.raw) return cached.value;
+  const cached = cache.get(key);
+  if (cached && raw === cached.raw) return cached.value;
   let value: TaskNavigationList | null = null;
   if (raw) {
     try {
@@ -52,7 +59,7 @@ function read(): TaskNavigationList | null {
       value = null;
     }
   }
-  cached = { raw, value };
+  cache.set(key, { raw, value });
   return value;
 }
 
@@ -60,7 +67,11 @@ function read(): TaskNavigationList | null {
  * Remember the view a task is being opened from. Call it right before navigating to the task
  * (Enter, a click, the peek's "Open"). `openedKey` keeps a long list centred on that task.
  */
-export function rememberTaskNavigation(list: TaskNavigationList, openedKey?: string): void {
+export function rememberTaskNavigation(
+  workspaceId: string,
+  list: TaskNavigationList,
+  openedKey?: string,
+): void {
   let keys = [...list.keys];
   if (keys.length > MAX_KEYS) {
     const index = openedKey ? Math.max(0, keys.indexOf(openedKey)) : 0;
@@ -69,7 +80,7 @@ export function rememberTaskNavigation(list: TaskNavigationList, openedKey?: str
   }
   try {
     storage()?.setItem(
-      TASK_NAV_STORAGE_KEY,
+      taskNavStorageKey(workspaceId),
       JSON.stringify({ keys, from: list.from, ...(list.returnTo ? { returnTo: list.returnTo } : {}) }),
     );
   } catch {
@@ -78,19 +89,19 @@ export function rememberTaskNavigation(list: TaskNavigationList, openedKey?: str
   for (const listener of listeners) listener();
 }
 
-/** Forget the list (the person left the views). */
-export function forgetTaskNavigation(): void {
+/** Forget the workspace's list (the person left the views). */
+export function forgetTaskNavigation(workspaceId: string): void {
   try {
-    storage()?.removeItem(TASK_NAV_STORAGE_KEY);
+    storage()?.removeItem(taskNavStorageKey(workspaceId));
   } catch {
     // ignore
   }
   for (const listener of listeners) listener();
 }
 
-/** The remembered list, or null. */
-export function readTaskNavigation(): TaskNavigationList | null {
-  return read();
+/** The workspace's remembered list, or null. */
+export function readTaskNavigation(workspaceId: string): TaskNavigationList | null {
+  return read(workspaceId);
 }
 
 function subscribe(listener: () => void) {
@@ -141,7 +152,8 @@ export function taskNavigationFor(list: TaskNavigationList | null, taskKey: stri
 }
 
 /** For the task view: where this task sits in the list it was opened from. */
-export function useTaskNavigation(taskKey: string): TaskNavigation {
-  const list = useSyncExternalStore(subscribe, read, () => null);
+export function useTaskNavigation(workspaceId: string, taskKey: string): TaskNavigation {
+  const snapshot = useCallback(() => read(workspaceId), [workspaceId]);
+  const list = useSyncExternalStore(subscribe, snapshot, () => null);
   return useMemo(() => taskNavigationFor(list, taskKey), [list, taskKey]);
 }

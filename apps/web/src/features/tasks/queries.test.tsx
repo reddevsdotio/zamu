@@ -3,7 +3,8 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { Home, TaskListItem, TaskListPage, TaskStatus } from '@zamu/contracts';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { orpc } from '~/lib/orpc';
+import { testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 import { createFakeApi, type FakeApi } from './fake-api';
 import {
   applyTaskPatch,
@@ -23,8 +24,8 @@ import {
 
 const api = vi.hoisted(() => ({ current: null as FakeApi | null }));
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const forward = (path: string[]): unknown =>
     new Proxy(() => {}, {
       get: (_target, key) => (typeof key === 'string' ? forward([...path, key]) : undefined),
@@ -35,23 +36,26 @@ vi.mock('~/lib/orpc', async () => {
       },
     });
   const client = forward([]);
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 const fake = () => api.current as FakeApi;
 
 /** A board column cache, keyed as features/board/queries.ts keys it. */
 function boardKey(status: TaskStatus) {
   const input = { project: ['PAY'], status: [status], order: 'board' as const };
-  return [...orpc.tasks.list.key({ type: 'infinite', input }), 'board'];
+  return [...workspace.api.orpc.tasks.list.key({ type: 'infinite', input }), 'board'];
 }
 
 async function seed() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   const client = fake().client;
-  queryClient.setQueryData(taskQuery('PAY-1').queryKey, await client.tasks.get({ key: 'PAY-1' }));
+  queryClient.setQueryData(
+    taskQuery(workspace.api, 'PAY-1').queryKey,
+    await client.tasks.get({ key: 'PAY-1' }),
+  );
   const list = await client.tasks.list({ project: ['PAY'], limit: 100 });
-  queryClient.setQueryData(taskListQuery({ project: ['PAY'] }).queryKey, {
+  queryClient.setQueryData(taskListQuery(workspace.api, { project: ['PAY'] }).queryKey, {
     items: list.items,
     counts: list.counts,
   });
@@ -82,9 +86,11 @@ async function seed() {
     ],
     agents: [],
   };
-  queryClient.setQueryData(orpc.home.get.queryKey({ input: { tab: 'mine' } }), home);
+  queryClient.setQueryData(workspace.api.orpc.home.get.queryKey({ input: { tab: 'mine' } }), home);
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <WorkspaceProvider workspace={workspace}>{children}</WorkspaceProvider>
+    </QueryClientProvider>
   );
   return { queryClient, wrapper };
 }
@@ -96,14 +102,14 @@ function cards(queryClient: QueryClient, status: TaskStatus): string[] {
 
 function listItem(queryClient: QueryClient, key: string) {
   const data = queryClient.getQueryData<{ items: TaskListItem[] }>(
-    taskListQuery({ project: ['PAY'] }).queryKey,
+    taskListQuery(workspace.api, { project: ['PAY'] }).queryKey,
   );
   return data?.items.find((item) => item.key === key);
 }
 
 function homeTask(queryClient: QueryClient) {
-  return queryClient.getQueryData<Home>(orpc.home.get.queryKey({ input: { tab: 'mine' } }))?.groups[0]
-    ?.items[0]?.task;
+  return queryClient.getQueryData<Home>(workspace.api.orpc.home.get.queryKey({ input: { tab: 'mine' } }))
+    ?.groups[0]?.items[0]?.task;
 }
 
 beforeEach(() => {
@@ -126,10 +132,14 @@ describe('useUpdateTask', () => {
         },
       });
     });
-    await waitFor(() => expect(queryClient.getQueryData(taskQuery('PAY-1').queryKey)?.status).toBe('done'));
-    expect(queryClient.getQueryData(taskQuery('PAY-1').queryKey)?.labels?.map((label) => label.name)).toEqual(
-      ['api', 'backend', 'payouts'],
+    await waitFor(() =>
+      expect(queryClient.getQueryData(taskQuery(workspace.api, 'PAY-1').queryKey)?.status).toBe('done'),
     );
+    expect(
+      queryClient
+        .getQueryData(taskQuery(workspace.api, 'PAY-1').queryKey)
+        ?.labels?.map((label) => label.name),
+    ).toEqual(['api', 'backend', 'payouts']);
     expect(listItem(queryClient, 'PAY-1')).toMatchObject({ status: 'done', dueDate: '2026-12-01' });
     expect(cards(queryClient, 'in_progress')).not.toContain('PAY-1');
     expect(cards(queryClient, 'done')).toContain('PAY-1');
@@ -152,7 +162,7 @@ describe('useUpdateTask', () => {
     const { result } = renderHook(() => useUpdateTask(), { wrapper });
     act(() => result.current.mutate({ key: 'PAY-1', patch: { status: 'done' } }));
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(queryClient.getQueryData(taskQuery('PAY-1').queryKey)?.status).toBe('in_progress');
+    expect(queryClient.getQueryData(taskQuery(workspace.api, 'PAY-1').queryKey)?.status).toBe('in_progress');
     expect(listItem(queryClient, 'PAY-1')?.status).toBe('in_progress');
     expect(cards(queryClient, 'in_progress')).toContain('PAY-1');
     expect(cards(queryClient, 'done')).not.toContain('PAY-1');
@@ -161,7 +171,10 @@ describe('useUpdateTask', () => {
 
   it('shows a new parent and its progress at once', async () => {
     const { queryClient, wrapper } = await seed();
-    queryClient.setQueryData(taskQuery('PAY-3').queryKey, await fake().client.tasks.get({ key: 'PAY-3' }));
+    queryClient.setQueryData(
+      taskQuery(workspace.api, 'PAY-3').queryKey,
+      await fake().client.tasks.get({ key: 'PAY-3' }),
+    );
     const release = fake().hold();
     const { result } = renderHook(() => useUpdateTask(), { wrapper });
     act(() =>
@@ -172,7 +185,9 @@ describe('useUpdateTask', () => {
     );
     await waitFor(() =>
       expect(
-        queryClient.getQueryData(taskQuery('PAY-1').queryKey)?.subtasks?.map((task) => task.key),
+        queryClient
+          .getQueryData(taskQuery(workspace.api, 'PAY-1').queryKey)
+          ?.subtasks?.map((task) => task.key),
       ).toEqual(['PAY-3', 'PAY-5']),
     );
     expect(listItem(queryClient, 'PAY-3')?.parentKey).toBe('PAY-1');
@@ -248,7 +263,7 @@ describe('useCreateTask', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.assignee?.name).toBe('claude-dev');
     expect(
-      queryClient.getQueryData(taskQuery('PAY-1').queryKey)?.subtasks?.map((task) => task.key),
+      queryClient.getQueryData(taskQuery(workspace.api, 'PAY-1').queryKey)?.subtasks?.map((task) => task.key),
     ).toContain(result.current.data?.key);
   });
 });

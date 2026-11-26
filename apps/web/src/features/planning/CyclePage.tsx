@@ -6,6 +6,8 @@ import { Link } from 'react-aria-components';
 import { useOptionalQuickCreate } from '~/features/shell/quick-create';
 import { taskListQuery } from '~/features/tasks/queries';
 import { clearedFilter, DisplayButton, FilterButton, FilterChips } from '~/features/views';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
+import { workspacePath } from '~/lib/workspace-paths';
 import {
   Button,
   CycleGlyph,
@@ -59,8 +61,10 @@ export interface CyclePageProps {
 }
 
 export function CyclePage({ projectKey, selector }: CyclePageProps) {
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
   const navigate = useNavigate();
-  const cycle = useQuery(cycleQuery(projectKey, selector));
+  const cycle = useQuery(cycleQuery(api, projectKey, selector));
   const data = cycle.data;
   const title = data ? `Cycle ${data.number}` : typeof selector === 'number' ? `Cycle ${selector}` : 'Cycle';
 
@@ -83,7 +87,7 @@ export function CyclePage({ projectKey, selector }: CyclePageProps) {
               action={
                 <Button
                   variant="secondary"
-                  onPress={() => void navigate({ href: `/p/${projectKey}/cycles` })}
+                  onPress={() => void navigate({ href: workspacePath(workspace, `/p/${projectKey}/cycles`) })}
                 >
                   All cycles
                 </Button>
@@ -162,6 +166,8 @@ interface ActiveCycleProps {
 }
 
 function ActiveCycle({ projectKey, cycle, selector }: ActiveCycleProps) {
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
   const navigate = useNavigate();
   const quickCreate = useOptionalQuickCreate();
   const today = useServerToday(projectKey);
@@ -169,7 +175,7 @@ function ActiveCycle({ projectKey, cycle, selector }: ActiveCycleProps) {
   const number = cycle.number;
   const view = usePlanningTasks(projectKey, { cycle: number });
   const { filter, setFilter, fields, display, tasks, all } = view;
-  const cycles = useQuery(cyclesQuery(projectKey));
+  const cycles = useQuery(cyclesQuery(api, projectKey));
   const [ending, setEnding] = useState(false);
   const [editing, setEditing] = useState(false);
   const end = useEndCycle();
@@ -182,7 +188,8 @@ function ActiveCycle({ projectKey, cycle, selector }: ActiveCycleProps) {
   const split = cycles.data ? splitCycles(cycles.data.items) : undefined;
   const next = split?.upcoming.find((item) => item.number !== number);
   const newTask = () => quickCreate?.open(projectKey);
-  const toBoard = () => void navigate({ href: `/p/${projectKey}?view=board&cycle=${number}` });
+  const toBoard = () =>
+    void navigate({ href: workspacePath(workspace, `/p/${projectKey}?view=board&cycle=${number}`) });
   useHotkeys({ v: toBoard });
 
   const onEnd = async (moveTo: number | 'none' | undefined) => {
@@ -195,8 +202,8 @@ function ActiveCycle({ projectKey, cycle, selector }: ActiveCycleProps) {
     // A "current" link would now show the next cycle: stay on this one.
     if (selector !== number) {
       void navigate({
-        to: '/p/$projectKey/cycles/$cycleNumber',
-        params: { projectKey, cycleNumber: String(number) },
+        to: '/w/$workspace/p/$projectKey/cycles/$cycleNumber',
+        params: { workspace, projectKey, cycleNumber: String(number) },
       });
     }
     return null;
@@ -330,9 +337,10 @@ function ActiveCycle({ projectKey, cycle, selector }: ActiveCycleProps) {
 
 /** "Add tasks": a searchable list of the project's open tasks outside this cycle; picking one moves it in. */
 function AddTasks({ projectKey, number }: { projectKey: string; number: number }) {
+  const api = useApi();
   const [open, setOpen] = useState(false);
   const candidates = useQuery({
-    ...taskListQuery({ project: projectKey, status: [...OPEN_STATUSES] }),
+    ...taskListQuery(api, { project: projectKey, status: [...OPEN_STATUSES] }),
     enabled: open,
   });
   const add = useAddToCycle();
@@ -511,7 +519,11 @@ function CompletedCycle({ projectKey, cycle }: { projectKey: string; cycle: Cycl
 }
 
 function RolloverRow({ projectKey, roll }: { projectKey: string; roll: CycleRollover }) {
-  const href = `/p/${encodeURIComponent(projectKey)}/${encodeURIComponent(roll.task.key)}`;
+  const workspace = useWorkspaceSlug();
+  const href = workspacePath(
+    workspace,
+    `/p/${encodeURIComponent(projectKey)}/${encodeURIComponent(roll.task.key)}`,
+  );
   return (
     <li className="flex h-9.5 items-center gap-2.5 pr-4.5 pl-4 whitespace-nowrap hover:bg-surface-hover">
       <span aria-hidden className="w-3.5 shrink-0" />
@@ -530,7 +542,7 @@ function RolloverRow({ projectKey, roll }: { projectKey: string; roll: CycleRoll
         </span>
         {roll.movedTo ? (
           <Link
-            href={cycleHref(projectKey, roll.movedTo.number)}
+            href={cycleHref(workspace, projectKey, roll.movedTo.number)}
             className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm text-fg-2 outline-none hover:text-fg focus-visible:shadow-[var(--focus-ring)]"
           >
             <CycleGlyph className="text-fg-3" />

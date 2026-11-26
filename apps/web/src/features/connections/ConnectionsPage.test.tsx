@@ -1,23 +1,12 @@
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { GitConnection, GitConnectionList } from '@zamu/contracts';
 import { describe, expect, it, vi } from 'vitest';
+import { renderInWorkspace as render } from '~/lib/testing';
 import { SettingsError } from '../settings/result';
 import { ConnectionDialog } from './ConnectionDialog';
 import { ConnectionsView, ENCRYPTION_KEY_MISSING } from './ConnectionsPage';
 import { DeleteConnectionDialog } from './DeleteConnectionDialog';
-
-// The views under test never call the API; the stub keeps the server modules out.
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
-  const fail = (): unknown =>
-    new Proxy(() => {}, {
-      get: (_target, key) => (typeof key === 'string' ? fail() : undefined),
-      apply: () => Promise.reject(new Error('no API in these tests')),
-    });
-  const client = fail();
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
 
 const ANA = { id: '00000000-0000-7000-8000-0000000000a1', name: 'Ana Ruiz', kind: 'person' as const };
 
@@ -82,7 +71,7 @@ describe('ConnectionsView', () => {
     expect(within(table).getByText('mirror paused')).toBeVisible();
     expect(within(table).getByRole('link', { name: 'Payments (PAY)' })).toHaveAttribute(
       'href',
-      '/p/PAY/settings/backlog',
+      '/w/acme/p/PAY/settings/backlog',
     );
     await user.click(within(table).getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
     expect(handlers.onEdit).toHaveBeenCalledWith(LIST.items[0]);

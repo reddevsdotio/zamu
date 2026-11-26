@@ -1,8 +1,14 @@
 // The web server's configuration from environment variables, checked as a whole so a misconfigured server
 // refuses to start with one message listing every problem.
 // Framework-free: the startup plugin, getServerContext and tests import it.
-import { type AuthConfig, AuthConfigError, readAuthConfig } from '@zamu/auth';
+import { type AuthConfig, AuthConfigError, oidcWorkspaceProblem, readAuthConfig } from '@zamu/auth';
+import {
+  DEFAULT_WORKSPACE_CREATION,
+  WORKSPACE_CREATION_POLICIES,
+  type WorkspaceCreationPolicy,
+} from '@zamu/contracts';
 import { isValidTimeZone, loadEncryptionKey, loadGitHosts } from '@zamu/core';
+import { createDb } from '@zamu/db';
 
 /** Better Auth signs sessions with BETTER_AUTH_SECRET; shorter secrets are refused. */
 export const MIN_SECRET_LENGTH = 32;
@@ -24,12 +30,14 @@ export interface ServerEnv {
   OIDC_ADMIN_GROUPS?: string | undefined;
   OIDC_GROUPS_CLAIM?: string | undefined;
   OIDC_TRUST_EMAIL?: string | undefined;
+  OIDC_WORKSPACE?: string | undefined;
   PASSWORD_LOGIN?: string | undefined;
   TRUSTED_IP_HEADERS?: string | undefined;
   APP_TIME_ZONE?: string | undefined;
   APP_ENCRYPTION_KEY?: string | undefined;
   GIT_ALLOW_PRIVATE_HOSTS?: string | undefined;
   GIT_HTTP_HOSTS?: string | undefined;
+  WORKSPACE_CREATION?: string | undefined;
 }
 
 export interface ServerConfig {
@@ -49,6 +57,8 @@ export interface ServerConfig {
   encryptionKey: Uint8Array | undefined;
   /** GIT_ALLOW_PRIVATE_HOSTS and GIT_HTTP_HOSTS. */
   gitHosts: { allowPrivate: boolean; httpHosts: string[] };
+  /** WORKSPACE_CREATION: who may create a workspace, `everyone` (default) or `owners`. */
+  workspaceCreation: WorkspaceCreationPolicy;
 }
 
 export class ServerConfigError extends Error {
@@ -125,8 +135,48 @@ export function readServerConfig(env: ServerEnv = process.env): ServerConfig {
     problems.push(`${messageOf(error)}.`);
   }
 
-  if (problems.length > 0) throw new ServerConfigError(problems);
-  return { databaseUrl, secret, baseUrl, publicUrl, auth, timeZone, encryptionKey, gitHosts };
+  const creationValue = env.WORKSPACE_CREATION?.trim().toLowerCase() || DEFAULT_WORKSPACE_CREATION;
+  const workspaceCreation = WORKSPACE_CREATION_POLICIES.find((policy) => policy === creationValue);
+  if (!workspaceCreation) {
+    problems.push(`WORKSPACE_CREATION must be "everyone" or "owners" (got "${env.WORKSPACE_CREATION}").`);
+  }
+
+  if (problems.length > 0 || !workspaceCreation) throw new ServerConfigError(problems);
+  return {
+    databaseUrl,
+    secret,
+    baseUrl,
+    publicUrl,
+    auth,
+    timeZone,
+    encryptionKey,
+    gitHosts,
+    workspaceCreation,
+  };
+}
+
+/**
+ * The configuration checks that need the database: OIDC_WORKSPACE must name a workspace once setup is
+ * done. Returns the problems, empty when there are none. A database that cannot be reached or is not
+ * migrated yet is not a configuration problem: the check is skipped with a warning, and requests report
+ * the database as they do today.
+ */
+export async function readDatabaseConfigProblems(
+  config: ServerConfig,
+  logger: { warn(message: string): void },
+): Promise<string[]> {
+  if (!config.auth.sso?.workspace) return [];
+  const { db, pool } = createDb(config.databaseUrl);
+  pool.on('error', () => {});
+  try {
+    const problem = await oidcWorkspaceProblem(db, config.auth.sso);
+    return problem ? [problem] : [];
+  } catch (error) {
+    logger.warn(`server: could not check OIDC_WORKSPACE against the database: ${messageOf(error)}`);
+    return [];
+  } finally {
+    await pool.end().catch(() => {});
+  }
 }
 
 export interface ServerConfigCheck {
@@ -152,4 +202,21 @@ export function checkServerConfig({ env, logger, exit, nodeEnv }: ServerConfigCh
     if (nodeEnv !== 'development') exit(1);
     return false;
   }
+}
+
+export interface DatabaseConfigCheck extends ServerConfigCheck {
+  logger: { error(message: string): void; warn(message: string): void };
+}
+
+/**
+ * checkServerConfig, then the checks against the database (readDatabaseConfigProblems), with the same
+ * message style and the same exit rule. Resolves with whether the configuration is valid.
+ */
+export async function checkServerConfigWithDatabase(check: DatabaseConfigCheck): Promise<boolean> {
+  if (!checkServerConfig(check)) return false;
+  const problems = await readDatabaseConfigProblems(readServerConfig(check.env), check.logger);
+  if (problems.length === 0) return true;
+  check.logger.error(new ServerConfigError(problems).message);
+  if (check.nodeEnv !== 'development') check.exit(1);
+  return false;
 }

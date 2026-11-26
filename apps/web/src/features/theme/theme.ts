@@ -1,12 +1,17 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { generateOperationKey } from '@orpc/tanstack-query';
+import { type Query, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouterState } from '@tanstack/react-router';
 import type { Me, Theme } from '@zamu/contracts';
-import { useSyncExternalStore } from 'react';
-import { client, orpc } from '~/lib/orpc';
+import { useCallback, useSyncExternalStore } from 'react';
+import { useApi } from '~/lib/workspace';
+import { workspaceKeyPath } from '~/lib/workspace-api';
+import { workspaceSlugFromPath } from '~/lib/workspace-paths';
 
 // The signed-in person's theme. It lives on the account (GET /me user.theme, PATCH /me { theme }), and the
 // page reads it from the cached me.get query: the signed-in layout prefetches that query, so it is in the
 // cache when the server renders <html>, and the class is in the first HTML response (no flash on reload).
-// Signed-out pages have no me in the cache and follow the system.
+// Signed-out pages have no me in the cache and follow the system. The theme is the person's in every
+// workspace, so a change updates the cached me of each one.
 
 /** Class on <html>: "light" or "dark" forces that theme; none follows prefers-color-scheme. */
 export function themeClass(theme: Theme | undefined): 'light' | 'dark' | undefined {
@@ -18,12 +23,36 @@ export function colorSchemeFor(theme: Theme | undefined): 'light' | 'dark' | 'li
   return themeClass(theme) ?? 'light dark';
 }
 
-/** The me.get cache, read without fetching (signed-out pages must not call /me). */
-const cachedMe = () => ({ ...orpc.me.get.queryOptions(), enabled: false });
+/** The key of a workspace's me.get query, as api.orpc.me.get.queryKey() builds it. */
+function meKeyOf(workspace: string): readonly unknown[] {
+  return generateOperationKey([...workspaceKeyPath(workspace), 'me', 'get'], { type: 'query' });
+}
 
-/** The signed-in person's theme from the cache; undefined when signed out or not loaded yet. */
-export function useUserTheme(): Theme | undefined {
-  return useQuery({ ...cachedMe(), select: (me) => me.user.theme }).data;
+/** The workspace slug in the current URL, for <html> (the root renders outside the workspace layout). */
+export function useUrlWorkspaceSlug(): string | undefined {
+  return useRouterState({ select: (state) => workspaceSlugFromPath(state.location.pathname) });
+}
+
+/**
+ * The signed-in person's theme from the cached me of `workspace`; undefined outside a workspace, when
+ * signed out or not loaded yet. It only reads the cache and watches it: it registers no query, so it
+ * never fetches /me itself (signed-out pages must not call it) and an invalidated me refetches with the
+ * real request of the screens that load it.
+ */
+export function useUserTheme(workspace: string | undefined): Theme | undefined {
+  const queryClient = useQueryClient();
+  const subscribe = useCallback(
+    (onChange: () => void) => queryClient.getQueryCache().subscribe(onChange),
+    [queryClient],
+  );
+  const read = () => (workspace ? queryClient.getQueryData<Me>(meKeyOf(workspace))?.user.theme : undefined);
+  return useSyncExternalStore(subscribe, read, read);
+}
+
+/** Whether a cached query is me.get of any workspace: ['w', slug, 'me', 'get']. */
+function isMeQuery(query: Query): boolean {
+  const [path] = query.queryKey;
+  return Array.isArray(path) && path[0] === 'w' && path[2] === 'me' && path[3] === 'get';
 }
 
 function withTheme(me: Me, theme: Theme): Me {
@@ -35,22 +64,25 @@ function withTheme(me: Me, theme: Theme): Me {
  * back when the server refuses; `error` then explains why.
  */
 export function useSetTheme() {
+  const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: orpc.me.update.mutationKey(),
-    mutationFn: (theme: Theme) => client.me.update({ theme }),
+    mutationKey: api.orpc.me.update.mutationKey(),
+    mutationFn: (theme: Theme) => api.client.me.update({ theme }),
     onMutate: async (theme) => {
-      const queryKey = orpc.me.get.key();
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueriesData<Me>({ queryKey });
-      queryClient.setQueriesData<Me>({ queryKey }, (me) => (me ? withTheme(me, theme) : me));
+      await queryClient.cancelQueries({ predicate: isMeQuery });
+      const previous = queryClient.getQueriesData<Me>({ predicate: isMeQuery });
+      queryClient.setQueriesData<Me>({ predicate: isMeQuery }, (me) => (me ? withTheme(me, theme) : me));
       return { previous };
     },
     onError: (_error, _theme, context) => {
       for (const [queryKey, data] of context?.previous ?? []) queryClient.setQueryData(queryKey, data);
     },
     onSuccess: (me) => {
-      queryClient.setQueriesData<Me>({ queryKey: orpc.me.get.key() }, me);
+      // Each workspace's me names that workspace: only the theme carries over.
+      queryClient.setQueriesData<Me>({ predicate: isMeQuery }, (cached) =>
+        cached ? withTheme(cached, me.user.theme) : cached,
+      );
     },
   });
 }

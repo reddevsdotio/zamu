@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { taskQuery } from '~/features/tasks/queries';
+import { type CurrentWorkspace, useApi, WorkspaceProvider } from '~/lib/workspace';
 import { Button } from '~/ui';
 import type { FieldPickerProps } from './StatusPicker';
 import { TaskFieldToast } from './toast';
@@ -15,11 +16,14 @@ export function newQueryClient() {
   });
 }
 
-export function renderWith(ui: ReactNode, queryClient = newQueryClient()) {
+/** Renders `ui` in the test's workspace (testWorkspace from ~/lib/testing, around its fake client). */
+export function renderWith(workspace: CurrentWorkspace, ui: ReactNode, queryClient = newQueryClient()) {
   const result = render(
     <QueryClientProvider client={queryClient}>
-      {ui}
-      <TaskFieldToast />
+      <WorkspaceProvider workspace={workspace}>
+        {ui}
+        <TaskFieldToast />
+      </WorkspaceProvider>
     </QueryClientProvider>,
   );
   return { ...result, queryClient };
@@ -33,7 +37,8 @@ export function WiredPicker({
   taskKey: string;
   Picker: (props: FieldPickerProps) => ReactNode;
 }) {
-  const task = useQuery(taskQuery(taskKey)).data;
+  const api = useApi();
+  const task = useQuery(taskQuery(api, taskKey)).data;
   if (!task) return null;
   return <Picker targets={task} trigger={<Button>Open</Button>} />;
 }

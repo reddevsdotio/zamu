@@ -2,6 +2,7 @@ import { useQueries } from '@tanstack/react-query';
 import { LABEL_COLOR_COUNT, type Label, type LabelWithUsage, MAX_LABEL_NAME_LENGTH } from '@zamu/contracts';
 import { type KeyboardEvent, useMemo, useState } from 'react';
 import { labelsQuery, useCreateLabel } from '~/features/labels/queries';
+import { useApi } from '~/lib/workspace';
 import {
   ColorSwatches,
   LabelDot,
@@ -209,7 +210,8 @@ export function leastUsedHue(labels: readonly Pick<Label, 'color'>[]): number {
 
 /** The labels of the targets' projects, merged by name (case-insensitive), by name. */
 function useMenuLabels(projectKeys: readonly string[]): MenuLabel[] | undefined {
-  const results = useQueries({ queries: projectKeys.map((key) => labelsQuery(key)) });
+  const api = useApi();
+  const results = useQueries({ queries: projectKeys.map((key) => labelsQuery(api, key)) });
   const data = results.map((result) => result.data);
   const ready = data.every((item) => item !== undefined);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `data` changes identity every render; the items don't.

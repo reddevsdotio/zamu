@@ -34,7 +34,7 @@ import { toCycleRef, toMilestoneRef } from '~/features/task-fields/planning';
 import { showFieldToast } from '~/features/task-fields/toast';
 import { describeError } from '~/features/tasks/errors';
 import { formatAge } from '~/features/tasks/format';
-import { rememberListSearch, rememberView } from '~/features/tasks/list-memory';
+import { rememberListSearch, rememberProjectView } from '~/features/tasks/list-memory';
 import { membersQuery, meQuery } from '~/features/tasks/queries';
 import { BOARD_FOLDED, type TaskListSearch, type TaskView } from '~/features/tasks/search';
 import {
@@ -56,7 +56,7 @@ import {
   useUrlTaskFilter,
   useViewCommands,
 } from '~/features/views';
-import { orpc } from '~/lib/orpc';
+import { useApi, useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
 import {
   Banner,
   BoardCardContent,
@@ -127,6 +127,9 @@ function afterFrames(count: number, run: () => void) {
 const refuse = (text: string) => showFieldToast({ text, tone: 'error' });
 
 export function BoardScreen({ projectKey, search }: BoardScreenProps) {
+  const workspace = useWorkspaceSlug();
+  const workspaceId = useWorkspaceId();
+  const api = useApi();
   const navigate = useNavigate();
   const router = useRouter();
   const quickCreate = useOptionalQuickCreate();
@@ -134,7 +137,7 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
   const usesMilestones = project?.usesMilestones ?? false;
   const usesCycles = project?.usesCycles ?? false;
   const mirrored = isMirrored(project);
-  const viewerId = useQuery(meQuery()).data?.user.id ?? null;
+  const viewerId = useQuery(meQuery(api)).data?.user.id ?? null;
   const { apply } = useFieldChange();
   const queryClient = useQueryClient();
   const peek = usePeek();
@@ -163,21 +166,21 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
     [usable],
   );
 
-  useEffect(() => rememberListSearch(projectKey, search), [projectKey, search]);
+  useEffect(() => rememberListSearch(workspaceId, projectKey, search), [workspaceId, projectKey, search]);
 
   const setView = useCallback(
     (view: TaskView) => {
-      rememberView(projectKey, view);
+      rememberProjectView(workspaceId, projectKey, view);
       void navigate({
-        to: '/p/$projectKey',
-        params: { projectKey },
+        to: '/w/$workspace/p/$projectKey',
+        params: { workspace, projectKey },
         search: ((previous: TaskListSearch) => ({
           ...previous,
           view: view === 'board' ? 'board' : undefined,
         })) as never,
       });
     },
-    [navigate, projectKey],
+    [navigate, projectKey, workspace, workspaceId],
   );
 
   const [query, setQuery, resetQuery] = useSearchText(filter.q, (q) =>
@@ -223,16 +226,16 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
   const groupedData = useGroupedBoardData(projectKey, filter, options, !statusMode);
   const moves = useBoardMoves(projectKey, { onUndone: (key) => focusCard(key) });
 
-  const members = useQuery(membersQuery()).data?.items;
+  const members = useQuery(membersQuery(api)).data?.items;
   const milestones = useQuery({
-    ...orpc.milestones.list.queryOptions({ input: { project: projectKey } }),
+    ...api.orpc.milestones.list.queryOptions({ input: { project: projectKey } }),
     enabled: usesMilestones,
   }).data?.items;
   const cycles = useQuery({
-    ...orpc.cycles.list.queryOptions({ input: { project: projectKey } }),
+    ...api.orpc.cycles.list.queryOptions({ input: { project: projectKey } }),
     enabled: usesCycles,
   }).data?.items;
-  const labels = useQuery(labelsQuery(projectKey)).data?.items;
+  const labels = useQuery(labelsQuery(api, projectKey)).data?.items;
   const groupContext = useMemo<GroupContext>(
     () => ({
       statuses: BOARD_STATUS_ORDER,
@@ -461,13 +464,17 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
   const openTask = useCallback(
     (key: string) => {
       rememberTaskNavigation(
+        workspaceId,
         { keys: orderedRef.current, from: 'Board', returnTo: router.state.location.href },
         key,
       );
       closePeek();
-      void navigate({ to: '/p/$projectKey/$taskKey', params: { projectKey, taskKey: key } });
+      void navigate({
+        to: '/w/$workspace/p/$projectKey/$taskKey',
+        params: { workspace, projectKey, taskKey: key },
+      });
     },
-    [navigate, projectKey, router],
+    [navigate, projectKey, router, workspace, workspaceId],
   );
   const peekCard = (key: string) =>
     togglePeek({
@@ -546,8 +553,8 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
           via,
         });
       // Into In review or Done with open items: the card stays until the person answers the warning.
-      if (finishingRequest(queryClient, [card], to)) {
-        void confirmFinishing(queryClient, [card], to).then((ok) => {
+      if (finishingRequest(api, queryClient, [card], to)) {
+        void confirmFinishing(api, queryClient, [card], to).then((ok) => {
           // The dialog hands focus back in a frame after it closes (to a card still in the old column,
           // as this one moved): the card takes the keyboard once that has happened.
           if (ok && move()) afterFrames(4, () => focusCard(card.key, { afterRender: false }));

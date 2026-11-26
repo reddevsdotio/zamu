@@ -3,7 +3,7 @@ import { parseBacklogId, safeParseTaskKey, TASK_STATUSES } from '@zamu/contracts
 import { boardColumnInput, boardColumnQuery } from '~/features/board/queries';
 import { labelsQuery } from '~/features/labels/queries';
 import { defaultDisplayOptions } from '~/features/views/display-options';
-import { orpc } from '~/lib/orpc';
+import type { WorkspaceApi } from '~/lib/orpc';
 import { isClientError } from './errors';
 import { backlogHistoryQuery } from './MirroredTask';
 import { membersQuery, meQuery, projectsQuery, taskListQuery, taskQuery, timelineQuery } from './queries';
@@ -20,14 +20,19 @@ import {
 // loader. Each request is the one the screen makes with the default display options (the server can't
 // read the options saved in local storage), so a fresh page reuses the answer instead of asking again.
 
-export function prefetchTaskList(queryClient: QueryClient, projectKey: string, search: TaskListSearch) {
+export function prefetchTaskList(
+  api: WorkspaceApi,
+  queryClient: QueryClient,
+  projectKey: string,
+  search: TaskListSearch,
+) {
   return Promise.all([
     search.view === 'board'
-      ? prefetchBoard(queryClient, projectKey, search)
-      : prefetchList(queryClient, projectKey, search),
-    queryClient.prefetchQuery(projectsQuery()),
-    queryClient.prefetchQuery(membersQuery()),
-    prefetchLabels(queryClient, projectKey),
+      ? prefetchBoard(api, queryClient, projectKey, search)
+      : prefetchList(api, queryClient, projectKey, search),
+    queryClient.prefetchQuery(projectsQuery(api)),
+    queryClient.prefetchQuery(membersQuery(api)),
+    prefetchLabels(api, queryClient, projectKey),
   ]);
 }
 
@@ -35,16 +40,26 @@ export function prefetchTaskList(queryClient: QueryClient, projectKey: string, s
  * The list's main request (TaskListScreen): the eager groups under the filter. Milestone and cycle
  * filters only count while the project uses them, so it reads the project first (cached by the shell).
  */
-async function prefetchList(queryClient: QueryClient, projectKey: string, search: TaskListSearch) {
-  const projects = await queryClient.ensureQueryData(projectsQuery()).catch(() => null);
+async function prefetchList(
+  api: WorkspaceApi,
+  queryClient: QueryClient,
+  projectKey: string,
+  search: TaskListSearch,
+) {
+  const projects = await queryClient.ensureQueryData(projectsQuery(api)).catch(() => null);
   const project = projects?.items.find((item) => item.key === projectKey);
   const filter = withProjectFeatures(taskFilterOf(search), project);
   const input = listMainInput(projectKey, filter, defaultDisplayOptions('list'), search.hidden === 'only');
-  await queryClient.prefetchQuery(taskListQuery(input));
+  await queryClient.prefetchQuery(taskListQuery(api, input));
 }
 
 /** The columns a fresh board shows open (BoardScreen): all but Done and Canceled, or the filtered ones. */
-function prefetchBoard(queryClient: QueryClient, projectKey: string, search: TaskListSearch) {
+function prefetchBoard(
+  api: WorkspaceApi,
+  queryClient: QueryClient,
+  projectKey: string,
+  search: TaskListSearch,
+) {
   const filter = taskFilterOf(search);
   const options = defaultDisplayOptions('board');
   const open = TASK_STATUSES.filter((status) =>
@@ -53,7 +68,7 @@ function prefetchBoard(queryClient: QueryClient, projectKey: string, search: Tas
   return Promise.all(
     open.map((status) =>
       queryClient.prefetchInfiniteQuery(
-        boardColumnQuery(boardColumnInput(projectKey, filter, options, status)),
+        boardColumnQuery(api, boardColumnInput(projectKey, filter, options, status)),
       ),
     ),
   );
@@ -63,23 +78,25 @@ function prefetchBoard(queryClient: QueryClient, projectKey: string, search: Tas
  * The project's labels, so L opens the label picker filled. Browser only: the first HTML doesn't need
  * them, and the server answer stays as small as before.
  */
-export function prefetchLabels(queryClient: QueryClient, projectKey: string | undefined) {
+export function prefetchLabels(api: WorkspaceApi, queryClient: QueryClient, projectKey: string | undefined) {
   if (import.meta.env.SSR || !projectKey) return null;
-  return queryClient.prefetchQuery(labelsQuery(projectKey.toUpperCase()));
+  return queryClient.prefetchQuery(labelsQuery(api, projectKey.toUpperCase()));
 }
 
-export function prefetchTaskPage(queryClient: QueryClient, taskKey: string) {
+export function prefetchTaskPage(api: WorkspaceApi, queryClient: QueryClient, taskKey: string) {
   return Promise.all([
-    queryClient.prefetchQuery(taskQuery(taskKey)).then(() => {
+    queryClient.prefetchQuery(taskQuery(api, taskKey)).then(() => {
       // A task from Backlog.md also shows the project's first read and detach in its history.
-      const task = queryClient.getQueryData(taskQuery(taskKey).queryKey);
-      return task?.backlog ? queryClient.prefetchQuery(backlogHistoryQuery(task.project.key)) : undefined;
+      const task = queryClient.getQueryData(taskQuery(api, taskKey).queryKey);
+      return task?.backlog
+        ? queryClient.prefetchQuery(backlogHistoryQuery(api, task.project.key))
+        : undefined;
     }),
-    queryClient.prefetchQuery(timelineQuery(taskKey)),
-    queryClient.prefetchQuery(projectsQuery()),
-    queryClient.prefetchQuery(membersQuery()),
-    queryClient.prefetchQuery(meQuery()),
-    prefetchLabels(queryClient, safeParseTaskKey(taskKey.toUpperCase())?.projectKey),
+    queryClient.prefetchQuery(timelineQuery(api, taskKey)),
+    queryClient.prefetchQuery(projectsQuery(api)),
+    queryClient.prefetchQuery(membersQuery(api)),
+    queryClient.prefetchQuery(meQuery(api)),
+    prefetchLabels(api, queryClient, safeParseTaskKey(taskKey.toUpperCase())?.projectKey),
   ]);
 }
 
@@ -89,6 +106,7 @@ export function prefetchTaskPage(queryClient: QueryClient, taskKey: string) {
  * key, null when there is no such task.
  */
 export async function canonicalTaskPath(
+  api: WorkspaceApi,
   queryClient: QueryClient,
   projectKeyParam: string,
   taskKeyParam: string,
@@ -100,9 +118,9 @@ export async function canonicalTaskPath(
   if (!parts && !parseBacklogId(key)) return null;
   try {
     const task = await queryClient.fetchQuery(
-      orpc.tasks.get.queryOptions({ input: { key, project: projectKey }, retry: false }),
+      api.orpc.tasks.get.queryOptions({ input: { key, project: projectKey }, retry: false }),
     );
-    queryClient.setQueryData(taskQuery(task.key).queryKey, task);
+    queryClient.setQueryData(taskQuery(api, task.key).queryKey, task);
     return { projectKey: task.project.key, taskKey: task.key };
   } catch (error) {
     if (isClientError(error)) return null;

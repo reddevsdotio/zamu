@@ -17,6 +17,8 @@ import { resetFieldToastForTests, TaskFieldToast } from '~/features/task-fields/
 import { createFakeApi, FAKE_DEFAULT_DONE_ITEMS, FAKE_PEOPLE, type FakeApi } from '~/features/tasks/fake-api';
 import { resetFromFile } from '~/features/tasks/MirroredTask';
 import { TaskPage } from '~/features/tasks/TaskPage';
+import { testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 import { UIProvider } from '~/ui';
 import { FinishingHost } from './FinishingHost';
 
@@ -29,8 +31,8 @@ vi.setConfig({ testTimeout: 30_000 });
 
 const api = vi.hoisted(() => ({ current: null as FakeApi | null }));
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const forward = (path: string[]): unknown =>
     new Proxy(() => {}, {
       get: (_target, key) => (typeof key === 'string' ? forward([...path, key]) : undefined),
@@ -41,8 +43,8 @@ vi.mock('~/lib/orpc', async () => {
       },
     });
   const client = forward([]);
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 const fake = () => api.current as FakeApi;
 
@@ -61,12 +63,12 @@ function renderApp(url: string) {
   });
   const list = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/',
+    path: '/w/$workspace/p/$projectKey/',
     component: () => <p>List</p>,
   });
   const page = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/$taskKey',
+    path: '/w/$workspace/p/$projectKey/$taskKey',
     component: function PageRoute() {
       const { projectKey, taskKey } = page.useParams();
       return <TaskPage key={taskKey} projectKey={projectKey} taskKey={taskKey} />;
@@ -78,7 +80,9 @@ function renderApp(url: string) {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <WorkspaceProvider workspace={workspace}>
+        <RouterProvider router={router} />
+      </WorkspaceProvider>
     </QueryClientProvider>,
   );
   return { router, queryClient };
@@ -92,7 +96,7 @@ const properties = () => screen.getByRole('complementary', { name: 'Properties' 
 const lastUpdate = () => fake().calls.update.at(-1);
 
 async function openTask(key: string) {
-  renderApp(`/p/PAY/${key}`);
+  renderApp(`/w/acme/p/PAY/${key}`);
   await screen.findByRole('heading', { level: 1 });
   const region = await screen.findByRole('region', { name: 'Activity' });
   await waitFor(() => expect(within(region).getAllByRole('listitem').length).toBeGreaterThan(0));

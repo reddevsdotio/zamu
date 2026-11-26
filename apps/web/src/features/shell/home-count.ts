@@ -1,13 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { retryOnce } from '~/features/tasks/errors';
-import { orpc } from '~/lib/orpc';
+import type { WorkspaceApi } from '~/lib/orpc';
+import { useApi } from '~/lib/workspace';
 
 // The count after Home in the sidebar: what needs the viewer (review, mentions, blocked, overdue), from
 // GET /home/counts on every page.
 
-export function homeCountsQuery() {
-  return orpc.home.counts.queryOptions({ retry: retryOnce });
+export function homeCountsQuery(api: WorkspaceApi) {
+  return api.orpc.home.counts.queryOptions({ retry: retryOnce });
 }
 
 /** "8 items need you", "1 item needs you". */
@@ -17,7 +18,8 @@ export function homeCountLabel(count: number): string {
 
 /** The sidebar count; undefined until it loads or when it fails. */
 export function useHomeCount(): number | undefined {
-  return useQuery(homeCountsQuery()).data?.total;
+  const api = useApi();
+  return useQuery(homeCountsQuery(api)).data?.total;
 }
 
 /**
@@ -25,14 +27,15 @@ export function useHomeCount(): number | undefined {
  * Home after every successful mutation instead of waiting for the next tick.
  */
 export function useRefreshCountsAfterEdits(): void {
+  const api = useApi();
   const queryClient = useQueryClient();
   useEffect(
     () =>
       queryClient.getMutationCache().subscribe((event) => {
         if (event.type === 'updated' && event.action.type === 'success') {
-          void queryClient.invalidateQueries({ queryKey: orpc.home.key() });
+          void queryClient.invalidateQueries({ queryKey: api.orpc.home.key() });
         }
       }),
-    [queryClient],
+    [queryClient, api],
   );
 }

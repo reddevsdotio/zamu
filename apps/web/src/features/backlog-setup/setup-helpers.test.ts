@@ -1,5 +1,6 @@
 import type { BacklogMappingsView } from '@zamu/contracts';
 import { describe, expect, it } from 'vitest';
+import { asWorkspaceSlug } from '~/lib/workspace-paths';
 import { connectionReads, hostName, pickConnection } from './connections';
 import { applyManualPicks, mappingValueCount, setAssignee, setStatus, toMappings } from './mappings';
 import { backlogWebhookHref, projectSettingsHref } from './paths';
@@ -115,7 +116,9 @@ describe('mappings', () => {
 
 describe('setup paths', () => {
   it('links to the project settings and the webhook dialog', () => {
-    expect(projectSettingsHref('PAY')).toBe('/p/PAY/settings');
-    expect(backlogWebhookHref('PAY')).toBe('/p/PAY/settings/backlog?webhook=1');
+    expect(projectSettingsHref(asWorkspaceSlug('acme'), 'PAY')).toBe('/w/acme/p/PAY/settings');
+    expect(backlogWebhookHref(asWorkspaceSlug('acme'), 'PAY')).toBe(
+      '/w/acme/p/PAY/settings/backlog?webhook=1',
+    );
   });
 });

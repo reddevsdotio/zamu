@@ -11,6 +11,8 @@ import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'rea
 import { Link } from 'react-aria-components';
 import { connectionReads, pickConnection } from '~/features/backlog-setup/connections';
 import { SettingsError } from '~/features/settings/result';
+import { connectionsHref } from '~/features/shell/paths';
+import { useWorkspaceSlug } from '~/lib/workspace';
 import {
   Banner,
   Button,
@@ -179,9 +181,10 @@ function DetectionStrip({ tone, children }: { tone: 'healthy' | 'failed' | 'read
 }
 
 function AddConnectionLink({ children }: { children: ReactNode }) {
+  const workspace = useWorkspaceSlug();
   return (
     <Link
-      href="/settings/connections"
+      href={connectionsHref(workspace)}
       target="_blank"
       rel="noreferrer"
       className="cursor-pointer text-accent outline-none hover:underline focus-visible:focus-ring"

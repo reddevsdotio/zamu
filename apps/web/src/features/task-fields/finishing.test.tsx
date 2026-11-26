@@ -7,6 +7,7 @@ import type { Command } from '~/features/palette/registry';
 import { createFakeApi, type FakeApi } from '~/features/tasks/fake-api';
 import { meQuery, taskQuery } from '~/features/tasks/queries';
 import { FinishingHost, keyList, manyFinishingText } from '~/features/work-record/FinishingHost';
+import { testWorkspace } from '~/lib/testing';
 import { Button, localToday } from '~/ui';
 import { useFieldChange } from './apply';
 import { finishingRequest, hasOpenItems, resetFinishingForTests } from './finishing';
@@ -23,8 +24,8 @@ vi.setConfig({ testTimeout: 30_000 });
 
 const api = vi.hoisted(() => ({ current: null as FakeApi | null }));
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const forward = (path: string[]): unknown =>
     new Proxy(() => {}, {
       get: (_target, key) => (typeof key === 'string' ? forward([...path, key]) : undefined),
@@ -35,8 +36,8 @@ vi.mock('~/lib/orpc', async () => {
       },
     });
   const client = forward([]);
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 const fake = () => api.current as FakeApi;
 
@@ -68,28 +69,45 @@ describe('finishingRequest', () => {
     const client = newQueryClient();
     const open = row('PAY-1', { criteriaProgress: progress(1) });
     const doneOpen = row('PAY-2', { criteriaProgress: progress(0), doneProgress: progress(1, 2) });
-    expect(finishingRequest(client, [open], 'in_review')).toEqual({
+    expect(finishingRequest(workspace.api, client, [open], 'in_review')).toEqual({
       kind: 'task',
       key: 'PAY-1',
       status: 'in_review',
     });
-    expect(finishingRequest(client, [doneOpen], 'done')).toMatchObject({ kind: 'task', key: 'PAY-2' });
-    expect(finishingRequest(client, [open], 'todo')).toBeNull();
-    expect(finishingRequest(client, [open], 'canceled')).toBeNull();
+    expect(finishingRequest(workspace.api, client, [doneOpen], 'done')).toMatchObject({
+      kind: 'task',
+      key: 'PAY-2',
+    });
+    expect(finishingRequest(workspace.api, client, [open], 'todo')).toBeNull();
+    expect(finishingRequest(workspace.api, client, [open], 'canceled')).toBeNull();
   });
 
   it('lets a move through with nothing open, the same status, a mirrored task, or an agent signed in', () => {
     const client = newQueryClient();
-    expect(finishingRequest(client, [row('PAY-1', { criteriaProgress: progress(0) })], 'done')).toBeNull();
-    expect(finishingRequest(client, [row('PAY-1')], 'done')).toBeNull();
     expect(
-      finishingRequest(client, [row('PAY-1', { status: 'done', criteriaProgress: progress(2) })], 'done'),
+      finishingRequest(workspace.api, client, [row('PAY-1', { criteriaProgress: progress(0) })], 'done'),
+    ).toBeNull();
+    expect(finishingRequest(workspace.api, client, [row('PAY-1')], 'done')).toBeNull();
+    expect(
+      finishingRequest(
+        workspace.api,
+        client,
+        [row('PAY-1', { status: 'done', criteriaProgress: progress(2) })],
+        'done',
+      ),
     ).toBeNull();
     expect(
-      finishingRequest(client, [row('PAY-1', { locked: ['status'], criteriaProgress: progress(2) })], 'done'),
+      finishingRequest(
+        workspace.api,
+        client,
+        [row('PAY-1', { locked: ['status'], criteriaProgress: progress(2) })],
+        'done',
+      ),
     ).toBeNull();
-    client.setQueryData(meQuery().queryKey, { user: { kind: 'agent' } } as never);
-    expect(finishingRequest(client, [row('PAY-1', { criteriaProgress: progress(2) })], 'done')).toBeNull();
+    client.setQueryData(meQuery(workspace.api).queryKey, { user: { kind: 'agent' } } as never);
+    expect(
+      finishingRequest(workspace.api, client, [row('PAY-1', { criteriaProgress: progress(2) })], 'done'),
+    ).toBeNull();
   });
 
   it('reads the cached full task over the row, and counts a selection', () => {
@@ -100,9 +118,9 @@ describe('finishingRequest', () => {
       criteria: [{ number: 1, text: 'Retries', state: 'checked', waivedReason: null, waivedBy: null }],
       doneItems: [],
     } as unknown as Task;
-    client.setQueryData(taskQuery('PAY-1').queryKey, full);
+    client.setQueryData(taskQuery(workspace.api, 'PAY-1').queryKey, full);
     expect(hasOpenItems(full)).toBe(false);
-    expect(finishingRequest(client, [stale], 'done')).toBeNull();
+    expect(finishingRequest(workspace.api, client, [stale], 'done')).toBeNull();
 
     const selection = [
       stale,
@@ -110,7 +128,7 @@ describe('finishingRequest', () => {
       row('PAY-3', { doneProgress: progress(1) }),
       row('PAY-4', { status: 'done', criteriaProgress: progress(1) }),
     ];
-    expect(finishingRequest(client, selection, 'done')).toEqual({
+    expect(finishingRequest(workspace.api, client, selection, 'done')).toEqual({
       kind: 'tasks',
       status: 'done',
       total: 3,
@@ -137,6 +155,7 @@ describe('the words of the confirm for several tasks', () => {
 async function pickStatus(targets: TaskListItem | TaskListItem[], status: RegExp) {
   const user = userEvent.setup();
   const view = renderWith(
+    workspace,
     <>
       <StatusPicker targets={targets} trigger={<Button>Open</Button>} />
       <FinishingHost />
@@ -160,7 +179,7 @@ describe('the status picker on a row', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(statusWrites()).toHaveLength(0);
-    expect(queryClient.getQueryData(taskQuery('PAY-1').queryKey)?.status).toBe('in_progress');
+    expect(queryClient.getQueryData(taskQuery(workspace.api, 'PAY-1').queryKey)?.status).toBe('in_progress');
   });
 
   it('checks an item in place and moves anyway with Mod+Enter', async () => {
@@ -228,7 +247,7 @@ function PaletteStatus({ targets, status }: { targets: TaskListItem[]; status: s
   const { apply } = useFieldChange();
   const queryClient = useQueryClient();
   const run = async () => {
-    const step = await fieldStep('status', {
+    const step = await fieldStep(workspace.api, 'status', {
       targets,
       apply,
       queryClient,
@@ -246,6 +265,7 @@ describe('the command palette', () => {
     const user = userEvent.setup();
     const [pay1] = await rows();
     renderWith(
+      workspace,
       <>
         <PaletteStatus targets={[pay1 as TaskListItem]} status="In review" />
         <FinishingHost />

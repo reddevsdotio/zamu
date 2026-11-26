@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeApi, type FakeApi } from '~/features/tasks/fake-api';
 import { taskQuery } from '~/features/tasks/queries';
+import { testWorkspace } from '~/lib/testing';
 import { localToday } from '~/ui';
 import { AssigneePicker } from './AssigneePicker';
 import { BlockerPicker } from './BlockerPicker';
@@ -42,8 +43,8 @@ vi.setConfig({ testTimeout: 30_000 });
 
 const api = vi.hoisted(() => ({ current: null as FakeApi | null }));
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const forward = (path: string[]): unknown =>
     new Proxy(() => {}, {
       get: (_target, key) => (typeof key === 'string' ? forward([...path, key]) : undefined),
@@ -54,8 +55,8 @@ vi.mock('~/lib/orpc', async () => {
       },
     });
   const client = forward([]);
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 beforeEach(() => {
   api.current = createFakeApi({ fields: true });
@@ -66,7 +67,7 @@ const fake = () => api.current as FakeApi;
 
 async function openPicker(Picker: Parameters<typeof WiredPicker>[0]['Picker'], taskKey = 'PAY-1') {
   const user = userEvent.setup();
-  const view = renderWith(<WiredPicker taskKey={taskKey} Picker={Picker} />);
+  const view = renderWith(workspace, <WiredPicker taskKey={taskKey} Picker={Picker} />);
   await user.click(await screen.findByRole('button', { name: 'Open' }));
   const dialog = await screen.findByRole('dialog');
   return { user, dialog, ...view };
@@ -89,7 +90,7 @@ describe('status and priority', () => {
       'true',
     );
     await user.keyboard('4');
-    expect(queryClient.getQueryData(taskQuery('PAY-1').queryKey)?.status).toBe('in_review');
+    expect(queryClient.getQueryData(taskQuery(workspace.api, 'PAY-1').queryKey)?.status).toBe('in_review');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(fake().calls.update.at(-1)).toMatchObject({ key: 'PAY-1', status: 'in_review' });
     const toast = await screen.findByText('Moved PAY-1 to In review');
@@ -117,7 +118,7 @@ describe('status and priority', () => {
     const { user, queryClient } = await openPicker(StatusPicker);
     await user.keyboard('5');
     expect(await screen.findByText("Couldn't change PAY-1. Status is not allowed")).toBeInTheDocument();
-    expect(queryClient.getQueryData(taskQuery('PAY-1').queryKey)?.status).toBe('in_progress');
+    expect(queryClient.getQueryData(taskQuery(workspace.api, 'PAY-1').queryKey)?.status).toBe('in_progress');
   });
 
   it('opens read-only on a mirrored task and changes nothing', async () => {

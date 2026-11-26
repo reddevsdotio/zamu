@@ -7,7 +7,8 @@ import { useNow } from '~/features/tasks/clock';
 import { retryOnce } from '~/features/tasks/errors';
 import { formatAge } from '~/features/tasks/format';
 import { meQuery } from '~/features/tasks/queries';
-import { orpc } from '~/lib/orpc';
+import type { WorkspaceApi } from '~/lib/orpc';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
 import { Button, DialogTrigger, type Fact, FactList, Kbd, Popover, SourceStatusDot, useHotkeys } from '~/ui';
 import {
   describeProblems,
@@ -34,8 +35,8 @@ const WAIT_LIMIT_MS = 5 * 60_000;
 type Summary = NonNullable<ProjectWithCounts['backlog']>;
 
 /** Full status of the project's source. */
-export function backlogStatusQuery(projectKey: string) {
-  return orpc.backlog.status.queryOptions({
+export function backlogStatusQuery(api: WorkspaceApi, projectKey: string) {
+  return api.orpc.backlog.status.queryOptions({
     input: { project: projectKey, problemsLimit: MAX_PROBLEMS },
     retry: retryOnce,
   });
@@ -43,8 +44,9 @@ export function backlogStatusQuery(projectKey: string) {
 
 /** The source status, loaded only while `enabled`. Polls while a refresh is under way. */
 export function useBacklogStatus(projectKey: string, enabled: boolean, poll = false) {
+  const api = useApi();
   return useQuery({
-    ...backlogStatusQuery(projectKey),
+    ...backlogStatusQuery(api, projectKey),
     enabled,
     refetchInterval: (query) => {
       const state = query.state.data?.state;
@@ -55,7 +57,8 @@ export function useBacklogStatus(projectKey: string, enabled: boolean, poll = fa
 
 /** Owners and admins refresh mirrors (agents too, through the API). */
 export function useCanRefresh(): boolean {
-  const role = useQuery(meQuery()).data?.role;
+  const api = useApi();
+  const role = useQuery(meQuery(api)).data?.role;
   return role === 'owner' || role === 'admin';
 }
 
@@ -64,6 +67,7 @@ export function useCanRefresh(): boolean {
  * the status polls; when it ends, the project's lists, counts and milestones reload.
  */
 export function useRefreshNow(projectKey: string) {
+  const api = useApi();
   const queryClient = useQueryClient();
   const [since, setSince] = useState<number | null>(null);
   const status = useBacklogStatus(projectKey, since != null, since != null);
@@ -71,11 +75,11 @@ export function useRefreshNow(projectKey: string) {
     // Loaded on first use: the server function module pulls server-only code into test environments.
     mutationFn: async () => {
       const { refreshBacklogNowFn } = await import('~/features/backlog/server');
-      return unwrap(refreshBacklogNowFn({ data: { projectKey } }));
+      return unwrap(refreshBacklogNowFn({ data: { workspace: api.slug, input: { projectKey } } }));
     },
     onMutate: () => setSince(Date.now()),
     onError: () => setSince(null),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: orpc.backlog.key() }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: api.orpc.backlog.key() }),
   });
 
   const data = status.data;
@@ -86,11 +90,11 @@ export function useRefreshNow(projectKey: string) {
     if (!finished && Date.now() - since < WAIT_LIMIT_MS) return;
     setSince(null);
     void Promise.all([
-      queryClient.invalidateQueries({ queryKey: orpc.projects.key() }),
-      queryClient.invalidateQueries({ queryKey: orpc.tasks.key() }),
-      queryClient.invalidateQueries({ queryKey: orpc.milestones.key() }),
+      queryClient.invalidateQueries({ queryKey: api.orpc.projects.key() }),
+      queryClient.invalidateQueries({ queryKey: api.orpc.tasks.key() }),
+      queryClient.invalidateQueries({ queryKey: api.orpc.milestones.key() }),
     ]);
-  }, [since, data, queryClient]);
+  }, [since, data, queryClient, api]);
 
   return {
     refresh: () => {
@@ -162,6 +166,7 @@ export interface MirrorSourceButtonProps {
 
 /** The source button and its status popover. Render only for mirrored projects. */
 export function MirrorSourceButton({ project, refreshHotkey = true }: MirrorSourceButtonProps) {
+  const workspace = useWorkspaceSlug();
   const summary = project.backlog as Summary;
   const [isOpen, setOpen] = useState(false);
   const now = useNow();
@@ -217,7 +222,7 @@ export function MirrorSourceButton({ project, refreshHotkey = true }: MirrorSour
     ),
   });
 
-  const settingsHref = projectViewHref(project.key, 'settings');
+  const settingsHref = projectViewHref(workspace, project.key, 'settings');
 
   return (
     <DialogTrigger

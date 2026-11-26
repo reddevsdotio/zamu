@@ -3,13 +3,16 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { Home, HomeGroup, HomeGroupKey, HomeItem, HomeTab } from '@zamu/contracts';
 import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { togglePeek, usePeek } from '~/features/peek/store';
+import { useOptionalNewProject } from '~/features/shell/new-project';
 import { usePageSearchRef } from '~/features/shell/page-search';
 import { useOptionalQuickCreate } from '~/features/shell/quick-create';
 import { useTaskFieldKeys } from '~/features/task-fields';
 import { useNow } from '~/features/tasks/clock';
 import { describeError } from '~/features/tasks/errors';
-import { meQuery } from '~/features/tasks/queries';
+import { meQuery, projectsQuery } from '~/features/tasks/queries';
 import { FilterButton, rememberTaskNavigation, type TaskFilter, useTaskSelection } from '~/features/views';
+import { NewWorkspaceStart } from '~/features/workspaces/NewWorkspaceStart';
+import { useApi, useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
 import {
   Banner,
   Button,
@@ -43,7 +46,8 @@ import {
 // Home (/, frames 099–106): what needs the viewer, grouped by why, across every project. Tabs Mine
 // (default), Everyone and Agents with their counts; the deadlines strip on Mine and Everyone; groups
 // of Home rows, each task once; agent cards and "Waiting on a person" on Agents; "All clear" when
-// nothing waits. Tab and filter live in the URL (?tab=everyone&project=PAY&label=backend).
+// nothing waits; the first steps (a project, an agent) while the workspace has no projects. Tab and
+// filter live in the URL (?tab=everyone&project=PAY&label=backend).
 //
 // Keys (shortcuts.md "Lists and boards", "A selected or open task"): J / K and ↓ / ↑ move the focus,
 // X selects, Shift+↓ / ↑ extend, ⌘A selects all, Space peeks, Enter opens the task view, and S, P, A,
@@ -76,6 +80,8 @@ interface GroupView {
 }
 
 export function HomeScreen({ search }: HomeScreenProps) {
+  const workspaceId = useWorkspaceId();
+  const api = useApi();
   const navigate = useNavigate();
   const quickCreate = useOptionalQuickCreate();
   const href = useRouterState({ select: (state) => state.location.href });
@@ -87,20 +93,31 @@ export function HomeScreen({ search }: HomeScreenProps) {
   );
   const filtered = hasHomeFilter(filter);
   const input = useMemo(() => homeInput(tab, filter), [tab, filter]);
-  const query = useQuery(homeQuery(input));
+  const query = useQuery(homeQuery(api, input));
   const data: Home | undefined = query.data?.tab === tab ? query.data : undefined;
-  const me = useQuery(meQuery()).data;
+  const me = useQuery(meQuery(api)).data;
   const viewerId = me?.user.id;
   const firstName = me?.user.name.trim().split(/\s+/)[0] ?? '';
-  const workspace = me?.workspace.name ?? 'the workspace';
+  const workspaceName = me?.workspace.name ?? 'the workspace';
+  const workspace = useWorkspaceSlug();
   const now = useNow();
+  // A workspace without projects (a new one) shows its first steps instead of an empty Home.
+  const noProjects = useQuery(projectsQuery(api)).data?.items.length === 0;
+  const newProject = useOptionalNewProject();
+  const isAdmin = me?.role === 'owner' || me?.role === 'admin';
 
   // ---- URL ------------------------------------------------------------------------------------------
   const setTab = (next: HomeTab) =>
-    navigate({ to: '/', search: { ...search, tab: next === 'mine' ? undefined : next }, replace: true });
+    navigate({
+      to: '/w/$workspace',
+      params: { workspace },
+      search: { ...search, tab: next === 'mine' ? undefined : next },
+      replace: true,
+    });
   const setFilter = (next: HomeFilter) =>
     navigate({
-      to: '/',
+      to: '/w/$workspace',
+      params: { workspace },
       search: { ...(search.tab ? { tab: search.tab } : {}), ...homeFilterSearch(next) },
       replace: true,
     });
@@ -183,13 +200,13 @@ export function HomeScreen({ search }: HomeScreenProps) {
       const item = itemByKey.get(key);
       if (!item) return;
       returnFocus = key;
-      rememberTaskNavigation({ keys, from: VIEW_NAME, returnTo: href }, key);
+      rememberTaskNavigation(workspaceId, { keys, from: VIEW_NAME, returnTo: href }, key);
       void navigate({
-        to: '/p/$projectKey/$taskKey',
-        params: { projectKey: item.task.project.key, taskKey: key },
+        to: '/w/$workspace/p/$projectKey/$taskKey',
+        params: { workspace, projectKey: item.task.project.key, taskKey: key },
       });
     },
-    [itemByKey, keys, href, navigate],
+    [itemByKey, keys, href, navigate, workspace, workspaceId],
   );
 
   const focusedKey =
@@ -249,7 +266,7 @@ export function HomeScreen({ search }: HomeScreenProps) {
           : greeting(firstName, now);
   const subtitle =
     tab === 'everyone'
-      ? `What needs attention across ${workspace}`
+      ? `What needs attention across ${workspaceName}`
       : tab === 'agents'
         ? data
           ? agentsLine(data.agents)
@@ -340,10 +357,21 @@ export function HomeScreen({ search }: HomeScreenProps) {
             </div>
           ) : isLoading ? (
             <SkeletonRows count={8} label="Loading Home" className="pt-4" />
+          ) : noProjects ? (
+            <NewWorkspaceStart
+              workspaceName={workspaceName}
+              onNewProject={newProject?.open}
+              onNewFromBacklog={newProject?.openFromBacklog}
+              onAddAgent={
+                isAdmin
+                  ? () => void navigate({ to: '/w/$workspace/settings/members', params: { workspace } })
+                  : undefined
+              }
+            />
           ) : isClear ? (
             <AllClear
               tab={tab}
-              workspace={workspace}
+              workspace={workspaceName}
               assignedTotal={assigned?.total ?? 0}
               everyoneCount={counts?.everyone ?? 0}
               onShowAssigned={() => setShowAssigned(true)}
@@ -358,7 +386,12 @@ export function HomeScreen({ search }: HomeScreenProps) {
                   title="No agents yet"
                   text="Add an agent in workspace settings, Members. Its work and its questions show here."
                   action={
-                    <Button variant="secondary" onPress={() => void navigate({ to: '/settings/members' })}>
+                    <Button
+                      variant="secondary"
+                      onPress={() =>
+                        void navigate({ to: '/w/$workspace/settings/members', params: { workspace } })
+                      }
+                    >
                       Open Members
                     </Button>
                   }

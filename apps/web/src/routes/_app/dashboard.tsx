@@ -1,27 +1,7 @@
-import { createFileRoute, redirect } from '@tanstack/react-router';
-import { safeParseTaskKey } from '@zamu/contracts';
+import { createFileRoute } from '@tanstack/react-router';
+import { redirectToLastWorkspace } from '~/lib/landing';
 
-// M4's dashboard is Home (/) since M5. Old links land there: ?scope=everyone opens the Everyone tab, and
-// ?task=PAY-140 (the dashboard's side panel) opens that task's view.
+// Pre-0.10 URL: redirects to the same path under the workspace used last (kept until at least 1.0).
 export const Route = createFileRoute('/_app/dashboard')({
-  validateSearch: (search: Record<string, unknown>): { scope?: 'everyone'; task?: string } => ({
-    ...(search.scope === 'everyone' ? { scope: 'everyone' } : {}),
-    ...(typeof search.task === 'string' ? { task: search.task } : {}),
-  }),
-  beforeLoad: ({ search }) => {
-    const key = search.task?.trim().toUpperCase();
-    const task = key ? safeParseTaskKey(key) : null;
-    if (key && task) {
-      throw redirect({
-        to: '/p/$projectKey/$taskKey',
-        params: { projectKey: task.projectKey, taskKey: key },
-        replace: true,
-      });
-    }
-    throw redirect({
-      to: '/',
-      search: search.scope === 'everyone' ? { tab: 'everyone' } : {},
-      replace: true,
-    });
-  },
+  beforeLoad: ({ location }) => redirectToLastWorkspace(location.href),
 });

@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
-import { colorSchemeFor, themeClass, useUserTheme } from '../features/theme/theme';
+import { colorSchemeFor, themeClass, useUrlWorkspaceSlug, useUserTheme } from '../features/theme/theme';
 import { requireSetUp } from '../lib/session';
 import type { RouterContext } from '../router';
 import appCss from '../styles/app.css?url';
@@ -43,7 +43,7 @@ function RootComponent() {
  * server renders the class from the prefetched me query, so a reload never flashes the other theme.
  */
 function RootDocument({ children }: { children: ReactNode }) {
-  const theme = useUserTheme();
+  const theme = useUserTheme(useUrlWorkspaceSlug());
   return (
     <html lang="en" className={themeClass(theme)}>
       <head>

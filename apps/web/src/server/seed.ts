@@ -1,7 +1,10 @@
 // Development data: a workspace with projects PAY and WEB, a few tasks, the agent claude-dev acting
-// for the admin, fresh API keys, and with `backlog` the mirrored Backlog.md project BACK. Everything goes
-// through @zamu/auth and @zamu/core, like real use, except backdating one task for the dashboard's Stalled group.
-// Re-running is safe: existing projects and the agent are kept, and new keys are issued each time.
+// for the admin, fresh API keys, and with `backlog` the mirrored Backlog.md project BACK. With
+// `secondWorkspace`, the admin also owns a second workspace (Globex) whose project has the same key,
+// PAY, and its own claude-dev agent, so links, keys and lists can be checked for isolation. Everything
+// goes through @zamu/auth and @zamu/core, like real use, except backdating one task for the dashboard's
+// Stalled group. Re-running is safe: existing workspaces, projects and agents are kept, and new keys are
+// issued each time.
 import {
   AcceptInvitationError,
   acceptInvitationWithSignUp,
@@ -23,9 +26,13 @@ import {
   createMilestone,
   createProject,
   createTask,
+  createWorkspace,
   formatMention,
   listMembers,
+  listMyWorkspaces,
+  SlugTaken,
   todayIn,
+  touchLastWorkspace,
   toWorkspaceRole,
   updateTask,
 } from '@zamu/core';
@@ -46,6 +53,12 @@ export interface SeedOptions {
    * admin (by the agent and by Tomás) and an agent task in progress without an update for 26 hours.
    */
   dashboard?: boolean;
+  /**
+   * 0.10: also give the admin a second workspace (secondWorkspaceName, slug from the name) with its own
+   * PAY project and its own agent named agentName, and keys for both. Default false.
+   */
+  secondWorkspace?: boolean;
+  secondWorkspaceName?: string;
   adminName?: string;
   adminEmail?: string;
   adminPassword?: string;
@@ -56,8 +69,29 @@ export interface SeedOptions {
   memberPassword?: string;
 }
 
+export interface SeedWorkspace {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+/** The second workspace: what the seed made there and the keys it issued for it. */
+export interface SecondWorkspaceSeed {
+  workspace: SeedWorkspace;
+  /** True when this run created the workspace. */
+  created: boolean;
+  agent: { id: string; name: string };
+  createdProjects: { key: string; tasks: number }[];
+  /** The second workspace's agent's new key: all its projects, read and write. */
+  agentKey: string;
+  /** The admin's new key for the second workspace: all its projects, read and write. */
+  adminKey: string;
+}
+
 export interface SeedResult {
   workspaceId: string;
+  /** The first workspace, where the admin lands. */
+  workspace: SeedWorkspace;
   /** True when this run created the admin and workspace (first run). */
   bootstrapped: boolean;
   admin: { id: string; name: string; email: string; password: string | null };
@@ -70,6 +104,8 @@ export interface SeedResult {
   agentKey: string;
   /** The admin's new key: all projects, read and write. */
   adminKey: string;
+  /** Present with the secondWorkspace option. */
+  second: SecondWorkspaceSeed | null;
 }
 
 export const SEED_DEFAULTS = {
@@ -77,6 +113,7 @@ export const SEED_DEFAULTS = {
   adminEmail: 'ana@example.com',
   adminPassword: 'dev-password-1234',
   workspaceName: 'Reddevs',
+  secondWorkspaceName: 'Globex',
   agentName: 'claude-dev',
   memberName: 'Tomás Berg',
   memberEmail: 'tomas@example.com',
@@ -84,12 +121,19 @@ export const SEED_DEFAULTS = {
   planning: false,
   backlog: false,
   dashboard: false,
+  secondWorkspace: false,
 } satisfies Required<SeedOptions>;
 
 /** How long ago the seed's stalled agent task was last updated: past the 24-hour agent threshold. */
 const STALLED_SEED_HOURS = 26;
 
 type Who = 'admin' | 'agent' | null;
+interface SeedProject {
+  key: string;
+  name: string;
+  description: string;
+  tasks: SeedTask[];
+}
 interface SeedTask {
   title: string;
   status: TaskStatus;
@@ -100,7 +144,7 @@ interface SeedTask {
   agentMovesTo?: TaskStatus;
 }
 
-const PROJECTS: { key: string; name: string; description: string; tasks: SeedTask[] }[] = [
+const PROJECTS: SeedProject[] = [
   {
     key: 'PAY',
     name: 'Payments',
@@ -195,6 +239,40 @@ const PROJECTS: { key: string; name: string; description: string; tasks: SeedTas
   },
 ];
 
+/** The second workspace's project: the same key as the first workspace's PAY, other tasks. */
+const SECOND_PROJECTS: SeedProject[] = [
+  {
+    key: 'PAY',
+    name: 'Payroll',
+    description: 'Payslips, timesheets and year-end tax forms',
+    tasks: [
+      {
+        title: 'Holiday pay rounds down for part-time staff',
+        status: 'todo',
+        priority: 'high',
+        assignee: null,
+      },
+      {
+        title: 'Import timesheets from the CSV export',
+        status: 'in_progress',
+        priority: 'medium',
+        assignee: 'agent',
+        agentMovesTo: 'in_review',
+      },
+      {
+        title: 'Year-end tax forms for contractors',
+        status: 'in_progress',
+        priority: 'urgent',
+        assignee: 'admin',
+      },
+      { title: 'Email payslips as PDF attachments', status: 'backlog', priority: 'low', assignee: null },
+      { title: 'Move the payroll run to the 25th', status: 'done', priority: 'medium', assignee: 'admin' },
+    ],
+  },
+];
+
+const WORKSPACE_SCOPE = { projects: 'all' as const, access: 'write' as const };
+
 async function findAdmin(ctx: CoreContext, email: string) {
   const byEmail = await ctx.db.query.user.findFirst({
     columns: { id: true, name: true, email: true },
@@ -241,39 +319,95 @@ export async function seedDevData(ctx: CoreContext, options: SeedOptions = {}): 
     role: toWorkspaceRole(membership.role),
     onBehalfOfId: null,
   };
-  const workspaceScope = { projects: 'all' as const, access: 'write' as const };
 
-  // The agent and its key.
+  const { agentId, agentKey, agent } = await ensureAgent(ctx, admin, opts.agentName);
+
+  // Projects and tasks. A project that already exists keeps its tasks.
+  const createdProjects = await seedProjects(ctx, PROJECTS, { admin, agent, agentId }, async (key) => {
+    if (opts.planning && key === 'PAY') await seedPlanning(ctx, admin, agent);
+  });
+  const created = new Set(createdProjects.map((p) => p.key));
+  const member =
+    opts.planning && opts.dashboard && created.has('PAY') && created.has('WEB')
+      ? await seedDashboard(ctx, admin, agent, { name: user.name, opts })
+      : null;
+
+  if (opts.backlog) {
+    const backlog = await seedBacklogProject(ctx, admin);
+    if (backlog) createdProjects.push(backlog);
+  }
+
+  const adminKey = await createApiKey(ctx, admin, { name: `${user.name} dev seed`, scope: WORKSPACE_SCOPE });
+  const second = opts.secondWorkspace ? await seedSecondWorkspace(ctx, admin, user.name, opts) : null;
+
+  const workspace = (await listMyWorkspaces(ctx, admin.userId)).items.find(
+    (item) => item.id === admin.workspaceId,
+  );
+  if (!workspace) throw new Error('The seed workspace is missing from the admin workspaces');
+
+  return {
+    workspaceId: admin.workspaceId,
+    workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
+    bootstrapped,
+    admin: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      password: bootstrapped ? opts.adminPassword : null,
+    },
+    agent: { id: agentId, name: opts.agentName },
+    member,
+    createdProjects,
+    agentKey,
+    adminKey: adminKey.key,
+    second,
+  };
+}
+
+/** The agent named `name` in the actor's workspace, created when missing, with a new key. */
+async function ensureAgent(
+  ctx: CoreContext,
+  admin: Actor,
+  name: string,
+): Promise<{ agentId: string; agentKey: string; agent: Actor }> {
   let agentId: string;
   let agentKey: string;
   try {
     const created = await createAgent(ctx, admin, {
-      name: opts.agentName,
+      name,
       responsibleUserId: admin.userId,
-      scope: workspaceScope,
-      keyName: `${opts.agentName} dev seed`,
+      scope: WORKSPACE_SCOPE,
+      keyName: `${name} dev seed`,
     });
     agentId = created.agent.id;
     agentKey = created.key.key;
   } catch (error) {
     if (!(error instanceof Conflict)) throw error;
-    const existing = (await listMembers(ctx, admin)).items.find(
-      (m) => m.kind === 'agent' && m.name === opts.agentName,
-    );
+    const existing = (await listMembers(ctx, admin)).items.find((m) => m.kind === 'agent' && m.name === name);
     if (!existing) throw error;
     agentId = existing.id;
     const key = await createApiKey(ctx, admin, {
-      name: `${opts.agentName} dev seed`,
+      name: `${name} dev seed`,
       ownerId: agentId,
-      scope: workspaceScope,
+      scope: WORKSPACE_SCOPE,
     });
     agentKey = key.key;
   }
-  const agent = await agentActor(ctx, agentKey);
+  return { agentId, agentKey, agent: await agentActor(ctx, agentKey) };
+}
 
-  // Projects and tasks. A project that already exists keeps its tasks.
+/**
+ * Creates each project that does not exist yet in the admin's workspace, with its tasks, and calls
+ * `afterCreate` for it. A project that already exists keeps its tasks. Returns the projects created.
+ */
+async function seedProjects(
+  ctx: CoreContext,
+  specs: SeedProject[],
+  { admin, agent, agentId }: { admin: Actor; agent: Actor; agentId: string },
+  afterCreate: (key: string) => Promise<void> = async () => {},
+): Promise<SeedResult['createdProjects']> {
   const createdProjects: SeedResult['createdProjects'] = [];
-  for (const spec of PROJECTS) {
+  for (const spec of specs) {
     try {
       await createProject(ctx, admin, { key: spec.key, name: spec.name, description: spec.description });
     } catch (error) {
@@ -295,32 +429,52 @@ export async function seedDevData(ctx: CoreContext, options: SeedOptions = {}): 
       }
     }
     createdProjects.push({ key: spec.key, tasks: spec.tasks.length });
-    if (opts.planning && spec.key === 'PAY') await seedPlanning(ctx, admin, agent);
+    await afterCreate(spec.key);
   }
-  const created = new Set(createdProjects.map((p) => p.key));
-  const member =
-    opts.planning && opts.dashboard && created.has('PAY') && created.has('WEB')
-      ? await seedDashboard(ctx, admin, agent, { name: user.name, opts })
-      : null;
+  return createdProjects;
+}
 
-  if (opts.backlog) {
-    const backlog = await seedBacklogProject(ctx, admin);
-    if (backlog) createdProjects.push(backlog);
+/**
+ * The second workspace: found among the admin's workspaces by name, or created with the admin as
+ * owner. Creating a workspace makes it the one the admin used last, so the first workspace is set
+ * back as the landing one afterwards.
+ */
+async function seedSecondWorkspace(
+  ctx: CoreContext,
+  first: Actor,
+  adminName: string,
+  opts: Required<SeedOptions>,
+): Promise<SecondWorkspaceSeed> {
+  const mine = await listMyWorkspaces(ctx, first.userId);
+  let workspace = mine.items.find(
+    (item) => item.name === opts.secondWorkspaceName && item.id !== first.workspaceId,
+  );
+  const created = !workspace;
+  if (!workspace) {
+    try {
+      workspace = await createWorkspace(ctx, first.userId, { name: opts.secondWorkspaceName });
+    } catch (error) {
+      if (error instanceof SlugTaken) {
+        throw new Error(`Another workspace already uses the slug for ${opts.secondWorkspaceName}`);
+      }
+      throw error;
+    }
   }
-
-  const adminKey = await createApiKey(ctx, admin, { name: `${user.name} dev seed`, scope: workspaceScope });
-
+  const admin: Actor = {
+    userId: first.userId,
+    kind: 'person',
+    workspaceId: workspace.id,
+    role: workspace.role,
+    onBehalfOfId: null,
+  };
+  const { agentId, agentKey, agent } = await ensureAgent(ctx, admin, opts.agentName);
+  const createdProjects = await seedProjects(ctx, SECOND_PROJECTS, { admin, agent, agentId });
+  const adminKey = await createApiKey(ctx, admin, { name: `${adminName} dev seed`, scope: WORKSPACE_SCOPE });
+  await touchLastWorkspace(ctx, first);
   return {
-    workspaceId: admin.workspaceId,
-    bootstrapped,
-    admin: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      password: bootstrapped ? opts.adminPassword : null,
-    },
+    workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
+    created,
     agent: { id: agentId, name: opts.agentName },
-    member,
     createdProjects,
     agentKey,
     adminKey: adminKey.key,

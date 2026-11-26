@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { BacklogWebhookInfo, BacklogWebhookSecret, GitProvider } from '@zamu/contracts';
 import { type ReactNode, useState } from 'react';
 import { useNow } from '~/features/tasks/clock';
+import { useApi } from '~/lib/workspace';
 import {
   Banner,
   Button,
@@ -66,8 +67,9 @@ function WebhookInfoLoader({
   defaultBranch,
   close,
 }: Omit<WebhookDialogProps, 'isOpen' | 'onOpenChange'> & { close: () => void }) {
+  const api = useApi();
   // Mounted only while the dialog is open, so the polling stops with it and the new secret is forgotten.
-  const info = useQuery({ ...webhookInfoQuery(projectKey), refetchInterval: WEBHOOK_POLL_MS });
+  const info = useQuery({ ...webhookInfoQuery(api, projectKey), refetchInterval: WEBHOOK_POLL_MS });
   const reissue = useReissueWebhookSecret(projectKey);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [issued, setIssued] = useState<BacklogWebhookSecret | null>(null);

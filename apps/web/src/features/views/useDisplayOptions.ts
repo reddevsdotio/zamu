@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { meQuery } from '~/features/tasks/queries';
+import { storageKeyPrefix, workspaceStorageKey } from '~/lib/storage-keys';
+import { useApi, useWorkspaceId } from '~/lib/workspace';
 import {
   type DisplayOptions,
   defaultDisplayOptions,
@@ -9,19 +11,25 @@ import {
   type TaskViewName,
 } from './display-options';
 
-// Display options in localStorage, per person, project and view (plan call 4):
-//   zamu:display:v1:<user id>:<project key>:<view>     (Home: project key "~home")
+// Display options in localStorage, per workspace, person, project and view (plan call 4):
+//   zamu:display:v2:<workspace id>:<user id>:<project key>:<view>     (Home: project key "~home")
+// Options saved before 0.10 (zamu:display:v1:…, without the workspace) are not read.
 // Every component reading the same key shares one value (the Display popover and the list it
 // changes), and other tabs follow through the storage event. Until the signed-in user is known
 // the defaults show and changes stay in memory.
 
-const PREFIX = 'zamu:display:v1';
+const PREFIX = storageKeyPrefix('display');
 /** Stands in for the project key on Home. */
 export const HOME_DISPLAY_SCOPE = '~home';
 
-/** The localStorage key of one person's options for one view. */
-export function displayStorageKey(userId: string, projectKey: string | null, view: TaskViewName): string {
-  return `${PREFIX}:${userId}:${projectKey ?? HOME_DISPLAY_SCOPE}:${view}`;
+/** The localStorage key of one person's options for one view of a workspace. */
+export function displayStorageKey(
+  workspaceId: string,
+  userId: string,
+  projectKey: string | null,
+  view: TaskViewName,
+): string {
+  return workspaceStorageKey('display', workspaceId, userId, projectKey ?? HOME_DISPLAY_SCOPE, view);
 }
 
 function storage(): Storage | null {
@@ -112,9 +120,11 @@ export type UseDisplayOptionsResult = readonly [
  * Needs a QueryClientProvider (it reads the user from me.get, which the app shell prefetches).
  */
 export function useDisplayOptions(projectKey: string | null, view: TaskViewName): UseDisplayOptionsResult {
-  const userId = useQuery(meQuery()).data?.user.id ?? null;
-  const key = userId ? displayStorageKey(userId, projectKey, view) : null;
-  const memoryKey = `${projectKey ?? HOME_DISPLAY_SCOPE}:${view}`;
+  const api = useApi();
+  const workspaceId = useWorkspaceId();
+  const userId = useQuery(meQuery(api)).data?.user.id ?? null;
+  const key = userId ? displayStorageKey(workspaceId, userId, projectKey, view) : null;
+  const memoryKey = `${workspaceId}:${projectKey ?? HOME_DISPLAY_SCOPE}:${view}`;
 
   const options = useSyncExternalStore(
     subscribe,

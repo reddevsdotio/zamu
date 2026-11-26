@@ -184,9 +184,15 @@ describe('URL search', () => {
   });
 
   it('remembers the list filters for Back to list', () => {
-    rememberListSearch('PAY', { task: 'PAY-1', q: 'refund', status: ['todo'] });
-    expect(listSearchFor('PAY', 'PAY-9')).toEqual({ q: 'refund', status: ['todo'], focus: 'PAY-9' });
-    expect(listSearchFor('WEB', 'WEB-1')).toEqual({ focus: 'WEB-1' });
+    rememberListSearch('acme-id', 'PAY', { task: 'PAY-1', q: 'refund', status: ['todo'] });
+    expect(listSearchFor('acme-id', 'PAY', 'PAY-9')).toEqual({
+      q: 'refund',
+      status: ['todo'],
+      focus: 'PAY-9',
+    });
+    expect(listSearchFor('acme-id', 'WEB', 'WEB-1')).toEqual({ focus: 'WEB-1' });
+    // Another workspace's PAY is another project.
+    expect(listSearchFor('globex-id', 'PAY', 'PAY-9')).toEqual({ focus: 'PAY-9' });
   });
 });
 

@@ -1,4 +1,4 @@
-import type { Theme } from '@zamu/contracts';
+import type { Theme, WorkspaceRef } from '@zamu/contracts';
 import { useState } from 'react';
 import {
   Button as AriaButton,
@@ -7,6 +7,7 @@ import {
   DialogTrigger,
   MenuTrigger,
 } from 'react-aria-components';
+import { WorkspaceTile } from '~/features/workspaces/WorkspaceTile';
 import {
   Avatar,
   CheckGlyph,
@@ -26,75 +27,132 @@ import {
 } from '~/ui';
 
 // The sidebar's menus (frames 004, 005, 008, 009): the workspace switcher, the "+" of the Projects
-// heading, and the person menu with the theme switch.
+// heading, and the person menu with the theme switch. Choosing another workspace opens its Home.
 
 export interface WorkspaceMenuProps {
-  name: string;
+  /** The workspace the page is in. */
+  current: WorkspaceRef;
+  /**
+   * Every workspace the person belongs to, by name, the current one included. Undefined while the
+   * list loads: the menu shows the current one alone.
+   */
+  workspaces?: readonly WorkspaceRef[];
+  /** The creation policy lets the person create a workspace: "New workspace" shows. */
+  canCreate?: boolean;
+  /** Where a workspace opens (its Home). */
+  workspaceHref: (slug: string) => string;
   settingsHref: string;
   inviteHref: string;
+  onNewWorkspace?: () => void;
   onNewProject: () => void;
   onNewFromBacklog: () => void;
 }
 
-/** The workspace switcher. v1 has one workspace per instance, so the list holds the current one. */
+/**
+ * The workspace switcher (frame 004): every workspace of the person with the current one checked,
+ * New workspace when they may create one, then settings, invite and the project creation items.
+ */
 export function WorkspaceMenu({
-  name,
+  current,
+  workspaces,
+  canCreate = false,
+  workspaceHref,
   settingsHref,
   inviteHref,
+  onNewWorkspace,
   onNewProject,
   onNewFromBacklog,
 }: WorkspaceMenuProps) {
   const collapsed = useSidebarCollapsed();
-  const letter = name.trim().charAt(0).toUpperCase() || 'W';
   return (
     <MenuTrigger>
-      <SidebarWorkspaceButton name={name} />
+      <SidebarWorkspaceButton name={current.name} />
       <Menu
         placement={collapsed ? 'right top' : 'bottom start'}
         aria-label="Workspace"
         className="w-58"
         onAction={(key) => {
+          if (key === 'new-workspace') onNewWorkspace?.();
           if (key === 'new-project') onNewProject();
           if (key === 'new-from-backlog') onNewFromBacklog();
         }}
       >
-        <MenuGroup title="Workspaces" aria-label="Workspaces">
-          <MenuItem
-            id="workspace-current"
-            textValue={name}
-            lead={
-              <span
-                aria-hidden
-                className="grid size-5.5 place-items-center rounded-sm bg-fg text-xs font-bold text-bg"
-              >
-                {letter}
-              </span>
-            }
-          >
-            <span className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate">{name}</span>
-              <span className="text-accent-text">
-                <CheckGlyph />
-              </span>
-            </span>
-          </MenuItem>
-        </MenuGroup>
-        <MenuSeparator />
-        <MenuItem id="settings" href={settingsHref} lead={<GearGlyph className="size-3.5" />}>
-          Workspace settings
-        </MenuItem>
-        <MenuItem id="invite" href={inviteHref} lead={<PlusGlyph />}>
-          Invite people
-        </MenuItem>
-        <MenuSeparator />
-        <MenuItem id="new-project" lead={<PlusGlyph />}>
-          New project
-        </MenuItem>
-        <MenuItem id="new-from-backlog" lead={<PlusGlyph />}>
-          New from Backlog.md
-        </MenuItem>
+        {workspaceMenuItems({
+          current,
+          workspaces,
+          canCreate,
+          workspaceHref,
+          settingsHref,
+          inviteHref,
+          onNewWorkspace,
+        })}
       </Menu>
     </MenuTrigger>
+  );
+}
+
+/**
+ * The switcher's items: the workspaces (current one checked), New workspace when allowed, settings,
+ * invite, then the project creation items. Shared with the /__ui gallery, which draws the open menu.
+ */
+export function workspaceMenuItems({
+  current,
+  workspaces,
+  canCreate = false,
+  workspaceHref,
+  settingsHref,
+  inviteHref,
+  onNewWorkspace,
+}: Omit<WorkspaceMenuProps, 'onNewProject' | 'onNewFromBacklog'>) {
+  const listed = workspaces?.some((workspace) => workspace.id === current.id)
+    ? workspaces
+    : [current, ...(workspaces ?? [])];
+  return (
+    <>
+      <MenuGroup title="Workspaces" aria-label="Workspaces">
+        {listed.map((workspace) => {
+          const isCurrent = workspace.id === current.id;
+          return (
+            <MenuItem
+              key={workspace.id}
+              id={`workspace:${workspace.slug}`}
+              textValue={workspace.name}
+              {...(isCurrent ? {} : { href: workspaceHref(workspace.slug) })}
+              lead={<WorkspaceTile name={workspace.name} slug={workspace.slug} current={isCurrent} />}
+            >
+              <span className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                {isCurrent ? (
+                  <span className="text-accent-text">
+                    <CheckGlyph />
+                    <span className="sr-only">, current</span>
+                  </span>
+                ) : null}
+              </span>
+            </MenuItem>
+          );
+        })}
+        {canCreate && onNewWorkspace ? (
+          <MenuItem id="new-workspace" lead={<PlusGlyph />}>
+            New workspace
+          </MenuItem>
+        ) : null}
+      </MenuGroup>
+      <MenuSeparator />
+      <MenuItem id="settings" href={settingsHref} lead={<GearGlyph className="size-3.5" />}>
+        Workspace settings
+      </MenuItem>
+      <MenuItem id="invite" href={inviteHref} lead={<PlusGlyph />}>
+        Invite people
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem id="new-project" lead={<PlusGlyph />}>
+        New project
+      </MenuItem>
+      <MenuItem id="new-from-backlog" lead={<PlusGlyph />}>
+        New from Backlog.md
+      </MenuItem>
+    </>
   );
 }
 

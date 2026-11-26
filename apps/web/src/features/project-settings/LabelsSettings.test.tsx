@@ -6,18 +6,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { LabelsView, type LabelsViewProps } from './LabelsSettings';
 import { labelFailure, labelNameError, sortLabels, usageText } from './labels';
 
-// The page is rendered from props; the stub keeps the API modules out.
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
-  const fail = (): unknown =>
-    new Proxy(() => {}, {
-      get: (_target, key) => (typeof key === 'string' ? fail() : undefined),
-      apply: () => Promise.reject(new Error('no API in these tests')),
-    });
-  const client = fail();
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
-
 let next = 0;
 function label(
   name: string,

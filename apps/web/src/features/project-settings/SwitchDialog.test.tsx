@@ -19,18 +19,6 @@ import {
   shownRequests,
 } from './switch';
 
-// The screens are rendered from props; the stub keeps the API and server modules out.
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
-  const fail = (): unknown =>
-    new Proxy(() => {}, {
-      get: (_target, key) => (typeof key === 'string' ? fail() : undefined),
-      apply: () => Promise.reject(new Error('no API in these tests')),
-    });
-  const client = fail();
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
-
 const CHECKED_AT = '2030-01-01T10:00:00Z';
 const LIST_URL = 'https://gitlab.com/reddevs/payments/-/merge_requests';
 
