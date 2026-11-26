@@ -1,14 +1,16 @@
 // Single sign-on with one OpenID Connect provider (Better Auth's generic OAuth plugin), and the rules
 // for who gets in: which identities may create an account, link to an existing one, and which role
-// they get in the workspace.
+// they get. Auto sign-up and admin groups apply to one workspace, the SSO workspace: the one
+// OIDC_WORKSPACE names, else the oldest. Invitations open the workspace that sent them.
 import type { AsyncLocalStorage } from 'node:async_hooks';
 import { type Db, schema, type Tx } from '@zamu/db';
 import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth';
 import { APIError, getOAuthState } from 'better-auth/api';
 import { type GenericOAuthUserInfo, genericOAuth } from 'better-auth/plugins/generic-oauth';
 import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
-import { BOOTSTRAP_LOCK_KEY, isFirstRun } from './bootstrap';
+import { BOOTSTRAP_LOCK_KEY, isFirstRun, setupState } from './bootstrap';
 import { discoveryUrl, OIDC_CALLBACK_PATH, OIDC_PROVIDER_ID, type SsoConfig } from './config';
+import { findWorkspaceBySlug } from './workspace';
 
 /**
  * Error codes an SSO sign-in can end with. Better Auth redirects to the page's errorCallbackURL with
@@ -193,9 +195,38 @@ async function oldestWorkspace(db: Db | Tx) {
   const [row] = await db
     .select({ id: schema.organization.id })
     .from(schema.organization)
-    .orderBy(asc(schema.organization.createdAt))
+    .orderBy(asc(schema.organization.createdAt), asc(schema.organization.id))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * The SSO workspace: the one OIDC_WORKSPACE names (current or old slug), else the oldest workspace.
+ * Null when OIDC_WORKSPACE names no workspace, or when there is none.
+ */
+export async function ssoWorkspace(
+  db: Db | Tx,
+  sso: Pick<SsoConfig, 'workspace'>,
+): Promise<{ id: string } | null> {
+  if (sso.workspace) {
+    const named = await findWorkspaceBySlug(db, sso.workspace);
+    return named ? { id: named.id } : null;
+  }
+  return oldestWorkspace(db);
+}
+
+/**
+ * The startup check for OIDC_WORKSPACE: a sentence when it names no workspace once setup is done, else
+ * null. Before setup the first workspace takes the slug (bootstrapAdmin, bootstrapWorkspace).
+ */
+export async function oidcWorkspaceProblem(
+  db: Db,
+  sso: Pick<SsoConfig, 'workspace'> | null,
+): Promise<string | null> {
+  if (!sso?.workspace) return null;
+  if ((await setupState(db)) !== 'done') return null;
+  if (await findWorkspaceBySlug(db, sso.workspace)) return null;
+  return `OIDC_WORKSPACE is "${sso.workspace}", but no workspace has that slug. Set it to the slug of an existing workspace (its URL is /w/<slug>/), or unset it to use the oldest workspace.`;
 }
 
 function isOwner(role: string): boolean {
@@ -247,12 +278,12 @@ export function createSsoGate({ db, sso, transactions }: SsoGateOptions) {
     if (intent.kind === 'setup') {
       return refuse(SSO_ERRORS.alreadySetUp, 'This server already has an admin. Sign in instead.');
     }
-    if (!(await oldestWorkspace(tx))) {
+    if ((await setupState(tx)) !== 'done') {
       return refuse(SSO_ERRORS.notSetUp, 'This server is still being set up. Try again later.');
     }
     if (intent.kind === 'invite') return null; // Checked against the invitation already.
     if (await findPendingInvitationFor(tx, email)) return null;
-    if (sso.signup === 'auto') return null;
+    if (sso.signup === 'auto' && (await ssoWorkspace(tx, sso))) return null;
     return refuse(
       SSO_ERRORS.noAccount,
       'There is no account for this email. Ask your admin for an invitation.',
@@ -314,56 +345,69 @@ export function createSsoGate({ db, sso, transactions }: SsoGateOptions) {
     logins.set(ctx, { email, groups: readGroups(source.oauth.profile, sso.groupsClaim), intent });
   };
 
-  /** Joins the workspace when needed and syncs the role; throws an APIError to refuse the sign-in. */
+  /**
+   * Joins a workspace when needed and syncs the role; throws an APIError to refuse the sign-in.
+   * - From an invitation link: accepts that invitation, even for someone in other workspaces already.
+   * - No membership at all: accepts the newest pending invitation for the email, else (auto mode) joins
+   *   the SSO workspace, else refuses. People who left a workspace are not added back while they
+   *   belong to another.
+   * - Admin groups set the role in the SSO workspace only; owners are never changed.
+   */
   async function applyMembership(userId: string, login: SsoLogin): Promise<void> {
     await db.transaction(async (tx) => {
+      // Setup via SSO: the admin names the workspace in the next step.
+      if ((await setupState(tx)) !== 'done') return;
+
       const memberships = await tx
-        .select({ id: schema.member.id, role: schema.member.role })
+        .select({ organizationId: schema.member.organizationId })
         .from(schema.member)
         .where(eq(schema.member.userId, userId));
+      const target = await ssoWorkspace(tx, sso);
 
-      if (memberships.length === 0) {
-        const workspace = await oldestWorkspace(tx);
-        // Setup via SSO: the admin names the workspace in the next step.
-        if (!workspace) return;
-
-        const invitation =
-          login.intent.kind === 'invite'
-            ? await loadPendingInvitation(tx, login.intent.invitationId)
-            : await findPendingInvitationFor(tx, login.email);
-        if (invitation) {
-          await tx
-            .insert(schema.member)
-            .values({ organizationId: invitation.organizationId, userId, role: invitation.role ?? 'member' })
-            .onConflictDoNothing();
-          await tx
-            .update(schema.invitation)
-            .set({ status: 'accepted' })
-            .where(eq(schema.invitation.id, invitation.id));
-        } else if (sso.signup === 'auto') {
-          await tx
-            .insert(schema.member)
-            .values({ organizationId: workspace.id, userId, role: 'member' })
-            .onConflictDoNothing();
-        } else {
+      const invitation =
+        login.intent.kind === 'invite'
+          ? await loadPendingInvitation(tx, login.intent.invitationId)
+          : memberships.length === 0
+            ? await findPendingInvitationFor(tx, login.email)
+            : null;
+      if (invitation) {
+        await tx
+          .insert(schema.member)
+          .values({ organizationId: invitation.organizationId, userId, role: invitation.role ?? 'member' })
+          .onConflictDoNothing();
+        await tx
+          .update(schema.invitation)
+          .set({ status: 'accepted' })
+          .where(eq(schema.invitation.id, invitation.id));
+        // The invitation opens its workspace.
+        await tx
+          .update(schema.user)
+          .set({ lastWorkspaceId: invitation.organizationId })
+          .where(eq(schema.user.id, userId));
+      } else if (memberships.length === 0) {
+        if (sso.signup !== 'auto' || !target) {
           throw new APIError('FORBIDDEN', {
             code: SSO_ERRORS.noAccount,
             message: 'You are not a member of this workspace. Ask your admin for an invitation.',
           });
         }
+        await tx
+          .insert(schema.member)
+          .values({ organizationId: target.id, userId, role: 'member' })
+          .onConflictDoNothing();
+        await tx.update(schema.user).set({ lastWorkspaceId: target.id }).where(eq(schema.user.id, userId));
       }
 
-      if (sso.adminGroups.length === 0) return;
+      if (sso.adminGroups.length === 0 || !target) return;
       const role = login.groups.some((group) => sso.adminGroups.includes(group)) ? 'admin' : 'member';
-      const current = await tx
+      const [membership] = await tx
         .select({ id: schema.member.id, role: schema.member.role })
         .from(schema.member)
-        .where(eq(schema.member.userId, userId));
-      for (const membership of current) {
-        // Owners are never demoted or changed by the provider.
-        if (isOwner(membership.role) || membership.role === role) continue;
-        await tx.update(schema.member).set({ role }).where(eq(schema.member.id, membership.id));
-      }
+        .where(and(eq(schema.member.userId, userId), eq(schema.member.organizationId, target.id)))
+        .limit(1);
+      // Owners are never demoted or changed by the provider.
+      if (!membership || isOwner(membership.role) || membership.role === role) return;
+      await tx.update(schema.member).set({ role }).where(eq(schema.member.id, membership.id));
     });
   }
 

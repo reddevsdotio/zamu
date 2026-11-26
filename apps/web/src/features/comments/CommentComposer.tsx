@@ -2,6 +2,7 @@ import type { Member } from '@zamu/contracts';
 import { useRef, useState } from 'react';
 import { Button as AriaButton } from 'react-aria-components';
 import { describeError, isClientError } from '~/features/tasks/errors';
+import { useWorkspaceId } from '~/lib/workspace';
 import { cn, Kbd, Switch, useHotkeys } from '~/ui';
 import { CommentBox, type CommentBoxHandle } from './CommentBox';
 import { useCreateComment } from './queries';
@@ -12,6 +13,7 @@ import { useCreateComment } from './queries';
 // ⌘↵. A failed send keeps the text. Unsent text survives switching tasks for the session, and a task
 // with a draft opens with the box open. Mirrored tasks take comments only: notes are the file's.
 
+/** Unsent drafts by workspace and task: PAY-1 in one workspace is not PAY-1 in another. */
 const drafts = new Map<string, { text: string; note: boolean }>();
 
 /** Forgets every unsent draft (tests, sign-out). */
@@ -44,7 +46,8 @@ export function CommentComposer({
   notes = false,
   className,
 }: CommentComposerProps) {
-  const saved = drafts.get(taskKey);
+  const draftKey = `${useWorkspaceId()}:${taskKey}`;
+  const saved = drafts.get(draftKey);
   const [value, setValueState] = useState(() => saved?.text ?? '');
   const [isNote, setNoteState] = useState(() => (notes && saved?.note) ?? false);
   const [isOpen, setOpen] = useState(() => saved != null);
@@ -53,8 +56,8 @@ export function CommentComposer({
   const closedLabel = placeholder ?? (notes ? 'Leave a comment or a note' : 'Leave a comment');
 
   const remember = (text: string, note: boolean) => {
-    if (text) drafts.set(taskKey, { text, note });
-    else drafts.delete(taskKey);
+    if (text) drafts.set(draftKey, { text, note });
+    else drafts.delete(draftKey);
   };
   const setValue = (next: string) => {
     setValueState(next);

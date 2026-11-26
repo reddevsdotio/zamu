@@ -1,6 +1,7 @@
 // Which project a command works on when it needs one: --project, then ZAMU_PROJECT, then the nearest
-// .zamu.json, then the project whose repository matches this clone's git remote. Also the git facts
-// behind it (repository root, remote URL), read with the git binary.
+// .zamu.json, then the project whose repository matches this clone's git remote, all within the
+// login the command uses (workspace.ts picks it). Also the git facts behind it (repository root,
+// remote URL), read with the git binary.
 import { execFile } from 'node:child_process';
 import { readFile, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -104,7 +105,8 @@ async function remoteProject(context: CommandContext, remote: GitRemote): Promis
   const repository = parseRepositoryUrl(remote.url);
   if (!repository) return null;
   const client = await context.client();
-  const { items } = ProjectList.parse(await client.projects.list());
+  // The login's match already listed its projects (workspace.ts): no second request.
+  const { items } = context.login?.projects ?? ProjectList.parse(await client.projects.list());
   const match = items.find(
     (project) => project.repository && parseRepositoryUrl(project.repository)?.key === repository.key,
   );

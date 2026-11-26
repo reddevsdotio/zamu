@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { Task, TaskListItem } from '@zamu/contracts';
 import { useRef, useState } from 'react';
 import { relatedOf, taskQuery } from '~/features/tasks/queries';
+import { useApi } from '~/lib/workspace';
 import { MenuNote, PickerMenu, type PickerMenuItem, StatusGlyph } from '~/ui';
 import { useFieldChange } from './apply';
 import { useTaskSearch } from './BlockerPicker';
@@ -133,10 +134,11 @@ export function ParentMenu({
 const isFullTask = (target: FieldTarget): target is Task => 'createdBy' in target;
 
 function ParentPickerContent({ target, close }: { target: FieldTarget; close: () => void }) {
+  const api = useApi();
   const [query, setQuery] = useState('');
   const [refusals, setRefusals] = useState<Map<string, string>>(() => new Map());
   // Rows know their parent's key and their subtask count; the detail (cached in the task view) knows more.
-  const detail = useQuery({ ...taskQuery(target.key), enabled: !isFullTask(target) }).data;
+  const detail = useQuery({ ...taskQuery(api, target.key), enabled: !isFullTask(target) }).data;
   const task = detail ?? (isFullTask(target) ? target : undefined);
   const search = useTaskSearch(target.project.key, query, { topLevel: true });
   const { apply } = useFieldChange();

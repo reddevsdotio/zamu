@@ -6,6 +6,8 @@ import { isMirrored } from '~/features/project-header';
 import { useOptionalQuickCreate } from '~/features/shell/quick-create';
 import { Markdown } from '~/features/tasks/Markdown';
 import { clearedFilter, DisplayButton, FilterButton, FilterChips } from '~/features/views';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
+import { workspacePath } from '~/lib/workspace-paths';
 import { Button, EmptyState, Skeleton, SourceBadge, useHotkeys } from '~/ui';
 import { formatDay } from './dates';
 import { EditMilestoneDialog } from './MilestoneDialogHost';
@@ -72,9 +74,11 @@ export function milestoneSplit(
 }
 
 export function MilestonePage({ projectKey, milestoneId }: MilestonePageProps) {
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
   const navigate = useNavigate();
   const quickCreate = useOptionalQuickCreate();
-  const milestone = useQuery(milestoneQuery(milestoneId));
+  const milestone = useQuery(milestoneQuery(api, milestoneId));
   const today = useServerToday(projectKey);
   const [editing, setEditing] = useState(false);
   const view = usePlanningTasks(projectKey, { milestone: milestoneId });
@@ -84,7 +88,8 @@ export function MilestonePage({ projectKey, milestoneId }: MilestonePageProps) {
   const mirrored = isMirrored(project);
   const isLocked = (data?.locked ?? []).length > 0;
   const newTask = () => quickCreate?.open(projectKey);
-  const toBoard = () => void navigate({ href: `/p/${projectKey}?view=board&milestone=${milestoneId}` });
+  const toBoard = () =>
+    void navigate({ href: workspacePath(workspace, `/p/${projectKey}?view=board&milestone=${milestoneId}`) });
   useHotkeys({ v: toBoard });
 
   const newTaskButton = (
@@ -106,7 +111,9 @@ export function MilestonePage({ projectKey, milestoneId }: MilestonePageProps) {
               action={
                 <Button
                   variant="secondary"
-                  onPress={() => void navigate({ href: `/p/${projectKey}/milestones` })}
+                  onPress={() =>
+                    void navigate({ href: workspacePath(workspace, `/p/${projectKey}/milestones`) })
+                  }
                 >
                   All milestones
                 </Button>

@@ -3,6 +3,7 @@ import { isOpenStatus, type RelatedTask, type Task } from '@zamu/contracts';
 import type { ReactNode, RefObject } from 'react';
 import { Button as AriaButton } from 'react-aria-components';
 import { useFieldChange } from '~/features/task-fields';
+import { useWorkspaceSlug } from '~/lib/workspace';
 import { Avatar, CloseGlyph, cn, Kbd, PlusGlyph, StatusGlyph, SubtaskProgress } from '~/ui';
 
 // The task view's Subtasks and Blocked by boxes (screens.css .mbox, frames 051, 053, 054): one row per
@@ -29,6 +30,7 @@ function RelationRow({
   quiet: boolean;
   onRemove?: () => void;
 }) {
+  const workspace = useWorkspaceSlug();
   if (!task) {
     return (
       <li className="flex h-8.5 items-center gap-2.5 border-b border-line-soft px-2.5 last:border-b-0">
@@ -40,8 +42,8 @@ function RelationRow({
   return (
     <li className="group relative flex h-8.5 items-center border-b border-line-soft last:border-b-0 hover:bg-bg-grp has-focus-visible:bg-bg-grp">
       <Link
-        to="/p/$projectKey/$taskKey"
-        params={{ projectKey: projectOfKey(task.key), taskKey: task.key }}
+        to="/w/$workspace/p/$projectKey/$taskKey"
+        params={{ workspace, projectKey: projectOfKey(task.key), taskKey: task.key }}
         className="flex h-full min-w-0 flex-1 items-center gap-2.5 px-2.5 whitespace-nowrap outline-none focus-visible:focus-ring-inset"
       >
         <StatusGlyph status={task.status} />
@@ -151,6 +153,7 @@ export function SubtasksSection({ task, readOnly, onAdd, addRef }: RelationSecti
 
 /** "Blocks PAY-150, PAY-151" (the reverse relation), links to each. */
 function BlocksLine({ blocks }: { blocks: readonly (RelatedTask | null)[] }) {
+  const workspace = useWorkspaceSlug();
   const visible = blocks.filter((item): item is RelatedTask => item != null);
   const hidden = blocks.length - visible.length;
   if (blocks.length === 0) return null;
@@ -163,8 +166,8 @@ function BlocksLine({ blocks }: { blocks: readonly (RelatedTask | null)[] }) {
         <span key={item.key}>
           {index > 0 ? ', ' : null}
           <Link
-            to="/p/$projectKey/$taskKey"
-            params={{ projectKey: projectOfKey(item.key), taskKey: item.key }}
+            to="/w/$workspace/p/$projectKey/$taskKey"
+            params={{ workspace, projectKey: projectOfKey(item.key), taskKey: item.key }}
             title={item.title}
             className="rounded-sm outline-none hover:text-fg-2 focus-visible:focus-ring"
           >

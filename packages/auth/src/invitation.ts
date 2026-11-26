@@ -1,5 +1,8 @@
+// Accepting an invitation: by creating the invited person's account (acceptInvitationWithSignUp), or, for
+// someone who already has an account and is signed in with the invited email, by joining the workspace
+// (acceptInvitationAsMember). Either way the invitation opens its workspace: user.last_workspace_id.
 import { type Db, schema } from '@zamu/db';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Auth } from './auth';
 import { MIN_PASSWORD_LENGTH } from './options';
 import { authConfigOf } from './settings';
@@ -16,7 +19,11 @@ export type AcceptInvitationErrorCode =
   | 'ACCOUNT_EXISTS'
   | 'INVALID_INPUT'
   /** PASSWORD_LOGIN=disabled: invited people join through SSO instead. */
-  | 'PASSWORD_LOGIN_DISABLED';
+  | 'PASSWORD_LOGIN_DISABLED'
+  /** acceptInvitationAsMember: no session, or the session is not a person's. */
+  | 'NOT_SIGNED_IN'
+  /** acceptInvitationAsMember: signed in with another email than the invitation's. */
+  | 'WRONG_ACCOUNT';
 
 export class AcceptInvitationError extends Error {
   constructor(
@@ -147,6 +154,11 @@ export async function acceptInvitationWithSignUp(
       returnHeaders: true,
     });
     if (!accepted.response) throw new Error('acceptInvitation returned no invitation');
+    // The invitation opens its workspace: `/` lands there.
+    await db
+      .update(schema.user)
+      .set({ lastWorkspaceId: invitation.organizationId })
+      .where(eq(schema.user.id, userId));
     return {
       userId,
       workspaceId: invitation.organizationId,
@@ -165,4 +177,101 @@ export async function acceptInvitationWithSignUp(
 
 function signUpEmail(auth: Auth, body: { name: string; email: string; password: string }, headers: Headers) {
   return auth.api.signUpEmail({ body, headers, returnHeaders: true });
+}
+
+export interface AcceptInvitationAsMemberResult {
+  userId: string;
+  workspaceId: string;
+  /** The workspace's current slug: the caller opens /w/<slug>. */
+  workspaceSlug: string;
+}
+
+/**
+ * Joins the invitation's workspace as the signed-in person, who must have the invited email (compared
+ * without case). Adds the membership with the invited role, marks the invitation accepted and makes the
+ * workspace the one used last, in one transaction that locks the invitation so it is used once. Someone
+ * already in the workspace just has the invitation marked accepted.
+ *
+ * `headers` are the request's headers, for the session cookie.
+ */
+export async function acceptInvitationAsMember(
+  { auth, db }: { auth: Auth; db: Db },
+  invitationId: string,
+  options: { headers: Headers; now?: Date },
+): Promise<AcceptInvitationAsMemberResult> {
+  const session = await auth.api.getSession({ headers: options.headers });
+  if (!session) throw new AcceptInvitationError('NOT_SIGNED_IN', 'Sign in to join this workspace.');
+  const [user] = await db
+    .select({ id: schema.user.id, kind: schema.user.kind, email: schema.user.email })
+    .from(schema.user)
+    .where(eq(schema.user.id, session.user.id))
+    .limit(1);
+  if (user?.kind !== 'person') {
+    throw new AcceptInvitationError('NOT_SIGNED_IN', 'Sign in to join this workspace.');
+  }
+  if (!UUID.test(invitationId)) {
+    throw new AcceptInvitationError('INVITATION_NOT_USABLE', 'This invitation cannot be used.');
+  }
+  const now = options.now ?? new Date();
+
+  return db.transaction(async (tx) => {
+    const [invitation] = await tx
+      .select({
+        email: schema.invitation.email,
+        status: schema.invitation.status,
+        expiresAt: schema.invitation.expiresAt,
+        role: schema.invitation.role,
+        organizationId: schema.invitation.organizationId,
+      })
+      .from(schema.invitation)
+      .where(eq(schema.invitation.id, invitationId))
+      .for('update')
+      .limit(1);
+    if (invitation?.status !== 'pending' || invitation.expiresAt.getTime() <= now.getTime()) {
+      throw new AcceptInvitationError('INVITATION_NOT_USABLE', 'This invitation cannot be used.');
+    }
+    const invited = invitation.email.trim().toLowerCase();
+    if (user.email.trim().toLowerCase() !== invited) {
+      throw new AcceptInvitationError(
+        'WRONG_ACCOUNT',
+        `This invitation is for ${invited}. You are signed in as ${user.email}.`,
+      );
+    }
+
+    await tx
+      .insert(schema.member)
+      .values({
+        organizationId: invitation.organizationId,
+        userId: user.id,
+        role: invitation.role ?? 'member',
+      })
+      .onConflictDoNothing();
+    await tx
+      .update(schema.invitation)
+      .set({ status: 'accepted' })
+      .where(and(eq(schema.invitation.id, invitationId), eq(schema.invitation.status, 'pending')));
+    await tx
+      .update(schema.user)
+      .set({ lastWorkspaceId: invitation.organizationId })
+      .where(eq(schema.user.id, user.id));
+    const [workspace] = await tx
+      .select({ slug: schema.organization.slug })
+      .from(schema.organization)
+      .where(eq(schema.organization.id, invitation.organizationId))
+      .limit(1);
+    if (!workspace) throw new Error('acceptInvitationAsMember: the invitation has no workspace');
+    return { userId: user.id, workspaceId: invitation.organizationId, workspaceSlug: workspace.slug };
+  });
+}
+
+/** True when a person with this email exists (compared without case). For the invitation screen. */
+export async function hasPersonWithEmail(db: Db, email: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: schema.user.id })
+    .from(schema.user)
+    .where(
+      and(eq(sql`lower(${schema.user.email})`, email.trim().toLowerCase()), eq(schema.user.kind, 'person')),
+    )
+    .limit(1);
+  return rows.length > 0;
 }

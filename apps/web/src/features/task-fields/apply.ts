@@ -13,6 +13,7 @@ import {
   useBulkUpdateTasks,
   useUpdateTask,
 } from '~/features/tasks/queries';
+import { useApi } from '~/lib/workspace';
 import { localToday } from '~/ui';
 import { describeChange } from './describe';
 import { confirmFinishing } from './finishing';
@@ -65,6 +66,7 @@ async function undoAll(run: Run, inverses: { task: FieldTarget; patch: TaskPatch
 }
 
 export function useFieldChange(): FieldChange {
+  const api = useApi();
   const queryClient = useQueryClient();
   const update = useUpdateTask();
   const bulk = useBulkUpdateTasks();
@@ -79,7 +81,7 @@ export function useFieldChange(): FieldChange {
       options: ApplyOptions & { isUndo?: boolean },
     ): Promise<boolean> => {
       const today = localToday();
-      const current = targets.map((target) => cachedTask(queryClient, target.key) ?? target);
+      const current = targets.map((target) => cachedTask(api, queryClient, target.key) ?? target);
       const changing = current.filter((task) => !isNoopPatch(task, patch));
       if (changing.length === 0) return false;
       const subject = subjectOf(changing);
@@ -93,7 +95,7 @@ export function useFieldChange(): FieldChange {
       // A person moving tasks with open items to In review or Done answers the finishing warning
       // first. An Undo puts back a status the person already had, so it never asks.
       if (patch.status !== undefined && !options.isUndo) {
-        if (!(await confirmFinishing(queryClient, changing, patch.status))) return false;
+        if (!(await confirmFinishing(api, queryClient, changing, patch.status))) return false;
       }
       const inverses = changing.map((task) => ({ task, patch: inversePatch(task, patch) }));
       try {
@@ -124,7 +126,7 @@ export function useFieldChange(): FieldChange {
       }
       return true;
     },
-    [queryClient, updateAsync, bulkAsync],
+    [queryClient, updateAsync, bulkAsync, api],
   );
   runRef.current = run;
 

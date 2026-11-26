@@ -8,6 +8,7 @@ import {
   useFinishingRequest,
 } from '~/features/task-fields';
 import { taskQuery } from '~/features/tasks/queries';
+import { useApi } from '~/lib/workspace';
 import { Button, ConfirmBody, Dialog, DialogFooter, Modal, useHotkeys } from '~/ui';
 import { FinishDialog } from './FinishDialog';
 import { needsFinishing } from './ops';
@@ -43,7 +44,8 @@ function TaskFinishing({
   request: Extract<FinishingRequest, { kind: 'task' }>;
   onAnswer: (move: boolean) => void;
 }) {
-  const { data: task, isError } = useQuery(taskQuery(request.key));
+  const api = useApi();
+  const { data: task, isError } = useQuery(taskQuery(api, request.key));
   const settled = task != null && !needsFinishing(task, request.status);
   // Once the dialog is open it stays open: settling the last item in it must not move the task by
   // itself. The person reads "Every item is checked or waived" and presses Move.

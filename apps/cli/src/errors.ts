@@ -270,6 +270,16 @@ export function toCliError(error: unknown, url?: string): CliError {
         ? 'The server did not accept the API key. It may be revoked, expired or mistyped.'
         : undefined;
     if (status === 401) hints.unshift('Run zamu login --key <key> with a valid key, or fix ZAMU_KEY.');
+    // 0.10: the request named a workspace (x-zamu-workspace) the key or its user can't use.
+    if (code === 'WORKSPACE_MISMATCH') {
+      hints.unshift(
+        'The key is for another workspace than the one named. zamu workspaces lists your logins; ' +
+          'zamu login --key <key> stores a key for that workspace.',
+      );
+    }
+    if (code === 'NOT_A_MEMBER') {
+      hints.unshift('zamu workspaces lists your logins; ask an owner of that workspace for an invitation.');
+    }
     return new CliError(body, exitCodeForStatus(status), hints, message);
   }
 

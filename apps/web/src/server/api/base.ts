@@ -2,8 +2,11 @@
 // error mapping first, then the actor. Both run before input validation, so a request without
 // credentials gets 401 even when its input is also wrong. M6: the actor carries the machine and
 // branch the CLI sent (requestSource), which core writes on activity rows and comments.
+// 0.10: the workspace comes from the key, or for a session from the x-zamu-workspace header (else the
+// workspace used last). Not signed in is 401; signed in but outside the named workspace is 403
+// NOT_A_MEMBER; a key sent with another workspace's slug is 403 WORKSPACE_MISMATCH.
 import { implement } from '@orpc/server';
-import { getActorFromRequest } from '@zamu/auth';
+import { resolveActor } from '@zamu/auth';
 import { contract } from '@zamu/contracts';
 import type { Actor, CoreContext } from '@zamu/core';
 import { requestSource } from '../context';
@@ -13,7 +16,10 @@ import { toApiError } from './errors';
 export interface ApiContext {
   /** Database, Better Auth and links, shared by the process. */
   core: CoreContext;
-  /** Request headers: the session cookie or `Authorization: Bearer zamu_live_...`. */
+  /**
+   * Request headers: the session cookie or `Authorization: Bearer zamu_live_...`, and the optional
+   * x-zamu-workspace header naming the workspace by slug.
+   */
   headers: Headers;
   /** Echoed in error bodies and the x-request-id header. */
   requestId?: string;
@@ -35,13 +41,14 @@ const problems = os.middleware(async ({ context, next }) => {
 });
 
 const authenticated = os.middleware(async ({ context, next, errors }) => {
-  const actor = await getActorFromRequest(context.core, { headers: context.headers });
-  if (!actor) {
-    throw errors.UNAUTHORIZED({
-      message: 'Sign in, or send an API key as Authorization: Bearer zamu_live_...',
-      data: {},
-    });
+  const result = await resolveActor(context.core, { headers: context.headers });
+  if (!result.ok) {
+    const { code, message } = result;
+    if (code === 'NOT_A_MEMBER') throw errors.NOT_A_MEMBER({ message, data: {} });
+    if (code === 'WORKSPACE_MISMATCH') throw errors.WORKSPACE_MISMATCH({ message, data: {} });
+    throw errors.UNAUTHORIZED({ message, data: {} });
   }
+  const { actor } = result;
   const source = requestSource(context.headers);
   return next({ context: { actor: source ? { ...actor, source } : actor } });
 });

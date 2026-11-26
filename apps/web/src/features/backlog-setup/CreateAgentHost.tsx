@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { Member } from '@zamu/contracts';
 import { AgentCreation } from '~/features/settings/CreationFlows';
 import { membersQuery, meQuery, projectsQuery, useCreateAgent } from '~/features/settings/queries';
+import { useApi } from '~/lib/workspace';
 import type { AgentSuggestion } from './agent-suggestions';
 
 // Add agent from the Mappings step, wired to the server: prefilled with the assignee's name, the
@@ -18,10 +19,11 @@ export interface CreateAgentHostProps {
 }
 
 export function CreateAgentHost({ draft, projectId, onClose, onCreated }: CreateAgentHostProps) {
+  const api = useApi();
   // The form reads its defaults once, on open, so it waits for the people and projects it offers.
-  const me = useQuery(meQuery());
-  const members = useQuery(membersQuery());
-  const projects = useQuery(projectsQuery());
+  const me = useQuery(meQuery(api));
+  const members = useQuery(membersQuery(api));
+  const projects = useQuery(projectsQuery(api));
   const isOpen = draft !== null && Boolean(me.data && members.data && projects.data);
   const createAgent = useCreateAgent();
   const people = members.data?.items.filter((member) => member.kind === 'person') ?? [];

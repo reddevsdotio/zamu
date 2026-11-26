@@ -3,7 +3,7 @@ import { schema } from '@zamu/db';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listApiKeys } from './api-keys';
-import { Conflict, Forbidden, Invalid, NotFound } from './errors';
+import { Conflict, Forbidden, Invalid, NotFound, ResponsibleForAgents } from './errors';
 import { getMe } from './me';
 import { createAgent, listMembers, removeMember } from './members';
 import { createProject } from './projects';
@@ -184,9 +184,44 @@ describe('members', () => {
       const [stored] = await ctx.db.select().from(schema.apikey).where(eq(schema.apikey.id, key.id));
       expect(stored?.enabled).toBe(false);
 
+      // w.member is still the responsible human of w.agent.
+      await expect(removeMember(ctx, adminActor, { userId: w.member.id })).rejects.toThrow(
+        ResponsibleForAgents,
+      );
+      await removeMember(ctx, adminActor, { userId: w.agent.id });
       await removeMember(ctx, adminActor, { userId: w.member.id });
       const { items } = await listMembers(ctx, adminActor);
-      expect(items.map((m) => m.id).sort()).toEqual([w.owner.id, admin.id, w.agent.id].sort());
+      expect(items.map((m) => m.id).sort()).toEqual([w.owner.id, admin.id].sort());
+    });
+
+    it('refuses to remove the responsible human of agents here, naming them', async () => {
+      const w = await createWorld(ctx.db);
+      const elsewhere = await createWorld(ctx.db, 'Elsewhere');
+      const second = await createAgent(ctx, w.ownerActor, {
+        name: `aaa-bot-${crypto.randomUUID().slice(0, 6)}`,
+        responsibleUserId: w.member.id,
+        scope: { projects: 'all', access: 'read' },
+      });
+      // An agent the member answers for in another workspace does not count here.
+      await ctx.db
+        .update(schema.user)
+        .set({ responsibleUserId: w.member.id })
+        .where(eq(schema.user.id, elsewhere.agent.id));
+
+      const error = await removeMember(ctx, w.ownerActor, { userId: w.member.id }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ResponsibleForAgents);
+      const refused = error as ResponsibleForAgents;
+      expect(refused.code).toBe('CONFLICT');
+      expect(refused.message).toBe(
+        `${w.member.name} is responsible for ${second.agent.name} and ${w.agent.name} here. ` +
+          'Hand them to someone else or remove them first.',
+      );
+      expect(refused.agents.map((a) => a.id)).toEqual([second.agent.id, w.agent.id]);
+      expect(refused.issues).toEqual([
+        { path: 'agents', message: second.agent.name },
+        { path: 'agents', message: w.agent.name },
+      ]);
+      expect((await listMembers(ctx, w.ownerActor)).items.map((m) => m.id)).toContain(w.member.id);
     });
   });
 });

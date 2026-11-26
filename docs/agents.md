@@ -21,6 +21,10 @@ The server keeps only a hash of the key. If you lose it, revoke it and create a 
 To give an agent another key later, open the agent's row menu in Settings > Members and pick
 Manage keys, then New key. The responsible human can do this too.
 
+An agent belongs to one workspace, and so do its keys. When the same coding agent works for two
+workspaces, add it in each: two agents, which may have the same name, each with its own keys and its own
+history. Deleting a workspace deletes the agents that belong only to it.
+
 ## Scope keys
 
 Each key has two settings, chosen when you create it and fixed afterwards:
@@ -67,20 +71,65 @@ Then give the agent two environment variables instead of running `zamu login`:
 | `ZAMU_URL` | The server URL, the same as `BETTER_AUTH_URL` on the server. |
 | `ZAMU_KEY` | The agent's API key (`zamu_live_...`).                       |
 
-They override the config file that `zamu login` writes, so the agent's key never mixes with a person's login on
+They override the logins that `zamu login` stores, so the agent's key never mixes with a person's login on
 the same machine. Store `ZAMU_KEY` as a secret in the agent's runner or CI settings, never in the repository.
+A key acts in its own workspace, so one `ZAMU_KEY` means one workspace; an agent that works in several
+uses stored logins instead (see [Several workspaces](#several-workspaces)).
 
 Check the setup:
 
 ```sh
 $ zamu whoami
 claude-dev for Ana Ruiz (agent)
-Workspace  Reddevs
+Workspace  Reddevs (reddevs)
+Login      from ZAMU_KEY
 Role       member
 Access     API key: all projects, write
 Server     https://zamu.example.com
 Project    PAY (from git remote gitlab.com/reddevs/payments)
 ```
+
+## Several workspaces
+
+A key belongs to one workspace. A person or an agent that works in several runs `zamu login` once per
+workspace (and per server). zamu stores one login for each in `$XDG_CONFIG_HOME/zamu/config.json`
+(`~/.config/zamu/config.json`); logging in again with a new key for the same workspace replaces its key.
+The first login is the default.
+
+```sh
+zamu login --key zamu_live_... --url https://zamu.example.com   # Acme: the default
+zamu login --key zamu_live_...                                  # Globex, on the same server
+zamu workspaces                                                 # the logins; * marks the one used here
+zamu workspaces --default globex                                # make Globex the default
+zamu --workspace globex tasks list --mine                       # one command in Globex
+zamu logout --workspace globex                                  # remove one login, or all with --all
+```
+
+`zamu login --default` makes the new login the default. `zamu logout` without a flag removes the login
+used in the current folder.
+
+Each command uses the first login that applies:
+1. `--workspace <slug>`, a slug or a workspace id. Every command takes it.
+2. `ZAMU_KEY` (with `ZAMU_URL`).
+3. The login zamu matched to this clone's git remote before, cached in `$XDG_STATE_HOME/zamu/clones.json`
+   (`~/.local/state/zamu/clones.json`).
+4. The login whose workspace has a project linked to the clone's remote, or, when none has, the project
+   the nearest `.zamu.json` names. zamu asks every login at once, within the usual 5 seconds, and caches a
+   single match. When the cached login gets a 403 or 404, zamu matches again.
+5. The default login.
+
+With a single login there is nothing to match. When a clone matches two or more logins, for example two
+workspaces that each have a project `PAY` while `.zamu.json` names `PAY`, the command stops with exit code
+1 and lists the `--workspace` values to pass. `zamu whoami` shows which login applies in the current folder
+and why ("Login from the login for this clone's git remote").
+
+Every request names the login's workspace in the `x-zamu-workspace` header. A key sent for another
+workspace is refused with 403 `WORKSPACE_MISMATCH` (exit code 4), so `zamu --workspace globex` with an Acme
+`ZAMU_KEY` fails instead of reading Acme's data.
+
+The config file of zamu 0.9 (`{ "url", "key" }`) keeps working. The first command that reaches the server
+reads the key's workspace and writes the file back in the new form; offline, zamu uses the old file as it
+is.
 
 ## Link the repository to its project
 
@@ -138,16 +187,16 @@ to narrow it to one or more projects.
 
 Tell the agent about the exit codes so it can react without parsing text:
 
-| Code | Meaning                                                                                      |
-| ---- | -------------------------------------------------------------------------------------------- |
-| 0    | OK                                                                                           |
-| 1    | Usage error, or the server rejected the input (400, 409, 422), open items included           |
-| 2    | Not logged in, or the key was refused (401): revoked or wrong                                |
-| 3    | Not found (404)                                                                              |
-| 4    | Forbidden: outside the key's scope, a read-only key writing, or owners and admins only (403) |
-| 5    | Server unreachable, 5xx, or a response this CLI does not understand                          |
-| 6    | Backlog.md: the change belongs in the files, or the mirror is paused or switched (409)       |
-| 7    | Queued: the server didn't answer, and zamu stored the write to send later                    |
+| Code | Meaning                                                                                                                   |
+| ---- | ------------------------------------------------------------------------------------------------------------------------- |
+| 0    | OK                                                                                                                        |
+| 1    | Usage error, the server rejected the input (400, 409, 422), open items included, or a clone that matches several logins   |
+| 2    | Not logged in, or the key was refused (401): revoked or wrong                                                             |
+| 3    | Not found (404)                                                                                                           |
+| 4    | Forbidden: outside the key's scope, a read-only key writing, owners and admins only, or a key for another workspace (403) |
+| 5    | Server unreachable, 5xx, or a response this CLI does not understand                                                       |
+| 6    | Backlog.md: the change belongs in the files, or the mirror is paused or switched (409)                                    |
+| 7    | Queued: the server didn't answer, and zamu stored the write to send later                                                 |
 
 Exit code 6 covers the problem codes `TASK_MIRRORED`, `MILESTONE_MIRRORED`, `PROJECT_MIRRORED`,
 `LABEL_MIRRORED`, `PROJECT_NOT_EMPTY`, `BACKLOG_PAUSED` and `BACKLOG_DETACHED`. Other conflicts, such as two
@@ -221,9 +270,13 @@ prints "Queued: the server didn't answer. It will be sent on your next zamu comm
 every other write, such as creating a task, fails as before. The next zamu command that reaches the server
 sends the queued writes first, oldest first, and skips a queued status change when the task moved in the
 meantime. A status change is queued only when zamu has seen that task's status before; otherwise it fails
-and asks you to run `zamu tasks show` once the server answers. A queued write is sent only by a command
-that uses the key that queued it, so it keeps its author when a person and an agent share a machine. `zamu queue` lists what waits, `zamu queue drop ID` removes one write, and `zamu whoami` shows the
-count.
+and asks you to run `zamu tasks show` once the server answers. A queued write keeps the login it was
+queued with: the next command that reaches the server sends it with that login's key and workspace,
+whichever login the command itself uses. A write queued with a `ZAMU_KEY` that no stored login holds waits
+for a command that uses that key, so it keeps its author when a person and an agent share a machine.
+Remembered statuses are kept per server and workspace, so `PAY-1` of one workspace never stands in for
+`PAY-1` of another. `zamu queue` lists what waits, `zamu queue drop ID` removes one write, and `zamu whoami`
+shows the count.
 
 ## Comments and mentions
 
@@ -476,44 +529,45 @@ breaking change ships as `zamu.v2`. The Zod schemas live in `packages/contracts`
 `src/cli.ts`, entities in `src/entities.ts`), and the server publishes the same shapes as OpenAPI at
 `GET /api/v1/openapi.json`.
 
-| Schema                      | `data`                                                                       |
-| --------------------------- | ---------------------------------------------------------------------------- |
-| `zamu.v1.login`             | `{ url, me }`                                                                |
-| `zamu.v1.logout`            | `{ url }` (null when nothing was stored)                                     |
-| `zamu.v1.whoami`            | `{ user, workspace, role, auth: { method, scope }, project, queued }`        |
-| `zamu.v1.dashboard`         | `{ scope, generatedAt, groups, projects, agents }` (see Dashboard above)     |
-| `zamu.v1.projects.list`     | `{ items: Project[] }` with open counts per status                           |
-| `zamu.v1.projects.delete`   | `{ deleted }`: the key of the deleted project                                |
-| `zamu.v1.tasks.list`        | `{ items: TaskListItem[], nextCursor, counts }`                              |
-| `zamu.v1.tasks.show`        | `{ task: Task, activity: Activity[], timeline, timelineCounts }`             |
-| `zamu.v1.tasks.create`      | `Task`                                                                       |
-| `zamu.v1.tasks.update`      | `Task`                                                                       |
-| `zamu.v1.comments.list`     | `{ items: Comment[] }`                                                       |
-| `zamu.v1.comments.add`      | `Comment`                                                                    |
-| `zamu.v1.comments.edit`     | `Comment`                                                                    |
-| `zamu.v1.comments.delete`   | `Comment`, with `body` null and `deletedAt` set                              |
-| `zamu.v1.notes.add`         | `Comment` with `kind: "note"`                                                |
-| `zamu.v1.milestones.list`   | `{ items: Milestone[] }` with progress counts                                |
-| `zamu.v1.milestones.create` | `Milestone`                                                                  |
-| `zamu.v1.milestones.update` | `Milestone`                                                                  |
-| `zamu.v1.cycles.list`       | `{ items: Cycle[] }` with state, days left and counts                        |
-| `zamu.v1.cycles.create`     | `Cycle`                                                                      |
-| `zamu.v1.cycles.current`    | `Cycle`, or `null` when no cycle is running                                  |
-| `zamu.v1.cycles.end`        | `Cycle` with its summary, plus `rollovers`: the tasks that moved and where   |
-| `zamu.v1.labels.list`       | `{ items: Label[] }` with `usageCount` per label                             |
-| `zamu.v1.labels.create`     | `Label` with `usageCount`                                                    |
-| `zamu.v1.labels.update`     | `Label` with `usageCount`                                                    |
-| `zamu.v1.labels.delete`     | `{ deleted: Label, usageCount }`: the label as it was, and how many lost it  |
-| `zamu.v1.backlog.status`    | `BacklogSourceStatus`: mode, state, source, last read, counts, problems      |
-| `zamu.v1.backlog.refresh`   | The refresh request plus `outcome` and, with `--wait`, the final `status`    |
-| `zamu.v1.backlog.export`    | `{ project, dir, dryRun, format, files: [{ path, action }] }`                |
-| `zamu.v1.instructions`      | `{ topic, text }`                                                            |
-| `zamu.v1.queue.list`        | `{ items }`: the queued writes, oldest first                                 |
-| `zamu.v1.queue.drop`        | `{ dropped }`: the write removed from the queue                              |
-| `zamu.v1.queued`            | `{ entry }`: the write zamu queued (exit code 7)                             |
-| `zamu.v1.link`              | `{ project, target, action, repository, file }`                              |
-| `zamu.v1.agents`            | `{ file, action, project, block, replacedBacklogBlock }`                     |
-| `zamu.v1.error`             | RFC 9457 problem: `{ type, title, status, code, detail, requestId, issues }` |
+| Schema                      | `data`                                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------------- |
+| `zamu.v1.login`             | `{ url, me, replaced, default }`                                                       |
+| `zamu.v1.logout`            | `{ url, removed }` (`url` null when nothing was stored)                                |
+| `zamu.v1.whoami`            | `{ user, workspace, role, auth: { method, scope }, project, queued, workspaceSource }` |
+| `zamu.v1.workspaces`        | `{ items: [{ url, workspace, default, current }], source }`                            |
+| `zamu.v1.dashboard`         | `{ scope, generatedAt, groups, projects, agents }` (see Dashboard above)               |
+| `zamu.v1.projects.list`     | `{ items: Project[] }` with open counts per status                                     |
+| `zamu.v1.projects.delete`   | `{ deleted }`: the key of the deleted project                                          |
+| `zamu.v1.tasks.list`        | `{ items: TaskListItem[], nextCursor, counts }`                                        |
+| `zamu.v1.tasks.show`        | `{ task: Task, activity: Activity[], timeline, timelineCounts }`                       |
+| `zamu.v1.tasks.create`      | `Task`                                                                                 |
+| `zamu.v1.tasks.update`      | `Task`                                                                                 |
+| `zamu.v1.comments.list`     | `{ items: Comment[] }`                                                                 |
+| `zamu.v1.comments.add`      | `Comment`                                                                              |
+| `zamu.v1.comments.edit`     | `Comment`                                                                              |
+| `zamu.v1.comments.delete`   | `Comment`, with `body` null and `deletedAt` set                                        |
+| `zamu.v1.notes.add`         | `Comment` with `kind: "note"`                                                          |
+| `zamu.v1.milestones.list`   | `{ items: Milestone[] }` with progress counts                                          |
+| `zamu.v1.milestones.create` | `Milestone`                                                                            |
+| `zamu.v1.milestones.update` | `Milestone`                                                                            |
+| `zamu.v1.cycles.list`       | `{ items: Cycle[] }` with state, days left and counts                                  |
+| `zamu.v1.cycles.create`     | `Cycle`                                                                                |
+| `zamu.v1.cycles.current`    | `Cycle`, or `null` when no cycle is running                                            |
+| `zamu.v1.cycles.end`        | `Cycle` with its summary, plus `rollovers`: the tasks that moved and where             |
+| `zamu.v1.labels.list`       | `{ items: Label[] }` with `usageCount` per label                                       |
+| `zamu.v1.labels.create`     | `Label` with `usageCount`                                                              |
+| `zamu.v1.labels.update`     | `Label` with `usageCount`                                                              |
+| `zamu.v1.labels.delete`     | `{ deleted: Label, usageCount }`: the label as it was, and how many lost it            |
+| `zamu.v1.backlog.status`    | `BacklogSourceStatus`: mode, state, source, last read, counts, problems                |
+| `zamu.v1.backlog.refresh`   | The refresh request plus `outcome` and, with `--wait`, the final `status`              |
+| `zamu.v1.backlog.export`    | `{ project, dir, dryRun, format, files: [{ path, action }] }`                          |
+| `zamu.v1.instructions`      | `{ topic, text }`                                                                      |
+| `zamu.v1.queue.list`        | `{ items }`: the queued writes, oldest first                                           |
+| `zamu.v1.queue.drop`        | `{ dropped }`: the write removed from the queue                                        |
+| `zamu.v1.queued`            | `{ entry }`: the write zamu queued (exit code 7)                                       |
+| `zamu.v1.link`              | `{ project, target, action, repository, file }`                                        |
+| `zamu.v1.agents`            | `{ file, action, project, block, replacedBacklogBlock }`                               |
+| `zamu.v1.error`             | RFC 9457 problem: `{ type, title, status, code, detail, requestId, issues }`           |
 
 Statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, `canceled`. Priorities are `none`, `low`,
 `medium`, `high`, `urgent`. Timestamps are ISO 8601 in UTC; dates such as `targetDate`, `startsOn` and

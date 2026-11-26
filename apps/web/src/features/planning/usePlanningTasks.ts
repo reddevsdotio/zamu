@@ -17,6 +17,7 @@ import {
   useProjectFilterFields,
   useUrlTaskFilter,
 } from '~/features/views';
+import { useApi } from '~/lib/workspace';
 
 // Tasks of a milestone or cycle page, with the M5 filter in the URL (status, assignee, label …) and
 // the person's list Display options of the project. Done and canceled tasks stay out of the rows
@@ -73,6 +74,7 @@ export function withoutClosed(
 }
 
 export function usePlanningTasks(projectKey: string, scope: PlanningScope, enabled = true) {
+  const api = useApi();
   const project = useProjectSummary(projectKey);
   const hide = 'milestone' in scope ? 'milestone' : 'cycle';
   const [filter, setFilter] = useUrlTaskFilter();
@@ -89,12 +91,12 @@ export function usePlanningTasks(projectKey: string, scope: PlanningScope, enabl
   const [showClosed, setShowClosed] = useState(false);
 
   const tasks = useQuery({
-    ...taskListQuery(planningListInput(projectKey, scope, filter, display)),
+    ...taskListQuery(api, planningListInput(projectKey, scope, filter, display)),
     enabled,
   });
   /** Every task of the page, for the counts and the end dialog. */
   const all = useQuery({
-    ...taskListQuery(planningListInput(projectKey, scope, {})),
+    ...taskListQuery(api, planningListInput(projectKey, scope, {})),
     enabled,
   });
 

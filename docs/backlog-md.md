@@ -255,9 +255,9 @@ list, the board, Home and every count, and keeps its comments, cycle and board p
 blocked reads "Removed task" in its Blocked by list. Opening it by
 URL shows "Removed from Backlog.md" with the commit where it was last seen.
 
-To list hidden tasks, use the "Removed from Backlog.md" filter on the task list (`/p/PAY?hidden=only`), or
-`GET /api/v1/tasks?project=PAY&hidden=only`. When a file with the same ID comes back, the task comes back with the same
-key.
+To list hidden tasks, use the "Removed from Backlog.md" filter on the task list
+(`/w/<slug>/p/PAY?hidden=only`), or `GET /api/v1/tasks?project=PAY&hidden=only`. When a file with the same ID
+comes back, the task comes back with the same key.
 
 Archived tasks (`archive/tasks/`, and the old `completed/` folder) are not hidden: they come in with their
 own status, usually Done.

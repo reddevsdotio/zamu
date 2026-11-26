@@ -1,5 +1,6 @@
 import { bootstrapAdmin, isFirstRun } from '@zamu/auth';
 import { cookieHeaders, testAuth } from '@zamu/auth/testing/helpers';
+import { schema } from '@zamu/db';
 import { createTestDatabase, type TestDatabase } from '@zamu/db/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadInstanceName, loadInvitation } from './queries';
@@ -59,7 +60,18 @@ describe('signed-out screen queries', () => {
       state: 'pending',
       email: 'tomas@reddevs.io',
       workspaceName: 'Reddevs',
+      workspaceSlug: 'reddevs',
       inviterName: 'Ana Ruiz',
+      hasAccount: false,
+    });
+  });
+
+  it('a pending invitation for an email with an account says so', async () => {
+    await database.db.insert(schema.user).values({ name: 'Dana', email: 'dana@reddevs.io', kind: 'person' });
+    const invitation = await invite('Dana@Reddevs.io');
+    expect(await loadInvitation(database.db, invitation.id)).toMatchObject({
+      state: 'pending',
+      hasAccount: true,
     });
   });
 
@@ -89,7 +101,14 @@ describe('signed-out screen queries', () => {
   });
 
   it('unknown and malformed ids are not found', async () => {
-    const notFound = { state: 'not-found', email: null, workspaceName: null, inviterName: null };
+    const notFound = {
+      state: 'not-found',
+      email: null,
+      workspaceName: null,
+      workspaceSlug: null,
+      inviterName: null,
+      hasAccount: false,
+    };
     expect(await loadInvitation(database.db, '00000000-0000-4000-8000-000000000000')).toEqual(notFound);
     expect(await loadInvitation(database.db, 'not-a-uuid')).toEqual(notFound);
   });

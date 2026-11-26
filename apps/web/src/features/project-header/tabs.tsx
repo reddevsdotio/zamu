@@ -1,4 +1,5 @@
 import { cycleLengthDays, type ProjectWithCounts } from '@zamu/contracts';
+import { type WorkspaceUrlSlug, workspacePath } from '~/lib/workspace-paths';
 
 // Links to a project's pages and the current cycle's note. (M5 dropped the M4 header tabs: the sidebar
 // lists a project's pages.)
@@ -10,9 +11,9 @@ export type ProjectTabsInput = Pick<
   'key' | 'usesMilestones' | 'usesCycles' | 'currentCycle'
 > & { openCount?: number };
 
-/** Page of a project view: /p/PAY, /p/PAY/milestones, /p/PAY/cycles, /p/PAY/settings. */
-export function projectViewHref(projectKey: string, view: ProjectView): string {
-  const base = `/p/${encodeURIComponent(projectKey)}`;
+/** Page of a project view: /p/PAY, /p/PAY/milestones, /p/PAY/cycles, /p/PAY/settings, in the workspace. */
+export function projectViewHref(workspace: WorkspaceUrlSlug, projectKey: string, view: ProjectView): string {
+  const base = workspacePath(workspace, `/p/${encodeURIComponent(projectKey)}`);
   return view === 'tasks' ? base : `${base}/${view}`;
 }
 

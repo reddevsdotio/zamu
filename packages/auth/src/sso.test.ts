@@ -7,6 +7,7 @@ import { createAuth } from './auth';
 import { BootstrapError, bootstrapAdmin, bootstrapWorkspace, setupState } from './bootstrap';
 import { type AuthConfig, readAuthConfig } from './config';
 import { acceptInvitationWithSignUp } from './invitation';
+import { oidcWorkspaceProblem } from './sso';
 import { cookieHeaders, TEST_BASE_URL, TEST_SECRET } from './testing/helpers';
 import { type MockIdentity, type MockOidc, startMockOidc } from './testing/mock-oidc';
 import { ssoSignIn } from './testing/sso-flow';
@@ -461,6 +462,167 @@ describe('SSO: auto mode and admin groups', () => {
   });
 });
 
+describe('SSO: the SSO workspace with several workspaces', () => {
+  let database: TestDatabase;
+  let acme: string;
+  let globex: string;
+  let ownerHeaders: Headers;
+
+  function authWith(extra: Record<string, string>) {
+    return createAuth({
+      db: database.db,
+      secret: TEST_SECRET,
+      baseUrl: TEST_BASE_URL,
+      config: ssoConfig(mock, { OIDC_SIGNUP: 'auto', OIDC_ADMIN_GROUPS: 'admins', ...extra }),
+    });
+  }
+
+  beforeAll(async () => {
+    database = await createTestDatabase();
+    const auth = authWith({});
+    const result = await bootstrapAdmin(
+      { auth, db: database.db },
+      { name: 'Ada', email: 'ada@example.com', password: PASSWORD, workspaceName: 'Acme' },
+    );
+    acme = result.workspaceId;
+    const [second] = await database.db
+      .insert(schema.organization)
+      .values({ name: 'Globex', slug: 'globex' })
+      .returning();
+    if (!second) throw new Error('no globex');
+    globex = second.id;
+    await database.db
+      .insert(schema.member)
+      .values({ organizationId: globex, userId: result.userId, role: 'owner' });
+    await database.db.insert(schema.workspaceSlugAlias).values({ slug: 'globex-old', workspaceId: globex });
+    const signIn = await auth.api.signInEmail({
+      body: { email: 'ada@example.com', password: PASSWORD },
+      returnHeaders: true,
+    });
+    ownerHeaders = cookieHeaders(signIn.headers);
+  });
+
+  afterAll(async () => {
+    await database?.drop();
+  });
+
+  it('joins the oldest workspace without OIDC_WORKSPACE', async () => {
+    const result = await ssoSignIn(authWith({}), mock, person('ola@example.com'));
+    expect(result.error).toBeNull();
+    const [ola] = await usersByEmail(database, 'ola@example.com');
+    if (!ola) throw new Error('no ola');
+    expect(await membership(database, ola.id)).toEqual([{ organizationId: acme, role: 'member' }]);
+    expect(ola.lastWorkspaceId).toBe(acme);
+  });
+
+  it('joins the workspace OIDC_WORKSPACE names, by slug or old slug', async () => {
+    const bySlug = await ssoSignIn(authWith({ OIDC_WORKSPACE: 'globex' }), mock, person('pia@example.com'));
+    expect(bySlug.error).toBeNull();
+    const [pia] = await usersByEmail(database, 'pia@example.com');
+    if (!pia) throw new Error('no pia');
+    expect(await membership(database, pia.id)).toEqual([{ organizationId: globex, role: 'member' }]);
+
+    const byAlias = await ssoSignIn(
+      authWith({ OIDC_WORKSPACE: 'globex-old' }),
+      mock,
+      person('quin@example.com'),
+    );
+    expect(byAlias.error).toBeNull();
+    const [quin] = await usersByEmail(database, 'quin@example.com');
+    if (!quin) throw new Error('no quin');
+    expect(await membership(database, quin.id)).toEqual([{ organizationId: globex, role: 'member' }]);
+  });
+
+  it('applies admin groups in the SSO workspace only', async () => {
+    const [rae] = await database.db
+      .insert(schema.user)
+      .values({ name: 'Rae', email: 'rae@example.com', kind: 'person' })
+      .returning();
+    if (!rae) throw new Error('no rae');
+    await database.db.insert(schema.member).values([
+      { organizationId: acme, userId: rae.id, role: 'member' },
+      { organizationId: globex, userId: rae.id, role: 'member' },
+    ]);
+    const auth = authWith({ OIDC_WORKSPACE: 'globex' });
+    const promoted = await ssoSignIn(auth, mock, person('rae@example.com', { groups: ['admins'] }));
+    expect(promoted.error).toBeNull();
+    const roles = Object.fromEntries(
+      (await membership(database, rae.id)).map((row) => [row.organizationId, row.role]),
+    );
+    expect(roles).toEqual({ [acme]: 'member', [globex]: 'admin' });
+
+    await ssoSignIn(auth, mock, person('rae@example.com', { groups: [] }));
+    const after = Object.fromEntries(
+      (await membership(database, rae.id)).map((row) => [row.organizationId, row.role]),
+    );
+    expect(after).toEqual({ [acme]: 'member', [globex]: 'member' });
+  });
+
+  it('does not add back someone who left the SSO workspace but belongs to another', async () => {
+    const [sol] = await database.db
+      .insert(schema.user)
+      .values({ name: 'Sol', email: 'sol@example.com', kind: 'person' })
+      .returning();
+    if (!sol) throw new Error('no sol');
+    await database.db
+      .insert(schema.member)
+      .values({ organizationId: globex, userId: sol.id, role: 'member' });
+    const result = await ssoSignIn(authWith({}), mock, person('sol@example.com'));
+    expect(result.error).toBeNull();
+    expect(await membership(database, sol.id)).toEqual([{ organizationId: globex, role: 'member' }]);
+  });
+
+  it('accepts an invitation link for someone already in another workspace', async () => {
+    const auth = authWith({});
+    const [tia] = await database.db
+      .insert(schema.user)
+      .values({ name: 'Tia', email: 'tia@example.com', kind: 'person' })
+      .returning();
+    if (!tia) throw new Error('no tia');
+    await database.db.insert(schema.member).values({ organizationId: acme, userId: tia.id, role: 'member' });
+    const invitation = await auth.api.createInvitation({
+      headers: ownerHeaders,
+      body: { email: 'tia@example.com', role: 'admin', organizationId: globex },
+    });
+    const result = await ssoSignIn(auth, mock, person('tia@example.com'), {
+      intent: 'invite',
+      invitationId: invitation.id,
+      errorCallbackURL: `/invite/${invitation.id}`,
+    });
+    expect(result.error).toBeNull();
+    const roles = Object.fromEntries(
+      (await membership(database, tia.id)).map((row) => [row.organizationId, row.role]),
+    );
+    expect(roles).toEqual({ [acme]: 'member', [globex]: 'admin' });
+    const [after] = await usersByEmail(database, 'tia@example.com');
+    expect(after?.lastWorkspaceId).toBe(globex);
+  });
+
+  it('refuses new identities when OIDC_WORKSPACE names no workspace, and says so at startup', async () => {
+    const auth = authWith({ OIDC_WORKSPACE: 'initech' });
+    const result = await ssoSignIn(auth, mock, person('uma@example.com'));
+    expect(result.error).toBe('sso_no_account');
+    expect(await usersByEmail(database, 'uma@example.com')).toEqual([]);
+
+    expect(await oidcWorkspaceProblem(database.db, { workspace: 'initech' })).toBe(
+      'OIDC_WORKSPACE is "initech", but no workspace has that slug. Set it to the slug of an existing workspace (its URL is /w/<slug>/), or unset it to use the oldest workspace.',
+    );
+    expect(await oidcWorkspaceProblem(database.db, { workspace: 'globex' })).toBeNull();
+    expect(await oidcWorkspaceProblem(database.db, { workspace: 'globex-old' })).toBeNull();
+    expect(await oidcWorkspaceProblem(database.db, { workspace: null })).toBeNull();
+    expect(await oidcWorkspaceProblem(database.db, null)).toBeNull();
+  });
+
+  it('does not check OIDC_WORKSPACE before setup', async () => {
+    const empty = await createTestDatabase();
+    try {
+      expect(await oidcWorkspaceProblem(empty.db, { workspace: 'initech' })).toBeNull();
+    } finally {
+      await empty.drop();
+    }
+  });
+});
+
 describe('SSO: password sign-in disabled', () => {
   let database: TestDatabase;
   let auth: ReturnType<typeof createAuth>;
@@ -471,7 +633,7 @@ describe('SSO: password sign-in disabled', () => {
       db: database.db,
       secret: TEST_SECRET,
       baseUrl: TEST_BASE_URL,
-      config: ssoConfig(mock, { PASSWORD_LOGIN: 'disabled' }),
+      config: ssoConfig(mock, { PASSWORD_LOGIN: 'disabled', OIDC_WORKSPACE: 'acme' }),
     });
   });
 
@@ -491,7 +653,17 @@ describe('SSO: password sign-in disabled', () => {
     expect(result.error).toBeNull();
     const [ada] = await usersByEmail(database, 'ada@example.com');
     if (!ada) throw new Error('no ada');
-    await bootstrapWorkspace({ db: database.db }, { userId: ada.id, workspaceName: 'Reddevs' });
+    // Setup step 2 gives the workspace the OIDC_WORKSPACE slug, so the startup check finds it.
+    const { workspaceId } = await bootstrapWorkspace(
+      { db: database.db, auth },
+      { userId: ada.id, workspaceName: 'Reddevs' },
+    );
+    const [workspace] = await database.db
+      .select({ slug: schema.organization.slug })
+      .from(schema.organization)
+      .where(eq(schema.organization.id, workspaceId));
+    expect(workspace?.slug).toBe('acme');
+    expect(await oidcWorkspaceProblem(database.db, { workspace: 'acme' })).toBeNull();
   });
 
   it('refuses password sign-in over HTTP', async () => {

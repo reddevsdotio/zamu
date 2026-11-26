@@ -11,7 +11,8 @@ import {
   toListItem,
   toUpdateInput,
 } from '~/features/tasks/queries';
-import { client, orpc } from '~/lib/orpc';
+import type { WorkspaceApi } from '~/lib/orpc';
+import { useApi } from '~/lib/workspace';
 import { PRIORITY_LABELS, STATUS_LABELS } from '~/ui';
 import {
   cardsOf,
@@ -88,8 +89,8 @@ export function toCard(task: Task | TaskListItem): TaskListItem {
 }
 
 /** The card's home column (the cached column of its status) and its neighbours there. */
-function locateCard(queryClient: QueryClient, projectKey: string, key: string) {
-  for (const { status, data } of boardQueries(queryClient, projectKey)) {
+function locateCard(api: WorkspaceApi, queryClient: QueryClient, projectKey: string, key: string) {
+  for (const { status, data } of boardQueries(api, queryClient, projectKey)) {
     const card = findCard(data, key);
     if (!card || card.status !== status) continue;
     const cards = cardsOf(data);
@@ -101,13 +102,14 @@ function locateCard(queryClient: QueryClient, projectKey: string, key: string) {
 
 /** Puts `card` (with its new status) into every cached column of the project and fixes the counts. */
 function placeCard(
+  api: WorkspaceApi,
   queryClient: QueryClient,
   projectKey: string,
   card: TaskListItem,
   placement: Placement,
   fromStatus: TaskStatus,
 ) {
-  for (const { queryKey, status, data } of boardQueries(queryClient, projectKey)) {
+  for (const { queryKey, status, data } of boardQueries(api, queryClient, projectKey)) {
     let next = removeCard(data, card.key);
     if (status === card.status) {
       const rank = rankFor(cardsOf(next), placement, card.rank);
@@ -119,8 +121,14 @@ function placeCard(
 }
 
 /** Where the card is now in its column: "position 2 of 5". */
-function positionOf(queryClient: QueryClient, projectKey: string, key: string, status: TaskStatus) {
-  for (const entry of boardQueries(queryClient, projectKey)) {
+function positionOf(
+  api: WorkspaceApi,
+  queryClient: QueryClient,
+  projectKey: string,
+  key: string,
+  status: TaskStatus,
+) {
+  for (const entry of boardQueries(api, queryClient, projectKey)) {
     if (entry.status !== status) continue;
     const index = cardsOf(entry.data).findIndex((card) => card.key === key);
     if (index < 0) continue;
@@ -130,8 +138,8 @@ function positionOf(queryClient: QueryClient, projectKey: string, key: string, s
   return null;
 }
 
-function patchTaskCache(queryClient: QueryClient, key: string, card: TaskListItem) {
-  const queryKey = orpc.tasks.get.queryKey({ input: { key } });
+function patchTaskCache(api: WorkspaceApi, queryClient: QueryClient, key: string, card: TaskListItem) {
+  const queryKey = api.orpc.tasks.get.queryKey({ input: { key } });
   const task = queryClient.getQueryData(queryKey);
   if (task) queryClient.setQueryData(queryKey, { ...task, ...card });
 }
@@ -195,6 +203,7 @@ export interface BoardMovesOptions {
 }
 
 export function useBoardMoves(projectKey: string, { onUndone }: BoardMovesOptions = {}): BoardMoves {
+  const api = useApi();
   const queryClient = useQueryClient();
   const queue = useRef<Promise<void>>(Promise.resolve());
   const pending = useRef(0);
@@ -217,14 +226,14 @@ export function useBoardMoves(projectKey: string, { onUndone }: BoardMovesOption
     if (pending.current > 0) return;
     const keys = [...touched.current];
     touched.current.clear();
-    void invalidateBoard(queryClient, projectKey);
-    void queryClient.invalidateQueries({ queryKey: orpc.projects.key() });
+    void invalidateBoard(api, queryClient, projectKey);
+    void queryClient.invalidateQueries({ queryKey: api.orpc.projects.key() });
     for (const key of keys) {
-      void queryClient.invalidateQueries({ queryKey: orpc.tasks.get.key({ input: { key } }) });
-      void queryClient.invalidateQueries({ queryKey: orpc.tasks.activity.key({ input: { key } }) });
-      void queryClient.invalidateQueries({ queryKey: orpc.tasks.timeline.key({ input: { key } }) });
+      void queryClient.invalidateQueries({ queryKey: api.orpc.tasks.get.key({ input: { key } }) });
+      void queryClient.invalidateQueries({ queryKey: api.orpc.tasks.activity.key({ input: { key } }) });
+      void queryClient.invalidateQueries({ queryKey: api.orpc.tasks.timeline.key({ input: { key } }) });
     }
-  }, [queryClient, projectKey]);
+  }, [queryClient, projectKey, api]);
 
   // `move`, `send` and `undoRecord` call each other (retry, the toast's Undo); refs keep them current.
   const moveRef = useRef<(intent: MoveIntent, isUndo?: boolean) => boolean>(() => false);
@@ -235,7 +244,7 @@ export function useBoardMoves(projectKey: string, { onUndone }: BoardMovesOption
       const { intent, before } = record;
       if (record.cancelled) return;
       try {
-        const task = await client.tasks.update({
+        const task = await api.client.tasks.update({
           ...toUpdateInput({ key: intent.key, patch: intent.patch ?? {} }),
           ...(intent.to !== before.status ? { status: intent.to } : {}),
           ...(intent.sendPosition !== false && typeof intent.placement === 'object'
@@ -246,7 +255,7 @@ export function useBoardMoves(projectKey: string, { onUndone }: BoardMovesOption
         serverUpdatedAt.current.set(task.key, task.updatedAt);
         const card = toCard(task);
         // Keep the card where the board put it; take the server's fields (rank, updatedAt).
-        for (const { queryKey, status, data } of boardQueries(queryClient, projectKey)) {
+        for (const { queryKey, status, data } of boardQueries(api, queryClient, projectKey)) {
           if (status !== card.status || !findCard(data, card.key)) continue;
           queryClient.setQueryData(queryKey, {
             ...data,
@@ -256,7 +265,7 @@ export function useBoardMoves(projectKey: string, { onUndone }: BoardMovesOption
             })),
           });
         }
-        queryClient.setQueryData(orpc.tasks.get.queryKey({ input: { key: task.key } }), task);
+        queryClient.setQueryData(api.orpc.tasks.get.queryKey({ input: { key: task.key } }), task);
       } catch (error) {
         const current = conflictTask(error);
         // Later moves of this card were built on this one: drop them.
@@ -268,11 +277,11 @@ export function useBoardMoves(projectKey: string, { onUndone }: BoardMovesOption
         const truth = current ? toCard(current) : before;
         if (current) serverUpdatedAt.current.set(current.key, current.updatedAt);
         else serverUpdatedAt.current.delete(intent.key);
-        const shown = locateCard(queryClient, projectKey, intent.key)?.card;
-        placeCard(queryClient, projectKey, truth, 'rank', shown?.status ?? intent.to);
+        const shown = locateCard(api, queryClient, projectKey, intent.key)?.card;
+        placeCard(api, queryClient, projectKey, truth, 'rank', shown?.status ?? intent.to);
         if (current)
-          queryClient.setQueryData(orpc.tasks.get.queryKey({ input: { key: current.key } }), current);
-        else patchTaskCache(queryClient, intent.key, truth);
+          queryClient.setQueryData(api.orpc.tasks.get.queryKey({ input: { key: current.key } }), current);
+        else patchTaskCache(api, queryClient, intent.key, truth);
         for (const other of [record, ...records.current]) {
           if (other.intent.key === intent.key && other.toastId !== undefined)
             dismissFieldToast(other.toastId);
@@ -294,12 +303,12 @@ export function useBoardMoves(projectKey: string, { onUndone }: BoardMovesOption
         });
       }
     },
-    [queryClient, projectKey, syncUndo],
+    [queryClient, projectKey, syncUndo, api],
   );
 
   const move = useCallback(
     (intent: MoveIntent, isUndo = false): boolean => {
-      const located = locateCard(queryClient, projectKey, intent.key);
+      const located = locateCard(api, queryClient, projectKey, intent.key);
       if (!located) return false;
       const { card, previous, next } = located;
       if (samePlace(card, previous, next, intent)) return false;
@@ -309,9 +318,9 @@ export function useBoardMoves(projectKey: string, { onUndone }: BoardMovesOption
         intent.patch ?? {},
         new Date().toISOString(),
       );
-      void queryClient.cancelQueries({ queryKey: orpc.tasks.list.key() });
-      placeCard(queryClient, projectKey, moved, intent.placement, card.status);
-      patchTaskCache(queryClient, intent.key, moved);
+      void queryClient.cancelQueries({ queryKey: api.orpc.tasks.list.key() });
+      placeCard(api, queryClient, projectKey, moved, intent.placement, card.status);
+      patchTaskCache(api, queryClient, intent.key, moved);
 
       const record: MoveRecord = { intent, before: card, previous, next, isUndo, cancelled: false };
       records.current.push(record);
@@ -331,7 +340,7 @@ export function useBoardMoves(projectKey: string, { onUndone }: BoardMovesOption
               },
             }),
       });
-      const position = positionOf(queryClient, projectKey, intent.key, intent.to);
+      const position = positionOf(api, queryClient, projectKey, intent.key, intent.to);
       announceId.current++;
       setAnnouncement({
         id: announceId.current,
@@ -350,7 +359,7 @@ export function useBoardMoves(projectKey: string, { onUndone }: BoardMovesOption
         });
       return true;
     },
-    [queryClient, projectKey, send, settle, syncUndo],
+    [queryClient, projectKey, send, settle, syncUndo, api],
   );
   moveRef.current = move;
 

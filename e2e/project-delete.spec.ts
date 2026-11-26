@@ -5,7 +5,7 @@
 // in order. The spec signs in as the admin of the other specs, or sets the server up when it runs alone.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { createCli, parseJson } from './cli';
-import { addAgent, api, collectPageErrors, homeURL, settle, signInAsAdmin } from './session';
+import { addAgent, api, collectPageErrors, homeURL, settle, signInAsAdmin, w } from './session';
 import { baseURL } from './stack';
 
 const inSettings = { name: 'Old website', key: 'OLD' };
@@ -69,7 +69,7 @@ test('seed two projects with tasks, an agent key for both and a person key', asy
   expect(agentLogin.code, agentLogin.stdout + agentLogin.stderr).toBe(0);
 
   // Settings > My keys: the default scope is the whole workspace, read and write.
-  await page.goto('/settings/my-keys');
+  await page.goto(w('/settings/my-keys'));
   await settle(page);
   await page.getByRole('button', { name: 'New key' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'New key' });
@@ -86,7 +86,7 @@ test('seed two projects with tasks, an agent key for both and a person key', asy
 });
 
 test('General settings: Delete this project, type the key, "Deleted OLD" on Home', async () => {
-  await page.goto(`/p/${inSettings.key}/settings`);
+  await page.goto(w(`/p/${inSettings.key}/settings`));
   await settle(page);
   await expect(page.getByText('Delete this project', { exact: true })).toBeVisible();
   await expect(page.getByText(deleteText)).toBeVisible();
@@ -121,7 +121,7 @@ test('General settings: Delete this project, type the key, "Deleted OLD" on Home
   expect(task.status()).toBe(404);
 
   // The agent's key stays, for the project it still covers.
-  await page.goto('/settings/api-keys');
+  await page.goto(w('/settings/api-keys'));
   await settle(page);
   await expect(agentKeyRow()).toContainText(inCli.key);
   await expect(agentKeyRow()).not.toContainText(inSettings.key);
@@ -161,7 +161,7 @@ test('zamu projects delete: --confirm required, agents refused, a person key del
   const list = agentCli.run(['projects', 'list', '--json']);
   expect(list.code, list.stdout + list.stderr).toBe(0);
   expect(parseJson<{ items: unknown[] }>(list, 'zamu.v1.projects.list').items).toEqual([]);
-  await page.goto('/settings/api-keys');
+  await page.goto(w('/settings/api-keys'));
   await settle(page);
   await expect(agentKeyRow().getByRole('button', { name: 'Revoke' })).toBeVisible();
   await expect(agentKeyRow()).not.toContainText(inCli.key);

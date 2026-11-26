@@ -3,7 +3,7 @@
 // and by the API; the blocker shows the reverse ("Blocks"); a done blocker no longer blocks; a blocker is
 // removed from the task view. The tests build on each other, so they share one page and run in order.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
-import { api, collectPageErrors, settle, signInAsAdmin } from './session';
+import { api, collectPageErrors, settle, signInAsAdmin, w } from './session';
 
 const project = { name: 'Migrations', key: 'MIG' };
 const tasks = {
@@ -83,7 +83,7 @@ test('seed three tasks', async () => {
 });
 
 test('add a blocker in the task view; the list marks the task Blocked', async () => {
-  await page.goto(`/p/${project.key}/${tasks.backfill.key}`);
+  await page.goto(w(`/p/${project.key}/${tasks.backfill.key}`));
   await settle(page);
   await blockedBy().getByRole('button', { name: 'Add blocker' }).click();
   await expect(picker()).toBeVisible();
@@ -106,19 +106,19 @@ test('add a blocker in the task view; the list marks the task Blocked', async ()
   expect(backfill.blocked).toBe(true);
 
   // The blocker shows the reverse.
-  await page.goto(`/p/${project.key}/${tasks.add.key}`);
+  await page.goto(w(`/p/${project.key}/${tasks.add.key}`));
   await settle(page);
   await expect(blockedBy()).toContainText('Blocks');
   await expect(blockedBy().getByRole('link', { name: tasks.backfill.key, exact: true })).toBeVisible();
 
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await expect(row(tasks.backfill.key)).toContainText('Blocked');
   await expect(row(tasks.add.key)).not.toContainText('Blocked');
 });
 
 test('Shift+B adds a blocker; a loop is refused with the explanation', async () => {
-  await page.goto(`/p/${project.key}/${tasks.drop.key}`);
+  await page.goto(w(`/p/${project.key}/${tasks.drop.key}`));
   await settle(page);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
   await page.keyboard.press('Shift+B');
@@ -131,7 +131,7 @@ test('Shift+B adds a blocker; a loop is refused with the explanation', async () 
   await page.keyboard.press('Escape');
 
   // MIG-2 already waits on MIG-1: the picker on MIG-1 says so before anything is sent.
-  await page.goto(`/p/${project.key}/${tasks.add.key}`);
+  await page.goto(w(`/p/${project.key}/${tasks.add.key}`));
   await settle(page);
   await blockedBy().getByRole('button', { name: 'Add blocker' }).click();
   await picker().getByRole('searchbox').fill('Backfill');
@@ -177,12 +177,12 @@ test('a done blocker no longer blocks; Remove blocker takes one off', async () =
   expect((await taskOf(tasks.backfill.key)).blocked).toBe(false);
   expect((await taskOf(tasks.drop.key)).blocked).toBe(true);
 
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await expect(row(tasks.backfill.key)).not.toContainText('Blocked');
   await expect(row(tasks.drop.key)).toContainText('Blocked');
 
-  await page.goto(`/p/${project.key}/${tasks.drop.key}`);
+  await page.goto(w(`/p/${project.key}/${tasks.drop.key}`));
   await settle(page);
   await blockedBy()
     .getByRole('button', { name: `Remove blocker ${tasks.backfill.key}` })

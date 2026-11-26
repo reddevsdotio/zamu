@@ -46,8 +46,12 @@ export const forgejoAliases = {
 export const composeFiles = ['docker-compose.yml'];
 
 /** 32 bytes, base64. Fixed so a kept stack (E2E_KEEP_STACK=1) can still read its own tokens. */
-const encryptionKey =
+export const encryptionKey =
   process.env.E2E_APP_ENCRYPTION_KEY ?? Buffer.from('e2e-only-key-never-in-production').toString('base64');
+
+/** BETTER_AUTH_SECRET of every stack; a second web container on the same database needs the same one. */
+export const betterAuthSecret =
+  process.env.E2E_BETTER_AUTH_SECRET ?? 'e2e-only-secret-never-used-in-production-0123456789';
 
 /** Path of the CLI that globalSetup builds; the suite runs it like an agent would. */
 export const cliPath = fileURLToPath(new URL('../apps/cli/dist/index.js', import.meta.url));
@@ -92,8 +96,7 @@ export function createStack(options: StackOptions): Stack {
             PORT: stack.port,
             BETTER_AUTH_URL: stack.baseURL,
             PUBLIC_URL: stack.baseURL,
-            BETTER_AUTH_SECRET:
-              process.env.E2E_BETTER_AUTH_SECRET ?? 'e2e-only-secret-never-used-in-production-0123456789',
+            BETTER_AUTH_SECRET: betterAuthSecret,
             POSTGRES_USER: 'postgres',
             POSTGRES_PASSWORD: 'postgres',
             POSTGRES_DB: 'zamu',

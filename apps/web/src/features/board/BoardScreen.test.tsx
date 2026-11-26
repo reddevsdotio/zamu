@@ -16,12 +16,14 @@ import { QuickCreateProvider, useQuickCreate } from '~/features/shell/quick-crea
 import { TaskFieldToast } from '~/features/task-fields';
 import { resetFieldToastForTests } from '~/features/task-fields/toast';
 import { parseTaskListSearch } from '~/features/tasks/search';
-import { type DisplayOptions, displayStorageKey, TASK_NAV_STORAGE_KEY } from '~/features/views';
+import { type DisplayOptions, displayStorageKey, taskNavStorageKey } from '~/features/views';
 import { resetDisplayOptionsForTests } from '~/features/views/useDisplayOptions';
 import { FinishingHost } from '~/features/work-record/FinishingHost';
+import { testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 import { UIProvider } from '~/ui';
 import { BoardScreen } from './BoardScreen';
-import { resetFoldedColumnsForTests } from './collapsed';
+import { foldedColumnsKey, resetFoldedColumnsForTests } from './collapsed';
 import { BOARD_PEOPLE, createFakeBoardApi, type FakeBoardApi } from './fake-board-api';
 
 // Component tests of the board against an in-memory /api/v1 client inside a real TanStack router:
@@ -33,8 +35,8 @@ vi.setConfig({ testTimeout: 30_000 });
 
 const api = vi.hoisted(() => ({ current: null as FakeBoardApi | null }));
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const forward = (path: string[]): unknown =>
     new Proxy(() => {}, {
       get: (_target, key) => (typeof key === 'string' ? forward([...path, key]) : undefined),
@@ -45,8 +47,8 @@ vi.mock('~/lib/orpc', async () => {
       },
     });
   const client = forward([]);
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 /** Stands in for the quick create dialog: shows what the board opened it with. */
 function QuickCreateProbe() {
@@ -65,12 +67,15 @@ function PeekProbe() {
 /** Saves the viewer's board display options before the board renders. */
 function setDisplay(options: Partial<DisplayOptions>) {
   window.localStorage.setItem(
-    displayStorageKey(BOARD_PEOPLE.ANA.id, 'PAY', 'board'),
+    displayStorageKey(workspace.id, BOARD_PEOPLE.ANA.id, 'PAY', 'board'),
     JSON.stringify({ layout: 'board', ...options }),
   );
 }
 
-function renderBoard(url = '/p/PAY?view=board', { quickCreate = false }: { quickCreate?: boolean } = {}) {
+function renderBoard(
+  url = '/w/acme/p/PAY?view=board',
+  { quickCreate = false }: { quickCreate?: boolean } = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
   });
@@ -95,7 +100,7 @@ function renderBoard(url = '/p/PAY?view=board', { quickCreate = false }: { quick
   });
   const board = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/',
+    path: '/w/$workspace/p/$projectKey/',
     validateSearch: parseTaskListSearch,
     component: function BoardRoute() {
       const { projectKey } = board.useParams();
@@ -104,7 +109,7 @@ function renderBoard(url = '/p/PAY?view=board', { quickCreate = false }: { quick
   });
   const page = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/$taskKey',
+    path: '/w/$workspace/p/$projectKey/$taskKey',
     component: () => <p>Task page</p>,
   });
   const router = createRouter({
@@ -113,7 +118,9 @@ function renderBoard(url = '/p/PAY?view=board', { quickCreate = false }: { quick
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <WorkspaceProvider workspace={workspace}>
+        <RouterProvider router={router} />
+      </WorkspaceProvider>
     </QueryClientProvider>,
   );
   return { router, queryClient };
@@ -207,9 +214,9 @@ describe('board', () => {
       await within(column(/^Canceled, 0 tasks$/)).findByText(/No tasks in Canceled\./),
     ).toBeInTheDocument();
     // Remembered for the board.
-    expect(window.localStorage.getItem(`zamu:board-columns:v1:${BOARD_PEOPLE.ANA.id}:PAY:status`)).toBe(
-      '{"canceled":false}',
-    );
+    expect(
+      window.localStorage.getItem(foldedColumnsKey(workspace.id, BOARD_PEOPLE.ANA.id, 'PAY', 'status')),
+    ).toBe('{"canceled":false}');
   });
 
   it('leaves out Done tasks past "Hide done tasks after", count included', async () => {
@@ -223,7 +230,7 @@ describe('board', () => {
   });
 
   it('comes back from the task view with the card focused (?focus=), then drops the param', async () => {
-    const { router } = renderBoard('/p/PAY?view=board&focus=PAY-3');
+    const { router } = renderBoard('/w/acme/p/PAY?view=board&focus=PAY-3');
     await screen.findByText('Card 4');
     await waitFor(() => expect(focusedKey()).toBe('PAY-3'));
     await waitFor(() => expect(router.state.location.search).not.toHaveProperty('focus'));
@@ -258,8 +265,8 @@ describe('board', () => {
       closePeek();
     });
     await user.keyboard('{Enter}');
-    await waitFor(() => expect(router.state.location.pathname).toBe('/p/PAY/PAY-4'));
-    const remembered = JSON.parse(window.sessionStorage.getItem(TASK_NAV_STORAGE_KEY) ?? '{}');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/w/acme/p/PAY/PAY-4'));
+    const remembered = JSON.parse(window.sessionStorage.getItem(taskNavStorageKey(workspace.id)) ?? '{}');
     expect(remembered.from).toBe('Board');
     expect(remembered.keys).toEqual(['PAY-1', 'PAY-2', 'PAY-3', 'PAY-4', 'PAY-5', 'PAY-6']);
   });
@@ -538,7 +545,7 @@ describe('board', () => {
 
   it("opens quick create with the column's status from its +", async () => {
     const user = userEvent.setup();
-    renderBoard('/p/PAY?view=board', { quickCreate: true });
+    renderBoard('/w/acme/p/PAY?view=board', { quickCreate: true });
     await screen.findByText('Card 4');
     const probe = screen.getByLabelText('Quick create');
     expect(probe).toHaveTextContent('closed');
@@ -552,7 +559,7 @@ describe('board', () => {
   });
 
   it('shows the empty state when nothing matches the filters', async () => {
-    renderBoard('/p/PAY?view=board&assignee=agents&cycle=12');
+    renderBoard('/w/acme/p/PAY?view=board&assignee=agents&cycle=12');
     expect(await screen.findByRole('heading', { name: 'No tasks match these filters' })).toBeInTheDocument();
     expect(screen.getByRole('toolbar', { name: 'Filters' })).toBeInTheDocument();
   });
@@ -587,7 +594,7 @@ describe('board of a project mirrored from Backlog.md', () => {
 
   it('shows a New task that does not create, and no + on the columns', async () => {
     const user = userEvent.setup();
-    renderBoard('/p/PAY?view=board', { quickCreate: true });
+    renderBoard('/w/acme/p/PAY?view=board', { quickCreate: true });
     await screen.findByText('Card 4');
     expect(screen.queryByRole('button', { name: 'New task in In progress' })).not.toBeInTheDocument();
     const create = screen.getByRole('button', { name: /^New/ });

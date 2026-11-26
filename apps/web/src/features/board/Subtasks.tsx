@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { TaskListItem } from '@zamu/contracts';
 import { useMemo } from 'react';
 import { retryOnce } from '~/features/tasks/errors';
-import { orpc } from '~/lib/orpc';
+import { useApi } from '~/lib/workspace';
 import { BoardSubtaskRow } from '~/ui';
 
 // The rows under an expanded parent card (frame 032): its subtasks, loaded with tasks.list parent=KEY
@@ -23,8 +23,9 @@ const byCreated = (a: TaskListItem, b: TaskListItem) =>
   a.createdAt.localeCompare(b.createdAt) || a.number - b.number;
 
 export function SubtaskRows({ projectKey, parentKey, viewerId, onOpen }: SubtaskRowsProps) {
+  const api = useApi();
   const query = useQuery({
-    ...orpc.tasks.list.queryOptions({
+    ...api.orpc.tasks.list.queryOptions({
       input: { project: [projectKey], parent: parentKey, limit: MAX_SUBTASKS },
     }),
     retry: retryOnce,

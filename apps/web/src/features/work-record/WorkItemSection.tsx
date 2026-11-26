@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { Task, WorkItem, WorkItemKind } from '@zamu/contracts';
 import { type ReactNode, type Ref, useCallback } from 'react';
 import { failureText, showFieldToast } from '~/features/task-fields';
-import { orpc } from '~/lib/orpc';
+import { useApi } from '~/lib/workspace';
 import { Checklist, type ChecklistHandle, type ChecklistItem, cn, ProgressMark } from '~/ui';
 import { type ItemOps, isFromDefaults, LIST_OF, progressNote, progressOf, type WorkPatch } from './ops';
 import { useWorkRecordUpdate } from './queries';
@@ -53,6 +53,7 @@ export function SectionHead({
 
 /** Writes to one list of a task, with the toasts. */
 export function useItemActions(task: Task, kind: WorkItemKind) {
+  const api = useApi();
   const queryClient = useQueryClient();
   const update = useWorkRecordUpdate(task.key);
   const { mutateAsync } = update;
@@ -75,9 +76,9 @@ export function useItemActions(task: Task, kind: WorkItemKind) {
   /** The list as cached now (after the writes already sent). */
   const current = useCallback(
     () =>
-      (queryClient.getQueryData(orpc.tasks.get.queryKey({ input: { key: task.key } }))?.[list] ??
+      (queryClient.getQueryData(api.orpc.tasks.get.queryKey({ input: { key: task.key } }))?.[list] ??
         []) as WorkItem[],
-    [queryClient, list, task.key],
+    [queryClient, list, task.key, api],
   );
 
   /** Puts a removed line back where it was, with its state: added at the end, then moved. */

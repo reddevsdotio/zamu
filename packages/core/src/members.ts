@@ -1,4 +1,6 @@
-// Members (people and agents), agent creation and member removal.
+// Members (people and agents), agent creation and member removal, and (0.10) two rules that
+// removing a member and leaving a workspace share: a workspace always keeps an owner, and a person
+// who is the responsible human of agents there can't go while those agents stay.
 import {
   AgentCreated,
   type ApiKeyCreated,
@@ -13,13 +15,28 @@ import {
 import { type DbOrTx, schema } from '@zamu/db';
 import { and, asc, eq, inArray, max, sql } from 'drizzle-orm';
 import type { z } from 'zod';
-import { activeKeyCounts, issueApiKey, MAX_API_KEY_NAME_LENGTH, validateScope } from './api-keys';
+import {
+  activeKeyCounts,
+  deleteMemberApiKeys,
+  issueApiKey,
+  MAX_API_KEY_NAME_LENGTH,
+  revokeMemberApiKeys,
+  validateScope,
+} from './api-keys';
 import { type Actor, authorize } from './authz';
 import type { AuthContext, DbContext } from './context';
-import { Conflict, Forbidden, Invalid, NotFound, parseInput } from './errors';
+import {
+  Conflict,
+  Forbidden,
+  Invalid,
+  LastOwner,
+  NotFound,
+  parseInput,
+  ResponsibleForAgents,
+} from './errors';
 import { loadUsers, userRef, workspaceMember } from './internal';
 
-const { activity, apikey, member, user } = schema;
+const { activity, member, user } = schema;
 
 /** Better Auth stores several roles comma-separated; the strongest wins. */
 export function toWorkspaceRole(role: string | null | undefined): WorkspaceRole {
@@ -27,6 +44,68 @@ export function toWorkspaceRole(role: string | null | undefined): WorkspaceRole 
   if (roles.includes('owner')) return 'owner';
   if (roles.includes('admin')) return 'admin';
   return 'member';
+}
+
+/**
+ * Throws LastOwner when `userId` is an owner of `workspaceId` and no other person owns it, so
+ * taking their membership or their owner role away would leave the workspace without one. Callers
+ * lock the organization row first, so two owners leaving at once can't both pass.
+ */
+export async function ensureNotLastOwner(
+  db: DbOrTx,
+  workspaceId: string,
+  userId: string,
+  message = 'A workspace needs an owner. Delete the workspace instead, or ask another person to own it first.',
+): Promise<void> {
+  const rows = await db
+    .select({ userId: member.userId, role: member.role })
+    .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .where(and(eq(member.organizationId, workspaceId), eq(user.kind, 'person')));
+  const owners = rows.filter((row) => toWorkspaceRole(row.role) === 'owner').map((row) => row.userId);
+  if (owners.includes(userId) && owners.length === 1) throw new LastOwner(message);
+}
+
+/** "a", "a and b", "a, b and c". */
+function listNames(names: string[]): string {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+}
+
+/**
+ * Throws ResponsibleForAgents when `userId` is the responsible human of agents that are members of
+ * `workspaceId`: leaving them without anyone accountable is refused. Without `removedName` the
+ * message speaks to the person leaving ("You are"); with it, to an admin removing them.
+ */
+export async function ensureNotResponsibleForAgents(
+  db: DbOrTx,
+  workspaceId: string,
+  userId: string,
+  removedName?: string,
+): Promise<void> {
+  const rows = await db
+    .select({ id: user.id, name: user.name, kind: user.kind })
+    .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .where(
+      and(eq(member.organizationId, workspaceId), eq(user.kind, 'agent'), eq(user.responsibleUserId, userId)),
+    )
+    .orderBy(asc(user.name), asc(user.id));
+  if (rows.length === 0) return;
+  const names = listNames(rows.map((row) => row.name));
+  const who = removedName === undefined ? 'You are' : `${removedName} is`;
+  throw new ResponsibleForAgents(
+    `${who} responsible for ${names} here. Hand them to someone else or remove them first.`,
+    rows.map(userRef),
+  );
+}
+
+/** Clears `user.last_workspace_id` when it names `workspaceId`, after the user left it. */
+export async function forgetLastWorkspace(db: DbOrTx, workspaceId: string, userId: string): Promise<void> {
+  await db
+    .update(user)
+    .set({ lastWorkspaceId: null })
+    .where(and(eq(user.id, userId), eq(user.lastWorkspaceId, workspaceId)));
 }
 
 /** Domain of the synthetic, never-shown email addresses of agents (RFC 2606 reserves .invalid). */
@@ -174,8 +253,10 @@ export async function createAgent(
 }
 
 /**
- * Removes a person or agent from the workspace. Admins only; owners and yourself cannot be removed.
- * An agent's keys are revoked too. Authored tasks and activity stay.
+ * Removes a person or agent from the workspace. Admins only; owners and yourself cannot be removed
+ * (so the last-owner rule always holds here), and so can't a person who is the responsible human
+ * of agents here (ResponsibleForAgents). An agent's keys for it are revoked; a person's keys for it
+ * are deleted. Keys for other workspaces stay. Authored tasks and activity stay.
  */
 export async function removeMember(
   { db }: DbContext,
@@ -190,11 +271,16 @@ export async function removeMember(
     if (!target) throw new NotFound('Member not found');
     if (toWorkspaceRole(target.role) === 'owner')
       throw new Forbidden('The workspace owner cannot be removed');
+    if (target.kind === 'person')
+      await ensureNotResponsibleForAgents(tx, actor.workspaceId, userId, target.name);
     await tx
       .delete(member)
       .where(and(eq(member.organizationId, actor.workspaceId), eq(member.userId, userId)));
     if (target.kind === 'agent') {
-      await tx.update(apikey).set({ enabled: false }).where(eq(apikey.referenceId, userId));
+      await revokeMemberApiKeys(tx, actor.workspaceId, userId);
+    } else {
+      await deleteMemberApiKeys(tx, actor.workspaceId, userId);
+      await forgetLastWorkspace(tx, actor.workspaceId, userId);
     }
     return userRef(target);
   });

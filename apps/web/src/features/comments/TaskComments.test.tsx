@@ -15,6 +15,8 @@ import { createFakeApi, FAKE_MILESTONES, FAKE_PEOPLE, type FakeApi } from '~/fea
 import { QuickCreateDialog } from '~/features/tasks/QuickCreateDialog';
 import { TaskPage } from '~/features/tasks/TaskPage';
 import { rememberTaskNavigation } from '~/features/views';
+import { testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 import { Button, UIProvider } from '~/ui';
 import { clearCommentDrafts } from './CommentComposer';
 import { resetTimelinePreferences } from './TaskTimeline';
@@ -28,8 +30,8 @@ vi.setConfig({ testTimeout: 30_000 });
 
 const api = vi.hoisted(() => ({ current: null as FakeApi | null }));
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const forward = (path: string[]): unknown =>
     new Proxy(() => {}, {
       get: (_target, key) => (typeof key === 'string' ? forward([...path, key]) : undefined),
@@ -40,8 +42,8 @@ vi.mock('~/lib/orpc', async () => {
       },
     });
   const client = forward([]);
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 function NewTaskButton({ projectKey }: { projectKey: string }) {
   const quickCreate = useQuickCreate();
@@ -65,7 +67,7 @@ function renderApp(url: string) {
   // Stand-in for the list: the New button and the search it was opened with.
   const list = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/',
+    path: '/w/$workspace/p/$projectKey/',
     component: function ListRoute() {
       const { projectKey } = list.useParams();
       return (
@@ -78,7 +80,7 @@ function renderApp(url: string) {
   });
   const page = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/$taskKey',
+    path: '/w/$workspace/p/$projectKey/$taskKey',
     component: function PageRoute() {
       const { projectKey, taskKey } = page.useParams();
       return <TaskPage key={taskKey} projectKey={projectKey} taskKey={taskKey} />;
@@ -86,7 +88,7 @@ function renderApp(url: string) {
   });
   const cyclePage = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/cycles/$number',
+    path: '/w/$workspace/p/$projectKey/cycles/$number',
     component: function CycleRoute() {
       const { projectKey } = cyclePage.useParams();
       return <NewTaskButton projectKey={projectKey} />;
@@ -98,7 +100,9 @@ function renderApp(url: string) {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <WorkspaceProvider workspace={workspace}>
+        <RouterProvider router={router} />
+      </WorkspaceProvider>
     </QueryClientProvider>,
   );
   return { router, queryClient };
@@ -120,7 +124,7 @@ beforeEach(() => {
 
 describe('history', () => {
   it('shows activity and comments in time order, with agent, edited and deleted states', async () => {
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     const anaComment = await waitFor(() => {
       const [found] = comment('Ana Ruiz');
       if (!found) throw new Error('not yet');
@@ -166,7 +170,7 @@ describe('history', () => {
       changes: [{ field: 'cycle', from: ref(12), to: ref(13) }],
       createdAt: new Date(Date.now() - 120_000).toISOString(),
     });
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     const line = await within(await screen.findByRole('region', { name: 'Activity' })).findByText(
       'Cycle 12 ended. Moved to Cycle 13.',
     );
@@ -175,7 +179,7 @@ describe('history', () => {
 
   it('shows comments only with Comments', async () => {
     const user = userEvent.setup();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     await within(await screen.findByRole('region', { name: 'Activity' })).findByText('created this task');
     await user.click(within(history()).getByRole('button', { name: 'Comments' }));
     expect(within(history()).getByRole('button', { name: 'Comments' })).toHaveAttribute(
@@ -201,7 +205,7 @@ describe('history', () => {
       });
     }
     const user = userEvent.setup();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     const more = await within(await screen.findByRole('region', { name: 'Activity' })).findByRole('button', {
       name: /earlier · Show all/,
     });
@@ -214,7 +218,7 @@ describe('history', () => {
 
 describe('author-only actions', () => {
   it('offers Edit and Delete on your own comments only', async () => {
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(1));
     const [own] = comment('Ana Ruiz');
     expect(within(own as HTMLElement).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
@@ -227,7 +231,7 @@ describe('author-only actions', () => {
 
   it('edits in place and saves with Ctrl+Enter', async () => {
     const user = userEvent.setup();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(1));
     await user.click(within(comment('Ana Ruiz')[0] as HTMLElement).getByRole('button', { name: 'Edit' }));
     const editor = await screen.findByRole('textbox', { name: 'Edit comment' });
@@ -252,7 +256,7 @@ describe('author-only actions', () => {
 
   it('deletes after the confirmation and leaves the placeholder', async () => {
     const user = userEvent.setup();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(1));
     await user.click(within(comment('Ana Ruiz')[0] as HTMLElement).getByRole('button', { name: 'Delete' }));
     const confirm = await screen.findByRole('alertdialog', { name: 'Delete this comment?' });
@@ -272,7 +276,7 @@ describe('author-only actions', () => {
 describe('comment box', () => {
   it('opens with M, mentions with @ and Enter, and sends with Ctrl+Enter', async () => {
     const user = userEvent.setup();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(1));
     expect(screen.getByRole('button', { name: 'Leave a comment or a note' })).toBeInTheDocument();
 
@@ -308,7 +312,7 @@ describe('comment box', () => {
 
   it('filters the picker as you type and closes it with Esc', async () => {
     const user = userEvent.setup();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: 'Leave a comment or a note' }));
     await waitFor(() => expect(composer()).toHaveFocus());
@@ -330,7 +334,7 @@ describe('comment box', () => {
 
   it('keeps the text when sending fails and sends it on Try again', async () => {
     const user = userEvent.setup();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(1));
     fake().control.failComments = true;
     let release = () => {};
@@ -358,7 +362,7 @@ describe('comment box', () => {
 
   it('shows the Markdown in Preview and drops the text on Cancel', async () => {
     const user = userEvent.setup();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(1));
     await user.keyboard('m');
     await waitFor(() => expect(composer()).toHaveFocus());
@@ -375,7 +379,7 @@ describe('comment box', () => {
 describe('properties', () => {
   it('lists every field with placeholders and opens a picker from its row or its key', async () => {
     const user = userEvent.setup();
-    renderApp('/p/PAY/PAY-2');
+    renderApp('/w/acme/p/PAY/PAY-2');
     const props = await screen.findByRole('complementary', { name: 'Properties' });
     await within(props).findByRole('button', { name: 'Cycle' });
     for (const placeholder of ['Add labels', 'Set due date', 'Add to cycle']) {
@@ -402,7 +406,7 @@ describe('properties', () => {
 
   it('hides milestone and cycle when the project does not use them', async () => {
     api.current = createFakeApi({ usesMilestones: false, usesCycles: false });
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(1));
     expect(within(properties()).getByRole('button', { name: 'Assignee' })).toBeInTheDocument();
     expect(within(properties()).queryByRole('button', { name: 'Milestone' })).not.toBeInTheDocument();
@@ -411,7 +415,7 @@ describe('properties', () => {
 
   it('shows labels, due date, subtasks, blockers and the reverse relation', async () => {
     api.current = createFakeApi({ fields: true });
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     const props = await screen.findByRole('complementary', { name: 'Properties' });
     await within(props).findByText('payouts');
     expect(within(props).getByText('backend')).toBeInTheDocument();
@@ -425,7 +429,7 @@ describe('properties', () => {
 describe('title, description and navigation', () => {
   it('edits the title with E and the description with D', async () => {
     const user = userEvent.setup();
-    renderApp('/p/PAY/PAY-1');
+    renderApp('/w/acme/p/PAY/PAY-1');
     await screen.findByRole('heading', { level: 1, name: /Task number 1/ });
     await waitFor(() => expect(comment('Ana Ruiz')).toHaveLength(1));
     await user.keyboard('e');
@@ -452,19 +456,23 @@ describe('title, description and navigation', () => {
 
   it('walks the list it came from with J and K and goes back with Esc', async () => {
     const user = userEvent.setup();
-    rememberTaskNavigation({ keys: ['PAY-3', 'PAY-1', 'PAY-2'], from: 'List', returnTo: '/p/PAY?q=retry' });
-    const { router } = renderApp('/p/PAY/PAY-1');
+    rememberTaskNavigation(workspace.id, {
+      keys: ['PAY-3', 'PAY-1', 'PAY-2'],
+      from: 'List',
+      returnTo: '/w/acme/p/PAY?q=retry',
+    });
+    const { router } = renderApp('/w/acme/p/PAY/PAY-1');
     expect(await screen.findByText('2 of 3 in List')).toBeInTheDocument();
     await screen.findByRole('heading', { level: 1, name: /Task number 1/ });
     await user.keyboard('j');
-    await waitFor(() => expect(router.state.location.pathname).toBe('/p/PAY/PAY-2'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/w/acme/p/PAY/PAY-2'));
     expect(await screen.findByText('3 of 3 in List')).toBeInTheDocument();
     await screen.findByRole('heading', { level: 1, name: /Task number 2/ });
     await user.keyboard('k');
-    await waitFor(() => expect(router.state.location.pathname).toBe('/p/PAY/PAY-1'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/w/acme/p/PAY/PAY-1'));
     await screen.findByRole('heading', { level: 1, name: /Task number 1/ });
     await user.keyboard('{Escape}');
-    await waitFor(() => expect(router.state.location.pathname).toBe('/p/PAY'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/w/acme/p/PAY'));
     expect(router.state.location.search).toMatchObject({ q: 'retry', focus: 'PAY-1' });
   });
 });
@@ -472,7 +480,7 @@ describe('title, description and navigation', () => {
 describe('quick create', () => {
   it('prefills the cycle from the cycle page and sends it', async () => {
     const user = userEvent.setup();
-    renderApp('/p/PAY/cycles/13');
+    renderApp('/w/acme/p/PAY/cycles/13');
     await user.click(await screen.findByRole('button', { name: 'New' }));
     const dialog = await screen.findByRole('dialog', { name: 'New task' });
     expect(await within(dialog).findByRole('button', { name: 'Cycle' })).toHaveTextContent('Cycle 13');
@@ -487,7 +495,7 @@ describe('quick create', () => {
 
   it('prefills the milestone from the list filter and lets Shift+C pick a cycle', async () => {
     const user = userEvent.setup();
-    renderApp(`/p/PAY?milestone=${FAKE_MILESTONES.pci}`);
+    renderApp(`/w/acme/p/PAY?milestone=${FAKE_MILESTONES.pci}`);
     await user.click(await screen.findByRole('button', { name: 'New' }));
     const dialog = await screen.findByRole('dialog', { name: 'New task' });
     expect(await within(dialog).findByRole('button', { name: 'Milestone' })).toHaveTextContent('PCI audit');
@@ -510,7 +518,7 @@ describe('quick create', () => {
   it('sets priority, labels, due date and parent, and keeps going with Create more', async () => {
     api.current = createFakeApi({ fields: true });
     const user = userEvent.setup();
-    renderApp('/p/PAY');
+    renderApp('/w/acme/p/PAY');
     await user.click(await screen.findByRole('button', { name: 'New' }));
     const dialog = await screen.findByRole('dialog', { name: 'New task' });
     await user.type(within(dialog).getByRole('textbox', { name: 'Title' }), 'Show fees');

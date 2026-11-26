@@ -8,7 +8,7 @@ import {
   newFromBacklogFailure,
 } from '~/features/projects/NewFromBacklogDialog';
 import { unwrap } from '~/features/settings/result';
-import { orpc } from '~/lib/orpc';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
 import { connectionsQuery } from './queries';
 
 // New project from Backlog.md wired to the server (the projects page and the setup's Mode step open it).
@@ -20,19 +20,27 @@ export interface NewFromBacklogDialogHostProps {
   detect?: DetectRepository;
 }
 
-const detectOnServer: DetectRepository = (input) => unwrap(detectBacklogRepositoryFn({ data: input }));
+/** Reads the repository on the server, in the workspace `workspace`. */
+const detectOnServer =
+  (workspace: string): DetectRepository =>
+  (input) =>
+    unwrap(detectBacklogRepositoryFn({ data: { workspace, input } }));
 
 /** The dialog wired to the server: creates the project, then opens its setup at Mappings. */
 export function NewFromBacklogDialogHost({
   isOpen,
   onClose,
-  detect = detectOnServer,
+  detect: detectProp,
 }: NewFromBacklogDialogHostProps) {
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
+  const detect = detectProp ?? detectOnServer(workspace);
   const router = useRouter();
   const queryClient = useQueryClient();
-  const connections = useQuery({ ...connectionsQuery(), enabled: isOpen });
+  const connections = useQuery({ ...connectionsQuery(api), enabled: isOpen });
   const create = useMutation({
-    mutationFn: (input: CreateProjectFromBacklogInput) => unwrap(createProjectFromBacklogFn({ data: input })),
+    mutationFn: (input: CreateProjectFromBacklogInput) =>
+      unwrap(createProjectFromBacklogFn({ data: { workspace: api.slug, input } })),
   });
 
   const onSubmit = async (input: CreateProjectFromBacklogInput) => {
@@ -42,11 +50,11 @@ export function NewFromBacklogDialogHost({
     } catch (error) {
       return newFromBacklogFailure(error, input.key);
     }
-    void queryClient.invalidateQueries({ queryKey: orpc.projects.key() });
+    void queryClient.invalidateQueries({ queryKey: api.orpc.projects.key() });
     onClose();
     void router.navigate({
-      to: '/p/$projectKey/backlog-setup',
-      params: { projectKey: key },
+      to: '/w/$workspace/p/$projectKey/backlog-setup',
+      params: { workspace, projectKey: key },
       search: { mode: input.mode, step: 'mappings', connection: input.connectionId },
     });
     return null;

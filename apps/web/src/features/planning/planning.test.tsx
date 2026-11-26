@@ -13,18 +13,6 @@ import { milestonePill, sortMilestones, targetText, taskCountText } from './Mile
 import { parsePlanningSearch } from './search';
 import { planningFilterFields, planningListInput, withoutClosed } from './usePlanningTasks';
 
-// The dialogs and helpers under test never call the API; the stub keeps the server modules out.
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
-  const fail = (): unknown =>
-    new Proxy(() => {}, {
-      get: (_target, key) => (typeof key === 'string' ? fail() : undefined),
-      apply: () => Promise.reject(new Error('no API in these tests')),
-    });
-  const client = fail();
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
-
 const TODAY = '2026-10-23';
 const PROJECT = { id: '00000000-0000-7000-8000-000000000001', key: 'PAY', name: 'Payments' };
 const ANA = { id: '00000000-0000-7000-8000-0000000000a1', name: 'Ana Ruiz', kind: 'person' as const };

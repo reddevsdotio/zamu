@@ -17,7 +17,7 @@ import { parseBacklogFolder, taskWorkRecord } from '../packages/backlog-md/src/i
 import { createCli, parseJson } from './cli';
 import { dockerAvailable, type Forgejo, fixtureFolder, readTree, startForgejo } from './forgejo';
 import { createGitRepo } from './git-repo';
-import { addAgent, admin, api, collectPageErrors, openNewProject, settle, signInAsAdmin } from './session';
+import { addAgent, admin, api, collectPageErrors, openNewProject, settle, signInAsAdmin, w } from './session';
 import { baseURL, forgejoAliases, mainStack } from './stack';
 
 const repo = 'payments-api';
@@ -191,7 +191,7 @@ async function signedDelivery(secret: string): Promise<number> {
 /** Presses Refresh now in the project header's Backlog.md popover and waits for the read to finish. */
 async function refreshNow(): Promise<void> {
   const before = (await sourceStatus()).lastRead?.commit;
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await page.getByRole('button', { name: /^Backlog\.md: / }).click();
   const popover = page.getByRole('dialog', { name: 'Backlog.md mirror' });
@@ -247,7 +247,7 @@ test.afterAll(async () => {
 
 test('git connection: a wrong token is rejected, the right one works', async () => {
   await signInAsAdmin(page);
-  await page.goto('/settings/connections');
+  await page.goto(w('/settings/connections'));
   await settle(page);
   await page.getByRole('button', { name: 'Add connection' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Add git connection' });
@@ -273,7 +273,7 @@ test('git connection: a wrong token is rejected, the right one works', async () 
 
 test('new project from Backlog.md: map the custom status, preview, start mirroring', async () => {
   // New from Backlog.md sits in the sidebar's "+" (the projects page is gone in 0.7.0).
-  await page.goto('/');
+  await page.goto(w());
   await settle(page);
   await openNewProject(page, 'New from Backlog.md');
   const dialog = page.getByRole('dialog', { name: 'New project from Backlog.md' });
@@ -348,7 +348,7 @@ test('list, board and task view show the mirrored tasks', async () => {
   // Backlog.md IDs work wherever a key does.
   expect((await taskOf('PAY-12.1')).key).toBe(`${project.key}-12.1`);
 
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await expect(page.getByRole('button', { name: 'Backlog.md: Mirroring, with problems' })).toBeVisible();
   // New explains instead of creating: tasks come from the files.
@@ -362,7 +362,7 @@ test('list, board and task view show the mirrored tasks', async () => {
   await expect(listRow(`${project.key}-12.1`)).toHaveAttribute('aria-level', '3');
 
   // The board hides subtasks: the parent card counts them and expands in place.
-  await page.goto(`/p/${project.key}?view=board`);
+  await page.goto(w(`/p/${project.key}?view=board`));
   await settle(page);
   const inReview = page.getByRole('grid', { name: 'In review', exact: true });
   await expect(inReview.locator(`[data-card-key="${project.key}-12"]`)).toBeVisible();
@@ -374,7 +374,7 @@ test('list, board and task view show the mirrored tasks', async () => {
 
   // The task view: one quiet Backlog.md badge that links to the file, and the file's other fields in
   // "From the file".
-  await page.goto(`/p/${project.key}/${project.key}-12`);
+  await page.goto(w(`/p/${project.key}/${project.key}-12`));
   await settle(page);
   await expect(page.getByRole('heading', { level: 1, name: /Webhook retries/ })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Backlog.md', exact: true })).toHaveAttribute(
@@ -421,14 +421,14 @@ test('labels, due date, blockers and parent come from the files and are read-onl
   expect(await bulk.json()).toMatchObject({ code: 'TASK_MIRRORED' });
 
   // The list shows them like native fields: the label, the overdue date and the Blocked marker.
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await expect(listRow(qa.key)).toContainText('alerts');
   await expect(listRow(qa.key)).toContainText(/\d+ days overdue/);
   await expect(listRow(qa.key)).toContainText('Blocked');
 
   // In the task view the fields say where they are set; the label picker opens read-only.
-  await page.goto(`/p/${project.key}/${qa.key}`);
+  await page.goto(w(`/p/${project.key}/${qa.key}`));
   await settle(page);
   const labels = properties().getByRole('button', { name: 'Labels, set in Backlog.md' });
   await expect(labels).toContainText('alerts');
@@ -443,7 +443,7 @@ test('labels, due date, blockers and parent come from the files and are read-onl
   await expect(page.getByRole('tooltip')).toHaveText('Set in Backlog.md. Edit the file to change it.');
 
   // In the list, L on the task opens the label picker read-only.
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await listRow(qa.key).focus();
   await page.keyboard.press('l');
@@ -454,7 +454,7 @@ test('labels, due date, blockers and parent come from the files and are read-onl
   await expect(picker).toBeHidden();
 
   // Settings > Labels: names from the files are locked; their colour is the app's own.
-  await page.goto(`/p/${project.key}/settings/labels`);
+  await page.goto(w(`/p/${project.key}/settings/labels`));
   await settle(page);
   const table = page.getByRole('table', { name: 'Labels' });
   const row = table.getByRole('row').filter({ hasText: 'alerts' });
@@ -515,7 +515,7 @@ test('the work record comes from the file and is read-only', async () => {
   expect(await note.json()).toMatchObject({ code: 'TASK_MIRRORED', field: 'notes', file: parentPath });
 
   // The task view shows the lists read-only, with the file as their source.
-  await page.goto(`/p/${project.key}/${parent.key}`);
+  await page.goto(w(`/p/${project.key}/${parent.key}`));
   await settle(page);
   const criteria = page.locator('[data-work-list="criterion"]');
   await expect(criteria).toContainText('Retries back off exponentially');
@@ -529,7 +529,7 @@ test('the work record comes from the file and is read-only', async () => {
 });
 
 test('webhook: a push shows up within seconds', async () => {
-  await page.goto(`/p/${project.key}/settings/backlog?webhook=1`);
+  await page.goto(w(`/p/${project.key}/settings/backlog?webhook=1`));
   await settle(page);
   const dialog = page.getByRole('dialog', { name: 'Refresh on every push' });
   await expect(dialog).toBeVisible();
@@ -558,7 +558,7 @@ test('webhook: a push shows up within seconds', async () => {
 
   // The refresh runs in the worker; the list shows it on its next load.
   await reloadUntil(
-    `/p/${project.key}`,
+    w(`/p/${project.key}`),
     async () => {
       await expect(listRow(`${project.key}-12.1`)).toContainText('Retry with backoff', { timeout: 1_000 });
     },
@@ -571,7 +571,7 @@ test('webhook: a push shows up within seconds', async () => {
 test('new webhook secret: deliveries signed with the old one are refused, the new one works', async () => {
   // A webhook push within a minute of the last one waits for the next slot.
   test.setTimeout(3 * 60_000);
-  await page.goto(`/p/${project.key}/settings/backlog?webhook=1`);
+  await page.goto(w(`/p/${project.key}/settings/backlog?webhook=1`));
   await settle(page);
   const dialog = page.getByRole('dialog', { name: 'Refresh on every push' });
   await dialog.getByRole('button', { name: 'New secret' }).click();
@@ -636,7 +636,7 @@ test('a broken file is listed under problems; a deleted file hides its task; res
   expect((await sourceStatus()).problems.counts.files).toBe(1);
   // The task keeps its last good version.
   expect(await taskOf(`${project.key}-20`)).toMatchObject({ title: 'Rate limit alerts', hidden: false });
-  await page.goto(`/p/${project.key}/settings/backlog`);
+  await page.goto(w(`/p/${project.key}/settings/backlog`));
   await settle(page);
   await expect(page.getByRole('region', { name: 'Problems in the last refresh' })).toContainText(qaPath);
 
@@ -644,20 +644,20 @@ test('a broken file is listed under problems; a deleted file hides its task; res
   await refreshNow();
   expect((await sourceStatus()).problems.counts.files).toBe(0);
   expect(await taskOf(`${project.key}-20`)).toMatchObject({ hidden: true });
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await expect(listRow(`${project.key}-20`)).toHaveCount(0);
-  await page.goto(`/p/${project.key}?hidden=only`);
+  await page.goto(w(`/p/${project.key}?hidden=only`));
   await settle(page);
   await expect(listRow(`${project.key}-20`)).toBeVisible();
-  await page.goto(`/p/${project.key}/${project.key}-20`);
+  await page.goto(w(`/p/${project.key}/${project.key}-20`));
   await settle(page);
   await expect(page.getByText(/Removed from Backlog\.md/).first()).toBeVisible();
 
   await forgejo.commit(repo, 'Bring the QA task back', { [qaPath]: qaTask });
   await refreshNow();
   expect(await taskOf(`${project.key}-20`)).toMatchObject({ title: 'Rate limit alerts', hidden: false });
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await expect(listRow(`${project.key}-20`)).toBeVisible();
 });
@@ -665,7 +665,7 @@ test('a broken file is listed under problems; a deleted file hides its task; res
 test('the board refuses a status change; cycles and comments work on a mirrored task', async () => {
   const key = `${project.key}-12.1`;
   const card = `${project.key}-20`;
-  await page.goto(`/p/${project.key}?view=board`);
+  await page.goto(w(`/p/${project.key}?view=board`));
   await settle(page);
   // Show every column, so Shift+← has In progress to move to.
   await page.getByRole('button', { name: 'Display' }).click();
@@ -692,7 +692,7 @@ test('the board refuses a status change; cycles and comments work on a mirrored 
   await api(page.request, 'PATCH', `/tasks/${key}`, { cycle: 'current' });
   expect((await taskOf(key)).cycle?.number).toBe(1);
 
-  await page.goto(`/p/${project.key}/${key}`);
+  await page.goto(w(`/p/${project.key}/${key}`));
   await settle(page);
   await page.keyboard.press('m');
   const composer = page.getByRole('textbox', { name: 'Comment' });
@@ -752,7 +752,7 @@ test('agent: zamu backlog status and refresh --wait; zamu refuses a mirrored fie
 
 test('Edit mappings: an agent added later matches the "No one" row of @codex by name', async () => {
   await addAgent(page, codexAgent, [project.key]);
-  await page.goto(`/p/${project.key}/settings/backlog`);
+  await page.goto(w(`/p/${project.key}/settings/backlog`));
   await settle(page);
   await page.getByRole('link', { name: 'Edit mappings' }).click();
   await expect(
@@ -784,7 +784,7 @@ test('Edit mappings: an agent added later matches the "No one" row of @codex by 
 });
 
 test('the delete dialog of a mirrored project asks to remove the webhook too', async () => {
-  await page.goto(`/p/${project.key}/settings`);
+  await page.goto(w(`/p/${project.key}/settings`));
   await settle(page);
   await page.getByRole('button', { name: 'Delete project' }).click();
   const dialog = page.getByRole('alertdialog', { name: `Delete ${project.key}?` });
@@ -804,7 +804,7 @@ test('switch to Zamu: the check lists the open pull request; afterwards every fi
   };
   const number = await forgejo.openPullRequest(repo, pull);
 
-  await page.goto(`/p/${project.key}/settings/backlog`);
+  await page.goto(w(`/p/${project.key}/settings/backlog`));
   await settle(page);
   await page.getByRole('button', { name: 'Switch to Zamu…' }).click();
   const dialog = page.getByRole('alertdialog');

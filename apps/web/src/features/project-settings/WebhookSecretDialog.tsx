@@ -4,17 +4,21 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import type { BacklogWebhookSecret } from '@zamu/contracts';
+import { useApi } from '~/lib/workspace';
 import { ConfirmDialog } from '~/ui';
 import { errorMessage, unwrap } from '../settings/result';
 import { webhookInfoQuery } from './queries';
 
 /** Issues a new secret, then refetches the webhook info so the dialog and its poll agree. */
 export function useReissueWebhookSecret(projectKey: string): () => Promise<BacklogWebhookSecret> {
+  const api = useApi();
   const queryClient = useQueryClient();
   return async () => {
     const { reissueBacklogWebhookSecretFn } = await import('../backlog/server');
-    const issued = await unwrap(reissueBacklogWebhookSecretFn({ data: { projectKey } }));
-    await queryClient.invalidateQueries({ queryKey: webhookInfoQuery(projectKey).queryKey });
+    const issued = await unwrap(
+      reissueBacklogWebhookSecretFn({ data: { workspace: api.slug, input: { projectKey } } }),
+    );
+    await queryClient.invalidateQueries({ queryKey: webhookInfoQuery(api, projectKey).queryKey });
     return issued;
   };
 }

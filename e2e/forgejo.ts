@@ -10,7 +10,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join, relative } from 'node:path';
 import { expect, type Page } from '@playwright/test';
-import { settle } from './session';
+import { settle, w } from './session';
 import { composeProject, repoRoot } from './stack';
 
 const scripts = join(repoRoot, 'docker/forgejo');
@@ -268,9 +268,17 @@ export async function startForgejo(name: string, network: string, alias: string)
   };
 }
 
-/** Adds a Gitea/Forgejo connection to `forgejo` in Settings > Git connections, with the token that works. */
-export async function addConnection(page: Page, forgejo: Forgejo, name: string): Promise<void> {
-  await page.goto('/settings/connections');
+/**
+ * Adds a Gitea/Forgejo connection to `forgejo` in Settings > Git connections, with the token that works.
+ * `connectionsPath` is the page: the upgrade spec passes the pre-0.10 one.
+ */
+export async function addConnection(
+  page: Page,
+  forgejo: Forgejo,
+  name: string,
+  connectionsPath = w('/settings/connections'),
+): Promise<void> {
+  await page.goto(connectionsPath);
   await settle(page);
   await page.getByRole('button', { name: 'Add connection' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Add git connection' });

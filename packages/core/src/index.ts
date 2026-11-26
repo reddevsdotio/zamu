@@ -25,3 +25,4 @@ export * from './relations';
 export * from './secrets';
 export * from './tasks';
 export * from './timeline';
+export * from './workspaces';

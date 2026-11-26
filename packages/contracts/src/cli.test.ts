@@ -32,6 +32,7 @@ describe('CLI output', () => {
       'login',
       'logout',
       'whoami',
+      'workspaces',
       'projects.list',
       'projects.delete',
       'tasks.list',

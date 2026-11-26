@@ -1,5 +1,8 @@
-// API keys: list, create (for yourself or an agent you are responsible for), revoke.
+// API keys: list, create (for yourself or an agent you are responsible for), revoke, and (0.10)
+// delete a person's keys for one workspace or every key of a workspace.
 // Keys are Better Auth API-key plugin rows; core stores the scope in metadata as ApiKeyMetadata.
+// A person can hold keys for several workspaces, so every list and change filters on the
+// metadata's workspaceId, never on the owner alone.
 import { parseApiKeyMetadata } from '@zamu/auth';
 import {
   type ApiKeyCreated,
@@ -13,7 +16,7 @@ import {
   RevokeApiKeyInput,
 } from '@zamu/contracts';
 import { type DbOrTx, schema } from '@zamu/db';
-import { and, desc, eq, inArray, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, type SQL } from 'drizzle-orm';
 import type { z } from 'zod';
 import { type Actor, authorize, type KeyOwner } from './authz';
 import type { AuthContext, DbContext } from './context';
@@ -55,14 +58,21 @@ const keyColumns = {
   expiresAt: apikey.expiresAt,
 };
 
-/** Resolves scope project ids to references; ids of deleted projects are dropped. */
-async function scopeViews(db: DbOrTx, metadata: ApiKeyMetadata[]): Promise<ApiKeyScopeView[]> {
+/**
+ * Resolves scope project ids to references; ids of deleted projects, and of projects outside
+ * `workspaceId`, are dropped.
+ */
+async function scopeViews(
+  db: DbOrTx,
+  workspaceId: string,
+  metadata: ApiKeyMetadata[],
+): Promise<ApiKeyScopeView[]> {
   const ids = [...new Set(metadata.flatMap((m) => (m.projects === 'all' ? [] : m.projects)))];
   const rows = ids.length
     ? await db
         .select({ id: project.id, key: project.key, name: project.name })
         .from(project)
-        .where(inArray(project.id, ids))
+        .where(and(eq(project.workspaceId, workspaceId), inArray(project.id, ids)))
     : [];
   const byId = new Map(rows.map((row) => [row.id, row]));
   return metadata.map((m) => ({
@@ -89,6 +99,7 @@ async function summaries(db: DbOrTx, workspaceId: string, rows: KeyRow[]): Promi
     ),
     scopeViews(
       db,
+      workspaceId,
       scoped.map(({ metadata }) => metadata),
     ),
   ]);
@@ -263,4 +274,56 @@ export async function revokeApiKey(
   const [summary] = await summaries(db, actor.workspaceId, [updated ?? row]);
   if (!summary) throw notFound;
   return summary;
+}
+
+/**
+ * Ids of the key rows whose metadata names `workspaceId`, optionally only those owned by `ownerId`.
+ * Metadata is JSON text, so the query narrows on the id as text and readKeyMetadata confirms it.
+ */
+async function workspaceKeyRows(db: DbOrTx, workspaceId: string, ownerId?: string) {
+  const rows = await db
+    .select({
+      id: apikey.id,
+      metadata: apikey.metadata,
+      enabled: apikey.enabled,
+      expiresAt: apikey.expiresAt,
+    })
+    .from(apikey)
+    .where(
+      and(
+        like(apikey.metadata, `%${workspaceId}%`),
+        ownerId === undefined ? undefined : eq(apikey.referenceId, ownerId),
+      ),
+    );
+  return rows.filter((row) => readKeyMetadata(row.metadata)?.workspaceId === workspaceId);
+}
+
+/** Number of keys for `workspaceId` that still work: enabled and not expired at `now`. */
+export async function countActiveWorkspaceKeys(db: DbOrTx, workspaceId: string, now: Date): Promise<number> {
+  const rows = await workspaceKeyRows(db, workspaceId);
+  return rows.filter((row) => row.enabled !== false && (!row.expiresAt || row.expiresAt > now)).length;
+}
+
+/**
+ * Deletes the keys `userId` holds for `workspaceId`, revoked ones included, when they leave it or
+ * are removed. Their keys for other workspaces stay. Returns how many rows went.
+ */
+export async function deleteMemberApiKeys(db: DbOrTx, workspaceId: string, userId: string): Promise<number> {
+  const ids = (await workspaceKeyRows(db, workspaceId, userId)).map((row) => row.id);
+  if (ids.length > 0) await db.delete(apikey).where(inArray(apikey.id, ids));
+  return ids.length;
+}
+
+/** Revokes (disables) the keys `userId` holds for `workspaceId`; the rows stay so lists show them. */
+export async function revokeMemberApiKeys(db: DbOrTx, workspaceId: string, userId: string): Promise<number> {
+  const ids = (await workspaceKeyRows(db, workspaceId, userId)).map((row) => row.id);
+  if (ids.length > 0) await db.update(apikey).set({ enabled: false }).where(inArray(apikey.id, ids));
+  return ids.length;
+}
+
+/** Deletes every key whose metadata names `workspaceId`, whoever owns it. Returns how many rows went. */
+export async function deleteWorkspaceApiKeys(db: DbOrTx, workspaceId: string): Promise<number> {
+  const ids = (await workspaceKeyRows(db, workspaceId)).map((row) => row.id);
+  if (ids.length > 0) await db.delete(apikey).where(inArray(apikey.id, ids));
+  return ids.length;
 }

@@ -6,6 +6,7 @@ import {
   projectViewHref,
   useProjectSummary,
 } from '~/features/project-header';
+import { useWorkspaceSlug } from '~/lib/workspace';
 import { ViewHeader } from '~/ui';
 
 // The view header of a milestone or cycle page (frames 108 and 110):
@@ -33,16 +34,17 @@ export function PlanningHeader({
   display,
   actions,
 }: PlanningHeaderProps) {
+  const workspace = useWorkspaceSlug();
   const project = useProjectSummary(projectKey);
   const name = project?.name ?? projectKey;
   const label = section === 'milestones' ? 'Milestones' : 'Cycles';
   return (
     <ViewHeader
-      project={{ key: projectKey, name, href: projectViewHref(projectKey, 'tasks') }}
+      project={{ key: projectKey, name, href: projectViewHref(workspace, projectKey, 'tasks') }}
       page={
         <span className="flex min-w-0 items-center gap-2.25">
           <Link
-            href={projectViewHref(projectKey, section)}
+            href={projectViewHref(workspace, projectKey, section)}
             className="cursor-pointer rounded-sm text-fg-2 outline-none hover:text-fg focus-visible:shadow-[var(--focus-ring)]"
           >
             {label}

@@ -1,9 +1,23 @@
 // Shared people, sign-in and API helpers for the specs. Every spec runs on the same server, so they share the
-// admin account: the first spec to run creates it through the setup page, the others sign in.
+// admin account: the first spec to run creates it through the setup page, the others sign in. Since 0.10 every
+// page lives under /w/<workspace slug>/; `w()` builds those paths for the workspace setup creates.
 import { type APIRequestContext, expect, type Page } from '@playwright/test';
 
 export const admin = { name: 'Ana Ruiz', email: 'ana@example.com', password: 'e2e-password-1234' };
 export const workspaceName = 'Reddevs';
+/** Slug of the workspace setup creates from `workspaceName`. */
+export const workspaceSlug = 'reddevs';
+
+/** `path` inside a workspace: w('/p/PAY') is /w/reddevs/p/PAY, w('/') is the workspace's Home. */
+export function w(path = '/', slug: string = workspaceSlug): string {
+  const base = `/w/${slug}`;
+  return path === '/' || path === '' ? base : `${base}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+/** Home of a workspace: /w/<slug> with nothing after it but an optional query (such as ?tab=everyone). */
+export function workspaceHomeURL(slug: string = workspaceSlug): RegExp {
+  return new RegExp(`^https?://[^/]+/w/${slug}/?(?:\\?.*)?$`);
+}
 
 /** Waits until the page has loaded and hydrated, so keyboard shortcuts and inputs are live. */
 export async function settle(page: Page): Promise<void> {
@@ -11,13 +25,13 @@ export async function settle(page: Page): Promise<void> {
   await page.waitForTimeout(500);
 }
 
-/** Home: "/" with no path after the host (an optional query, such as ?tab=everyone). */
-export const homeURL = /^https?:\/\/[^/]+\/(?:\?.*)?$/;
+/** Home of the first workspace, where "/" lands. */
+export const homeURL = workspaceHomeURL();
 
 /**
  * First run through the setup page: the admin account, then the workspace. Leaves the page signed in on
- * `landing`: setup sends the new admin to "/", which is Home (the dashboard in 0.5.0 and 0.6.0, the
- * projects page before 0.5.0).
+ * `landing`: setup sends the new admin to "/", which is the workspace's Home since 0.10 (Home at "/" in 0.7.0
+ * to 0.9.0, the dashboard in 0.5.0 and 0.6.0, the projects page before 0.5.0).
  */
 export async function setUpServer(page: Page, landing: RegExp = homeURL): Promise<void> {
   await expect(page).toHaveURL(/\/setup$/);
@@ -44,13 +58,22 @@ export async function signInAsAdmin(page: Page): Promise<void> {
     await setUpServer(page);
     return;
   }
+  await signInAs(page, admin);
+}
+
+/**
+ * Signs the page's context in through the auth endpoint. The page must be on the server already (its URL
+ * gives the Origin header).
+ */
+export async function signInAs(page: Page, person: { email: string; password: string }): Promise<void> {
   // Better Auth checks the Origin header once the request carries a cookie. It also allows only 3 sign-ins
   // per address in a rolling 10-second window, and short specs can run back to back inside one: on 429, wait
   // for the window (Retry-After when sent) and try again.
+  const { origin } = new URL(page.url());
   for (let attempt = 1; ; attempt += 1) {
-    const response = await page.context().request.post('/api/auth/sign-in/email', {
-      data: { email: admin.email, password: admin.password },
-      headers: { origin: new URL(page.url()).origin },
+    const response = await page.context().request.post(`${origin}/api/auth/sign-in/email`, {
+      data: { email: person.email, password: person.password },
+      headers: { origin },
     });
     if (response.status() === 429 && attempt < 4) {
       const retryAfter = Number(response.headers()['retry-after']);
@@ -64,14 +87,22 @@ export async function signInAsAdmin(page: Page): Promise<void> {
   }
 }
 
-/** JSON call to /api/v1 with the context's session cookie. Fails the test on a non-2xx answer. */
+/**
+ * JSON call to /api/v1 with the context's session cookie. Fails the test on a non-2xx answer. A session acts
+ * in the workspace used last unless `workspace` names one (sent as x-zamu-workspace).
+ */
 export async function api<T>(
   request: APIRequestContext,
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   path: string,
   data?: unknown,
+  { workspace }: { workspace?: string } = {},
 ): Promise<T> {
-  const response = await request.fetch(`/api/v1${path}`, { method, data });
+  const response = await request.fetch(`/api/v1${path}`, {
+    method,
+    data,
+    ...(workspace ? { headers: { 'x-zamu-workspace': workspace } } : {}),
+  });
   const text = await response.text();
   expect(response.ok(), `${method} ${path}: ${response.status()} ${text}`).toBe(true);
   return (text ? JSON.parse(text) : null) as T;
@@ -96,15 +127,18 @@ export function collectPageErrors(page: Page, errors: string[], ignore: RegExp[]
 /**
  * Adds an agent in Settings > Members with a read-write key for the given projects and returns the key, read
  * from the clipboard after "Copy API key". The context needs clipboard permissions. `prefix` is the key prefix
- * the server hands out: the upgrade spec passes the one an older release used.
+ * the server hands out and `membersPath` the Members page: the upgrade spec passes what an older release used.
  */
 export async function addAgent(
   page: Page,
   name: string,
   projectKeys: string[],
-  prefix = 'zamu_live_',
+  {
+    prefix = 'zamu_live_',
+    membersPath = w('/settings/members'),
+  }: { prefix?: string; membersPath?: string } = {},
 ): Promise<string> {
-  await page.goto('/settings/members');
+  await page.goto(membersPath);
   await settle(page);
   await page.getByRole('button', { name: 'Add agent' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add agent' });

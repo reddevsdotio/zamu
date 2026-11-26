@@ -39,7 +39,8 @@ import {
   shiftedCounts,
 } from '~/features/board/board-cache';
 import { progressOf as workProgressOf } from '~/features/work-record/ops';
-import { client, orpc } from '~/lib/orpc';
+import type { WorkspaceApi } from '~/lib/orpc';
+import { useApi } from '~/lib/workspace';
 import { retryOnce, withTimeout } from './errors';
 
 // Data for the task screens. Lists load every page (300 tasks are two requests), so grouping, counts and
@@ -61,12 +62,16 @@ export interface TaskListData {
 type ListInput = Omit<z.input<typeof ListTasksInput>, 'limit' | 'cursor'>;
 
 /** Fetches every page of tasks.list for one filter set. */
-export async function fetchAllTasks(input: ListInput, signal?: AbortSignal): Promise<TaskListData> {
+export async function fetchAllTasks(
+  api: WorkspaceApi,
+  input: ListInput,
+  signal?: AbortSignal,
+): Promise<TaskListData> {
   const items: TaskListItem[] = [];
   let counts: StatusCounts | undefined;
   let cursor: string | undefined;
   do {
-    const page = await client.tasks.list(
+    const page = await api.client.tasks.list(
       { ...input, limit: MAX_TASK_LIST_LIMIT, ...(cursor ? { cursor } : {}) },
       { signal },
     );
@@ -82,10 +87,10 @@ export function emptyCounts(): StatusCounts {
 }
 
 /** Every task of a project matching `input`, across pages. Keyed under orpc.tasks.list for invalidation. */
-export function taskListQuery(input: ListInput) {
+export function taskListQuery(api: WorkspaceApi, input: ListInput) {
   return queryOptions({
-    queryKey: [...orpc.tasks.list.key({ type: 'query', input }), 'all-pages'] as const,
-    queryFn: ({ signal }) => fetchAllTasks(input, withTimeout(signal, REQUEST_TIMEOUT_MS)),
+    queryKey: [...api.orpc.tasks.list.key({ type: 'query', input }), 'all-pages'] as const,
+    queryFn: ({ signal }) => fetchAllTasks(api, input, withTimeout(signal, REQUEST_TIMEOUT_MS)),
     retry: retryOnce,
     // Keep the previous rows on screen while a new search or filter loads, within the same project.
     placeholderData: (previous, previousQuery) => {
@@ -95,35 +100,37 @@ export function taskListQuery(input: ListInput) {
   });
 }
 
-export function taskQuery(key: string) {
-  return orpc.tasks.get.queryOptions({
+export function taskQuery(api: WorkspaceApi, key: string) {
+  return api.orpc.tasks.get.queryOptions({
     input: { key },
     retry: retryOnce,
   });
 }
 
-export function activityQuery(key: string) {
-  return orpc.tasks.activity.queryOptions({ input: { key }, retry: retryOnce });
+export function activityQuery(api: WorkspaceApi, key: string) {
+  return api.orpc.tasks.activity.queryOptions({ input: { key }, retry: retryOnce });
 }
 
 /** Activity and comments of a task, oldest first. */
-export function timelineQuery(key: string) {
-  return orpc.tasks.timeline.queryOptions({ input: { key }, retry: retryOnce });
+export function timelineQuery(api: WorkspaceApi, key: string) {
+  return api.orpc.tasks.timeline.queryOptions({ input: { key }, retry: retryOnce });
 }
 
 /** Milestones of a project, with progress, for the milestone pickers. */
-export function milestonesQuery(project: string) {
-  return orpc.milestones.list.queryOptions({ input: { project }, retry: retryOnce });
+export function milestonesQuery(api: WorkspaceApi, project: string) {
+  return api.orpc.milestones.list.queryOptions({ input: { project }, retry: retryOnce });
 }
 
 /** Cycles of a project, oldest first, for the cycle pickers. */
-export function cyclesQuery(project: string) {
-  return orpc.cycles.list.queryOptions({ input: { project }, retry: retryOnce });
+export function cyclesQuery(api: WorkspaceApi, project: string) {
+  return api.orpc.cycles.list.queryOptions({ input: { project }, retry: retryOnce });
 }
 
-export const projectsQuery = () => orpc.projects.list.queryOptions({ retry: retryOnce });
-export const membersQuery = () => orpc.members.list.queryOptions({ retry: retryOnce, staleTime: 60_000 });
-export const meQuery = () => orpc.me.get.queryOptions({ retry: retryOnce, staleTime: 5 * 60_000 });
+export const projectsQuery = (api: WorkspaceApi) => api.orpc.projects.list.queryOptions({ retry: retryOnce });
+export const membersQuery = (api: WorkspaceApi) =>
+  api.orpc.members.list.queryOptions({ retry: retryOnce, staleTime: 60_000 });
+export const meQuery = (api: WorkspaceApi) =>
+  api.orpc.me.get.queryOptions({ retry: retryOnce, staleTime: 5 * 60_000 });
 
 // ---------------------------------------------------------------------------
 // Optimistic edits
@@ -421,10 +428,10 @@ export interface CacheSnapshot {
 type Edit = <T extends CachedTask>(item: T) => T;
 
 /** The latest cached copy of a task: the detail when cached, else the first row found. */
-export function cachedTask(queryClient: QueryClient, key: string): CachedTask | undefined {
-  const task = queryClient.getQueryData(orpc.tasks.get.queryKey({ input: { key } }));
+export function cachedTask(api: WorkspaceApi, queryClient: QueryClient, key: string): CachedTask | undefined {
+  const task = queryClient.getQueryData(api.orpc.tasks.get.queryKey({ input: { key } }));
   if (task) return task;
-  for (const [, data] of queryClient.getQueriesData({ queryKey: orpc.tasks.list.key() })) {
+  for (const [, data] of queryClient.getQueriesData({ queryKey: api.orpc.tasks.list.key() })) {
     const items = isListData(data)
       ? data.items
       : isPagedData(data)
@@ -433,7 +440,7 @@ export function cachedTask(queryClient: QueryClient, key: string): CachedTask | 
     const found = items.find((item) => item.key === key);
     if (found) return found;
   }
-  for (const [, data] of queryClient.getQueriesData({ queryKey: orpc.home.key() })) {
+  for (const [, data] of queryClient.getQueriesData({ queryKey: api.orpc.home.key() })) {
     if (!isHomeData(data)) continue;
     for (const group of data.groups) {
       const found = group.items.find((item) => item.task.key === key);
@@ -539,11 +546,15 @@ export function toListItem(task: CachedTask): TaskListItem {
  * Applies edits to every cached copy of the tasks: details, lists (counts follow status changes),
  * board columns (cards move between status columns) and Home. Returns what to put back on error.
  */
-export function editTaskCaches(queryClient: QueryClient, edits: ReadonlyMap<string, Edit>): CacheSnapshot {
+export function editTaskCaches(
+  api: WorkspaceApi,
+  queryClient: QueryClient,
+  edits: ReadonlyMap<string, Edit>,
+): CacheSnapshot {
   const entries: [QueryKey, unknown][] = [];
   const before = new Map<string, CachedTask>();
   for (const key of edits.keys()) {
-    const found = cachedTask(queryClient, key);
+    const found = cachedTask(api, queryClient, key);
     if (found) before.set(key, found);
   }
   const save = (queryKey: QueryKey, data: unknown, next: unknown) => {
@@ -552,15 +563,15 @@ export function editTaskCaches(queryClient: QueryClient, edits: ReadonlyMap<stri
     queryClient.setQueryData(queryKey, next);
   };
   for (const [key, edit] of edits) {
-    const queryKey = orpc.tasks.get.queryKey({ input: { key } });
+    const queryKey = api.orpc.tasks.get.queryKey({ input: { key } });
     const task = queryClient.getQueryData(queryKey);
     if (task) save(queryKey, task, edit(task));
   }
-  for (const [queryKey, data] of queryClient.getQueriesData({ queryKey: orpc.tasks.list.key() })) {
+  for (const [queryKey, data] of queryClient.getQueriesData({ queryKey: api.orpc.tasks.list.key() })) {
     if (isListData(data)) save(queryKey, data, editList(data, edits));
     else if (isPagedData(data)) save(queryKey, data, editColumn(queryKey, data, edits, before));
   }
-  for (const [queryKey, data] of queryClient.getQueriesData({ queryKey: orpc.home.key() })) {
+  for (const [queryKey, data] of queryClient.getQueriesData({ queryKey: api.orpc.home.key() })) {
     if (isHomeData(data)) save(queryKey, data, editHome(data, edits));
   }
   return { entries, before };
@@ -626,34 +637,39 @@ function relativeEdits(before: CachedTask | undefined, key: string, patch: TaskP
  * Invalidates everything a task change can affect: the task, its activity and timeline, lists and
  * board columns, project counts, milestone and cycle progress, and Home.
  */
-export function invalidateTask(queryClient: QueryClient, key: string) {
+export function invalidateTask(api: WorkspaceApi, queryClient: QueryClient, key: string) {
   return Promise.all([
-    queryClient.invalidateQueries({ queryKey: orpc.tasks.get.key({ input: { key } }) }),
-    queryClient.invalidateQueries({ queryKey: orpc.tasks.activity.key({ input: { key } }) }),
-    queryClient.invalidateQueries({ queryKey: orpc.tasks.timeline.key({ input: { key } }) }),
-    queryClient.invalidateQueries({ queryKey: orpc.tasks.list.key() }),
-    queryClient.invalidateQueries({ queryKey: orpc.projects.key() }),
-    queryClient.invalidateQueries({ queryKey: orpc.milestones.key() }),
-    queryClient.invalidateQueries({ queryKey: orpc.cycles.key() }),
-    queryClient.invalidateQueries({ queryKey: orpc.home.key() }),
-    queryClient.invalidateQueries({ queryKey: orpc.dashboard.key() }),
+    queryClient.invalidateQueries({ queryKey: api.orpc.tasks.get.key({ input: { key } }) }),
+    queryClient.invalidateQueries({ queryKey: api.orpc.tasks.activity.key({ input: { key } }) }),
+    queryClient.invalidateQueries({ queryKey: api.orpc.tasks.timeline.key({ input: { key } }) }),
+    queryClient.invalidateQueries({ queryKey: api.orpc.tasks.list.key() }),
+    queryClient.invalidateQueries({ queryKey: api.orpc.projects.key() }),
+    queryClient.invalidateQueries({ queryKey: api.orpc.milestones.key() }),
+    queryClient.invalidateQueries({ queryKey: api.orpc.cycles.key() }),
+    queryClient.invalidateQueries({ queryKey: api.orpc.home.key() }),
+    queryClient.invalidateQueries({ queryKey: api.orpc.dashboard.key() }),
   ]);
 }
 
 /** After a change settles: the tasks, the other ends of relations, and label usage counts. */
-function invalidateAfter(queryClient: QueryClient, keys: readonly string[], patch: TaskPatch) {
-  for (const key of keys) void invalidateTask(queryClient, key);
+function invalidateAfter(
+  api: WorkspaceApi,
+  queryClient: QueryClient,
+  keys: readonly string[],
+  patch: TaskPatch,
+) {
+  for (const key of keys) void invalidateTask(api, queryClient, key);
   // Parents, subtasks and blockers show each other: refresh every open task detail.
-  if (touchesRelations(patch)) void queryClient.invalidateQueries({ queryKey: orpc.tasks.get.key() });
-  if (touchesLabels(patch)) void queryClient.invalidateQueries({ queryKey: orpc.labels.key() });
+  if (touchesRelations(patch)) void queryClient.invalidateQueries({ queryKey: api.orpc.tasks.get.key() });
+  if (touchesLabels(patch)) void queryClient.invalidateQueries({ queryKey: api.orpc.labels.key() });
 }
 
 /** Stops task reads in flight, so they don't overwrite an optimistic edit. */
-export async function cancelTaskQueries(queryClient: QueryClient) {
+export async function cancelTaskQueries(api: WorkspaceApi, queryClient: QueryClient) {
   await Promise.all([
-    queryClient.cancelQueries({ queryKey: orpc.tasks.get.key() }),
-    queryClient.cancelQueries({ queryKey: orpc.tasks.list.key() }),
-    queryClient.cancelQueries({ queryKey: orpc.home.key() }),
+    queryClient.cancelQueries({ queryKey: api.orpc.tasks.get.key() }),
+    queryClient.cancelQueries({ queryKey: api.orpc.tasks.list.key() }),
+    queryClient.cancelQueries({ queryKey: api.orpc.home.key() }),
   ]);
 }
 
@@ -662,15 +678,16 @@ export async function cancelTaskQueries(queryClient: QueryClient) {
  * snapshot to restore when the server refuses it.
  */
 export function applyOptimisticPatch(
+  api: WorkspaceApi,
   queryClient: QueryClient,
   key: string,
   patch: TaskPatch,
   updatedAt = new Date().toISOString(),
 ): CacheSnapshot {
-  const before = cachedTask(queryClient, key);
+  const before = cachedTask(api, queryClient, key);
   const edits = new Map<string, Edit>([[key, (item) => applyTaskPatch(item, patch, updatedAt)]]);
   for (const [other, edit] of relativeEdits(before, key, patch)) if (other !== key) edits.set(other, edit);
-  return editTaskCaches(queryClient, edits);
+  return editTaskCaches(api, queryClient, edits);
 }
 
 /**
@@ -680,20 +697,21 @@ export function applyOptimisticPatch(
  * `before`, for an Undo.
  */
 export function useUpdateTask() {
+  const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: orpc.tasks.update.mutationKey(),
-    mutationFn: (variables: UpdateTaskVariables) => client.tasks.update(toUpdateInput(variables)),
+    mutationKey: api.orpc.tasks.update.mutationKey(),
+    mutationFn: (variables: UpdateTaskVariables) => api.client.tasks.update(toUpdateInput(variables)),
     onMutate: async ({ key, patch }): Promise<CacheSnapshot> => {
-      await cancelTaskQueries(queryClient);
-      return applyOptimisticPatch(queryClient, key, patch);
+      await cancelTaskQueries(api, queryClient);
+      return applyOptimisticPatch(api, queryClient, key, patch);
     },
     onError: (_error, _variables, snapshot) => restoreTaskCaches(queryClient, snapshot),
     onSuccess: (task) => {
-      queryClient.setQueryData(orpc.tasks.get.queryKey({ input: { key: task.key } }), task);
+      queryClient.setQueryData(api.orpc.tasks.get.queryKey({ input: { key: task.key } }), task);
     },
     // Not awaited: the rollback and the error show at once instead of after the refetch.
-    onSettled: (_task, _error, { key, patch }) => invalidateAfter(queryClient, [key], patch),
+    onSettled: (_task, _error, { key, patch }) => invalidateAfter(api, queryClient, [key], patch),
   });
 }
 
@@ -729,41 +747,46 @@ export interface BulkUpdateVariables {
  * nothing.
  */
 export function useBulkUpdateTasks() {
+  const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: orpc.tasks.bulkUpdate.mutationKey(),
+    mutationKey: api.orpc.tasks.bulkUpdate.mutationKey(),
     mutationFn: (variables: BulkUpdateVariables) => {
-      const refusal = refusalFor(queryClient, variables);
+      const refusal = refusalFor(api, queryClient, variables);
       if (refusal) return Promise.reject(new BulkRefusedError(refusal));
-      return client.tasks.bulkUpdate(toBulkInput(variables.keys, variables.patch));
+      return api.client.tasks.bulkUpdate(toBulkInput(variables.keys, variables.patch));
     },
     onMutate: async (variables): Promise<CacheSnapshot> => {
-      if (refusalFor(queryClient, variables)) return { entries: [], before: new Map() };
-      await cancelTaskQueries(queryClient);
+      if (refusalFor(api, queryClient, variables)) return { entries: [], before: new Map() };
+      await cancelTaskQueries(api, queryClient);
       const updatedAt = new Date().toISOString();
       const edit: Edit = (item) => applyTaskPatch(item, variables.patch, updatedAt);
-      return editTaskCaches(queryClient, new Map(variables.keys.map((key) => [key, edit])));
+      return editTaskCaches(api, queryClient, new Map(variables.keys.map((key) => [key, edit])));
     },
     onError: (_error, _variables, snapshot) => restoreTaskCaches(queryClient, snapshot),
     onSuccess: (result: TaskBulkResult) => {
       for (const item of result.items) {
-        const queryKey = orpc.tasks.get.queryKey({ input: { key: item.key } });
+        const queryKey = api.orpc.tasks.get.queryKey({ input: { key: item.key } });
         const task = queryClient.getQueryData(queryKey);
         if (task) queryClient.setQueryData(queryKey, { ...task, ...item });
       }
     },
     onSettled: (_result, error, { keys, patch }) => {
       if (error instanceof BulkRefusedError) return;
-      invalidateAfter(queryClient, keys, patch);
+      invalidateAfter(api, queryClient, keys, patch);
     },
   });
 }
 
-function refusalFor(queryClient: QueryClient, { keys, targets }: BulkUpdateVariables): string | null {
+function refusalFor(
+  api: WorkspaceApi,
+  queryClient: QueryClient,
+  { keys, targets }: BulkUpdateVariables,
+): string | null {
   if (keys.length > MAX_BULK_TASKS) return `Change ${MAX_BULK_TASKS} tasks or fewer at once.`;
   const shown =
     targets ??
-    keys.map((key) => cachedTask(queryClient, key)).filter((task): task is CachedTask => task != null);
+    keys.map((key) => cachedTask(api, queryClient, key)).filter((task): task is CachedTask => task != null);
   return bulkRefusal(shown);
 }
 
@@ -774,14 +797,15 @@ function refusalFor(queryClient: QueryClient, { keys, targets }: BulkUpdateVaria
  * (`parent`) shows in the parent's cached detail at once.
  */
 export function useCreateTask() {
+  const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: orpc.tasks.create.mutationKey(),
-    mutationFn: (input: z.input<typeof CreateTaskInput>) => client.tasks.create(input),
+    mutationKey: api.orpc.tasks.create.mutationKey(),
+    mutationFn: (input: z.input<typeof CreateTaskInput>) => api.client.tasks.create(input),
     onSuccess: (task, input) => {
-      queryClient.setQueryData(orpc.tasks.get.queryKey({ input: { key: task.key } }), task);
+      queryClient.setQueryData(api.orpc.tasks.get.queryKey({ input: { key: task.key } }), task);
       if (input.parent) {
-        const parentKey = orpc.tasks.get.queryKey({ input: { key: input.parent.toUpperCase() } });
+        const parentKey = api.orpc.tasks.get.queryKey({ input: { key: input.parent.toUpperCase() } });
         const parent = queryClient.getQueryData(parentKey);
         if (parent) {
           const subtasks = [
@@ -792,14 +816,14 @@ export function useCreateTask() {
         }
       }
       // Not awaited: the dialog can take the next task while the list refreshes.
-      void queryClient.invalidateQueries({ queryKey: orpc.tasks.list.key() });
-      void queryClient.invalidateQueries({ queryKey: orpc.projects.key() });
-      void queryClient.invalidateQueries({ queryKey: orpc.milestones.key() });
-      void queryClient.invalidateQueries({ queryKey: orpc.cycles.key() });
-      void queryClient.invalidateQueries({ queryKey: orpc.home.key() });
+      void queryClient.invalidateQueries({ queryKey: api.orpc.tasks.list.key() });
+      void queryClient.invalidateQueries({ queryKey: api.orpc.projects.key() });
+      void queryClient.invalidateQueries({ queryKey: api.orpc.milestones.key() });
+      void queryClient.invalidateQueries({ queryKey: api.orpc.cycles.key() });
+      void queryClient.invalidateQueries({ queryKey: api.orpc.home.key() });
       if (input.parent || input.blockedBy?.length)
-        void queryClient.invalidateQueries({ queryKey: orpc.tasks.get.key() });
-      if (input.labels?.length) void queryClient.invalidateQueries({ queryKey: orpc.labels.key() });
+        void queryClient.invalidateQueries({ queryKey: api.orpc.tasks.get.key() });
+      if (input.labels?.length) void queryClient.invalidateQueries({ queryKey: api.orpc.labels.key() });
     },
   });
 }

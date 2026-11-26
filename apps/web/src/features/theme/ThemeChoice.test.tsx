@@ -4,7 +4,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Me, Theme } from '@zamu/contracts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { orpc } from '~/lib/orpc';
+import { testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 import { AppearancePage } from './AppearancePage';
 import { themeClass, useUserTheme } from './theme';
 
@@ -16,8 +17,8 @@ const api = vi.hoisted(() => ({
   calls: [] as { theme: Theme }[],
 }));
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const client = {
     me: {
       get: async () => {
@@ -29,8 +30,8 @@ vi.mock('~/lib/orpc', async () => {
       },
     },
   };
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 const ME: Me = {
   user: {
@@ -47,18 +48,20 @@ const ME: Me = {
 };
 
 function HtmlClassProbe() {
-  return <output aria-label="html class">{themeClass(useUserTheme()) ?? 'none'}</output>;
+  return <output aria-label="html class">{themeClass(useUserTheme(workspace.slug)) ?? 'none'}</output>;
 }
 
 function renderPage(me: Me | undefined = ME) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  if (me) queryClient.setQueryData(orpc.me.get.queryKey(), me);
+  if (me) queryClient.setQueryData(workspace.api.orpc.me.get.queryKey(), me);
   render(
     <QueryClientProvider client={queryClient}>
-      <HtmlClassProbe />
-      <AppearancePage />
+      <WorkspaceProvider workspace={workspace}>
+        <HtmlClassProbe />
+        <AppearancePage />
+      </WorkspaceProvider>
     </QueryClientProvider>,
   );
   return { queryClient };
@@ -89,7 +92,7 @@ describe('Appearance', () => {
     expect(screen.getByRole('radio', { name: 'Dark' })).toBeChecked();
     await waitFor(() => expect(api.calls).toEqual([{ theme: 'dark' }]));
     await waitFor(() =>
-      expect(queryClient.getQueryData<Me>(orpc.me.get.queryKey())?.user.theme).toBe('dark'),
+      expect(queryClient.getQueryData<Me>(workspace.api.orpc.me.get.queryKey())?.user.theme).toBe('dark'),
     );
   });
 

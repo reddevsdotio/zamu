@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import type { ApiKeySummary } from '@zamu/contracts';
 import { useCallback, useState } from 'react';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
 import { Banner, Button, EmptyState, FilterBar, MemberLabel, PageHeader } from '~/ui';
 import { ConfirmDialog } from './ConfirmDialog';
 import { KeyCreation } from './CreationFlows';
@@ -38,14 +39,16 @@ function revokeText(key: ApiKeySummary): string {
 }
 
 export function KeysPage({ mode, ownerId }: KeysPageProps) {
-  const me = useQuery(meQuery());
-  const members = useQuery(membersQuery());
-  const projects = useQuery(projectsQuery());
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
+  const me = useQuery(meQuery(api));
+  const members = useQuery(membersQuery(api));
+  const projects = useQuery(projectsQuery(api));
   const owner = mode === 'mine' ? 'me' : (ownerId ?? 'all');
   const isAdmin = isAdminRole(me.data?.role);
   // Only admins list every key; the server refuses it too, this just skips the round trip.
   const adminOnly = owner === 'all' && me.data !== undefined && !isAdmin;
-  const keys = useQuery({ ...apiKeysQuery(owner), enabled: !adminOnly });
+  const keys = useQuery({ ...apiKeysQuery(api, owner), enabled: !adminOnly });
 
   const [newKeyOpen, setNewKeyOpen] = useState(false);
   const [revoking, setRevoking] = useState<ApiKeySummary | null>(null);
@@ -91,7 +94,8 @@ export function KeysPage({ mode, ownerId }: KeysPageProps) {
           end={
             isAdmin ? (
               <Link
-                to="/settings/api-keys"
+                to="/w/$workspace/settings/api-keys"
+                params={{ workspace }}
                 className="text-fg-2 outline-none hover:text-fg focus-visible:focus-ring"
               >
                 Show all keys
@@ -121,7 +125,8 @@ export function KeysPage({ mode, ownerId }: KeysPageProps) {
             text="Your own keys, and keys of agents you are responsible for, are under Your API keys and Members."
             action={
               <Link
-                to="/settings/my-keys"
+                to="/w/$workspace/settings/my-keys"
+                params={{ workspace }}
                 className="font-medium text-accent outline-none focus-visible:focus-ring"
               >
                 Go to Your API keys

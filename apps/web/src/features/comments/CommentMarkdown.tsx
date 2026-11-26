@@ -1,13 +1,16 @@
 import type { UserRef } from '@zamu/contracts';
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useMemo, useSyncExternalStore } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useOptionalWorkspace } from '~/lib/workspace';
+import { type WorkspaceUrlSlug, workspacePath } from '~/lib/workspace-paths';
 import { cn } from '~/ui';
 import { commentUrlTransform, mentionId } from './mentions';
 
 // Comment bodies and the composer preview. react-markdown never renders raw HTML; links keep only
 // http(s) and mention: targets. A mention link turns into a chip when its id is a known member (from the
-// comment's own mention list or the workspace members); otherwise it reads as plain text.
+// comment's own mention list or the workspace members); otherwise it reads as plain text. Links to this
+// instance's pre-0.10 task and project URLs (/p/PAY/PAY-12) open them in the comment's workspace.
 
 type KnownMember = Pick<UserRef, 'id' | 'name' | 'kind'>;
 
@@ -24,10 +27,40 @@ export const commentProse = cn(
 
 const MembersContext = createContext<ReadonlyMap<string, KnownMember>>(new Map());
 
+const noSubscription = () => () => {};
+
+/** This page's origin; null on the server and while hydrating, so both render the same href first. */
+function usePageOrigin(): string | null {
+  return useSyncExternalStore(
+    noSubscription,
+    () => window.location.origin,
+    () => null,
+  );
+}
+
+/** `href` under the workspace when it is a pre-0.10 project or task URL of this instance (`origin`). */
+export function inWorkspaceHref(
+  href: string,
+  origin: string | null,
+  workspace: WorkspaceUrlSlug | undefined,
+): string {
+  if (!origin || !workspace) return href;
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return href;
+  }
+  if (url.origin !== origin || !url.pathname.startsWith('/p/')) return href;
+  return `${origin}${workspacePath(workspace, url.pathname)}${url.search}${url.hash}`;
+}
+
 /** The renderers read members from context, so the components object keeps its identity. */
 const components: Components = {
   a: function CommentLink({ node: _node, href, children }) {
     const members = useContext(MembersContext);
+    const workspace = useOptionalWorkspace()?.slug;
+    const origin = usePageOrigin();
     const id = mentionId(href);
     if (id) {
       const member = members.get(id);
@@ -41,7 +74,7 @@ const components: Components = {
     }
     if (!href) return <>{children}</>;
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer nofollow">
+      <a href={inWorkspaceHref(href, origin, workspace)} target="_blank" rel="noopener noreferrer nofollow">
         {children}
       </a>
     );

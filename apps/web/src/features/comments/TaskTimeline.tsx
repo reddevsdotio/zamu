@@ -23,6 +23,7 @@ import {
   shortCommit,
 } from '~/features/tasks/mirror';
 import { meQuery, timelineQuery } from '~/features/tasks/queries';
+import { useApi } from '~/lib/workspace';
 import { Avatar, Banner, Button, cn, NoteItem, Popover, Skeleton, SourceTag } from '~/ui';
 import { CommentBox } from './CommentBox';
 import { CommentMarkdown } from './CommentMarkdown';
@@ -123,8 +124,9 @@ export function TaskTimeline({
   composer,
   className,
 }: TaskTimelineProps) {
-  const result = useQuery({ ...timelineQuery(taskKey), enabled });
-  const meId = useQuery(meQuery()).data?.user.id;
+  const api = useApi();
+  const result = useQuery({ ...timelineQuery(api, taskKey), enabled });
+  const meId = useQuery(meQuery(api)).data?.user.id;
   const now = useNow();
   const time = atTime(formatRelative, now);
   const [filter, setFilterState] = useState<TimelineFilter>(filterChoice);

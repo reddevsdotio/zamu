@@ -140,7 +140,12 @@ describe('zamu login, whoami, logout', () => {
     expect(out.data.me.user.responsible?.name).toBe(adminName);
 
     const path = join(configHome, 'zamu', 'config.json');
-    expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({ url: URL, key: keys.agent });
+    const workspace = out.data.me.workspace;
+    expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({
+      version: 2,
+      logins: [{ url: URL, key: keys.agent, workspace, default: true }],
+    });
+    expect(out.data).toMatchObject({ replaced: false, default: true });
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     expect((await stat(join(configHome, 'zamu'))).mode & 0o777).toBe(0o700);
 
@@ -156,11 +161,14 @@ describe('zamu login, whoami, logout', () => {
 
     const logout = await zamu(['logout', '--json']);
     expect(logout.code).toBe(0);
-    expect(parsed(logout, 'logout').data).toEqual({ url: URL });
+    expect(parsed(logout, 'logout').data).toEqual({
+      url: URL,
+      removed: [{ url: URL, workspace, default: true }],
+    });
     await expect(stat(path)).rejects.toThrow();
 
     const again = await zamu(['logout', '--json']);
-    expect(parsed(again, 'logout').data).toEqual({ url: null });
+    expect(parsed(again, 'logout').data).toEqual({ url: null, removed: [] });
   });
 
   it('falls back to ~/.config when XDG_CONFIG_HOME is unset, and reads the key from stdin', async () => {
@@ -171,7 +179,7 @@ describe('zamu login, whoami, logout', () => {
     expect(login.code, login.stderr).toBe(0);
     expect(login.stdout).toContain(`Logged in as ${adminName}`);
     const path = join(home, '.config', 'zamu', 'config.json');
-    expect(JSON.parse(await readFile(path, 'utf8')).key).toBe(keys.admin);
+    expect(JSON.parse(await readFile(path, 'utf8')).logins[0].key).toBe(keys.admin);
   });
 
   it('refuses a revoked key with exit code 2 and stores nothing', async () => {

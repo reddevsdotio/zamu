@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { Task, TaskListItem } from '@zamu/contracts';
 import { useState } from 'react';
 import { relatedOf, taskQuery, useCreateTask } from '~/features/tasks/queries';
+import { useApi } from '~/lib/workspace';
 import {
   Avatar,
   MenuNote,
@@ -143,9 +144,10 @@ const parentKeyOf = (target: FieldTarget): string | null =>
   'createdBy' in target ? ((target as Task).parent?.key ?? null) : (target.parentKey ?? null);
 
 function SubtaskPickerContent({ target, close }: { target: FieldTarget; close: () => void }) {
+  const api = useApi();
   const [query, setQuery] = useState('');
   // A row's parentKey is enough; the detail (when cached) has the parent too.
-  const detail = useQuery({ ...taskQuery(target.key), enabled: false }).data;
+  const detail = useQuery({ ...taskQuery(api, target.key), enabled: false }).data;
   const search = useTaskSearch(target.project.key, query, { topLevel: true });
   const { apply } = useFieldChange();
   const create = useCreateTask();

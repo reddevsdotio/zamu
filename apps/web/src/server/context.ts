@@ -4,6 +4,7 @@
 // share it.
 // Framework-free on purpose: tests and scripts import it without TanStack Start.
 // M6: requestSource reads the machine and branch the CLI sends with every request into the actor.
+// 0.10: WORKSPACE_CREATION reaches core as `workspaceCreation`.
 import { type Auth, createAuth } from '@zamu/auth';
 import { type EntrySource, parseSourceHeader, SOURCE_HEADERS } from '@zamu/contracts';
 import type { CoreContext } from '@zamu/core';
@@ -43,6 +44,7 @@ export function createServerContext(env: ServerEnv = process.env): ServerContext
     timeZone: config.timeZone,
     ...(config.encryptionKey ? { encryptionKey: config.encryptionKey } : {}),
     gitHosts: config.gitHosts,
+    workspaceCreation: config.workspaceCreation,
   };
 }
 

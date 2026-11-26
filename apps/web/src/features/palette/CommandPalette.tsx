@@ -12,7 +12,7 @@ import {
 } from 'react';
 import { Dialog as AriaDialog } from 'react-aria-components';
 import { taskHref } from '~/features/shell/paths';
-import { orpc } from '~/lib/orpc';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
 import {
   CheckGlyph,
   cn,
@@ -87,7 +87,7 @@ interface StepEntry {
 }
 
 export interface CommandPaletteProps {
-  /** The signed-in person, for the Recent tasks. */
+  /** Whose Recent tasks to show: the signed-in person in this workspace (`<userId>:<workspaceId>`). */
   userId?: string;
   /** Command ids shown under Suggested on the empty palette, in order; missing ones are skipped. */
   suggested?: readonly string[];
@@ -164,6 +164,8 @@ export function CommandPalette(props: CommandPaletteProps) {
 }
 
 function PalettePanel({ mode, userId, suggested = [] }: CommandPaletteProps & { mode: PaletteOpenMode }) {
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
   const router = useRouter();
   const registered = useRegisteredCommands();
   const recent = useRecentTasks(userId);
@@ -190,7 +192,7 @@ function PalettePanel({ mode, userId, suggested = [] }: CommandPaletteProps & { 
   const searching = !top && !projectsOnly && trimmed.length > 0;
   const debounced = useDebounced(trimmed, SEARCH_DEBOUNCE_MS);
   const tasks = useQuery({
-    ...orpc.tasks.list.queryOptions({ input: { q: debounced, limit: TASK_RESULTS } }),
+    ...api.orpc.tasks.list.queryOptions({ input: { q: debounced, limit: TASK_RESULTS } }),
     enabled: searching && debounced.length > 0,
     placeholderData: keepPreviousData,
     staleTime: 10_000,
@@ -209,7 +211,7 @@ function PalettePanel({ mode, userId, suggested = [] }: CommandPaletteProps & { 
 
   const openTask = (key: string) => () => {
     closePalette();
-    void router.navigate({ href: taskHref(key) });
+    void router.navigate({ href: taskHref(workspace, key) });
   };
 
   const taskCommands = registered.filter((command) => command.section === 'task');

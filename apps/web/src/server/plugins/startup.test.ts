@@ -1,9 +1,12 @@
 // Starts the built server (.output/server/index.mjs, as `pnpm --filter web start` and the Docker image do)
-// and checks that config-check.ts refuses to start it without a usable BETTER_AUTH_SECRET. Needs
-// `pnpm --filter web build` first; skipped otherwise.
+// and checks that config-check.ts refuses to start it without a usable BETTER_AUTH_SECRET, or with an
+// OIDC_WORKSPACE that names no workspace once setup is done. Needs `pnpm --filter web build` first;
+// skipped otherwise.
 import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { schema } from '@zamu/db';
+import { createTestDatabase } from '@zamu/db/test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const serverEntry = fileURLToPath(new URL('../../../.output/server/index.mjs', import.meta.url));
@@ -99,5 +102,33 @@ describe('built web server startup', () => {
     });
     const output = await Promise.race([run.waitFor('Listening on'), exitedEarly]);
     expect(output).not.toContain('configuration is invalid');
+  });
+
+  it('exits 1 before listening when OIDC_WORKSPACE names no workspace after setup', async () => {
+    const database = await createTestDatabase({ prefix: 'pm_startup_oidc' });
+    try {
+      await database.db.insert(schema.organization).values({ name: 'Globex', slug: 'globex' });
+      const sso = {
+        ...ENV,
+        DATABASE_URL: database.url,
+        BETTER_AUTH_SECRET: 'a'.repeat(32),
+        OIDC_ISSUER: 'https://auth.example.com',
+        OIDC_CLIENT_ID: 'zamu',
+        OIDC_CLIENT_SECRET: 'secret',
+      };
+      const run = startServer({ ...sso, OIDC_WORKSPACE: 'acme' });
+      await expect(run.exit).resolves.toEqual({ code: 1, signal: null });
+      expect(run.output()).toContain('OIDC_WORKSPACE is "acme", but no workspace has that slug.');
+      expect(run.output()).not.toContain('Listening on');
+
+      const named = startServer({ ...sso, OIDC_WORKSPACE: 'globex' });
+      const exitedEarly = named.exit.then(({ code }) => {
+        throw new Error(`The server exited (code ${code}) before listening:\n${named.output()}`);
+      });
+      await Promise.race([named.waitFor('Listening on'), exitedEarly]);
+    } finally {
+      for (const child of children.splice(0)) if (child.exitCode === null) child.kill('SIGKILL');
+      await database.drop();
+    }
   });
 });

@@ -10,14 +10,18 @@
 // lock file and lands by writing a temporary file and renaming it over the old one.
 //
 // To know "the status zamu last saw", every task the server returns (show, list, create, update) is
-// remembered per server in statuses.json next to the queue. A queued status change takes the status of
-// an earlier queued move of the same task, else the remembered one; with neither, it is not queued.
+// remembered per server and workspace in statuses.json next to the queue. A queued status change takes
+// the status of an earlier queued move of the same task, else the remembered one; with neither, it is
+// not queued.
+//
+// From 0.10 an entry carries the workspace of the login that queued it, and replay sends it with that
+// stored login, whichever login the command itself uses. An entry from 0.9 (no workspace) goes out
+// with the stored login that has its key, else with the command's login when that key matches.
 import { randomBytes } from 'node:crypto';
-import { chmod, mkdir, open, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join } from 'node:path';
+import { readFile, rename } from 'node:fs/promises';
+import { join } from 'node:path';
 import { ORPCError } from '@orpc/client';
 import {
-  CLI_QUEUE_DIR,
   CLI_QUEUE_FILE_NAME,
   CliQueueEntry,
   CliQueueFile,
@@ -27,19 +31,20 @@ import {
   TaskStatus,
 } from '@zamu/contracts';
 import { z } from 'zod';
-import { type ApiClient, isNetworkFailure } from './client';
+import { type ApiClient, callProcedure, isNetworkFailure, proxyClient } from './client';
 import { type CommandContext, emit } from './context';
 import { CliError, toCliError, usageError } from './errors';
+import { FileLockedError, LOCK_STALE_MS, stateDir, withLock, writeAtomically } from './files';
 import { formatTime, statusLabel } from './format';
 import type { CliIo } from './io';
 
+export { LOCK_STALE_MS, stateDir, withLock };
+/** Another zamu process held the queue's lock for longer than a command waits. */
+export const QueueLockedError = FileLockedError;
+
 export const QUEUED_MESSAGE = "Queued: the server didn't answer. It will be sent on your next zamu command.";
 
-/** A lock older than this was left by a process that died; it is removed. */
-export const LOCK_STALE_MS = 30_000;
-/** How long a command waits for another zamu process to finish with the queue. */
-const LOCK_WAIT_MS = 40_000;
-/** Remembered task statuses per server (the most recent ones are kept). */
+/** Remembered task statuses per server and workspace (the most recent ones are kept). */
 const MAX_REMEMBERED = 1_000;
 const STATUSES_FILE_NAME = 'statuses.json';
 
@@ -49,106 +54,12 @@ type Io = Pick<CliIo, 'env' | 'homeDir'>;
 // Files
 // ---------------------------------------------------------------------------
 
-/** $XDG_STATE_HOME/zamu, else ~/.local/state/zamu. Relative XDG values are ignored, as the spec says. */
-export function stateDir(io: Io): string {
-  const xdg = io.env.XDG_STATE_HOME;
-  const base = xdg && isAbsolute(xdg) ? xdg : join(io.homeDir, '.local', 'state');
-  return join(base, CLI_QUEUE_DIR);
-}
-
 export function queuePath(io: Io): string {
   return join(stateDir(io), CLI_QUEUE_FILE_NAME);
 }
 
 function statusesPath(io: Io): string {
   return join(stateDir(io), STATUSES_FILE_NAME);
-}
-
-/** Another zamu process held the lock for longer than a command waits. */
-export class QueueLockedError extends Error {
-  constructor(readonly lockPath: string) {
-    super(`Another zamu process is using the offline queue (lock file ${lockPath}).`);
-    this.name = 'QueueLockedError';
-  }
-}
-
-export interface LockOptions {
-  staleMs?: number;
-  waitMs?: number;
-}
-
-interface Lock {
-  /** Marks the lock as alive, for holders that work longer than a moment (the replay). */
-  touch: () => Promise<void>;
-}
-
-const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/**
- * Runs `work` holding `<path>.lock`, created exclusively. A lock whose file hasn't changed for
- * `staleMs` belonged to a process that died and is taken over. Gives up after `waitMs`.
- */
-export async function withLock<T>(
-  path: string,
-  work: (lock: Lock) => Promise<T>,
-  { staleMs = LOCK_STALE_MS, waitMs = LOCK_WAIT_MS }: LockOptions = {},
-): Promise<T> {
-  const lockPath = `${path}.lock`;
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const token = `${process.pid} ${randomBytes(8).toString('hex')}\n`;
-  const started = Date.now();
-  let delay = 5;
-  for (;;) {
-    try {
-      const handle = await open(lockPath, 'wx', 0o600);
-      try {
-        await handle.writeFile(token);
-      } finally {
-        await handle.close();
-      }
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    }
-    const age = await stat(lockPath).then(
-      (info) => Date.now() - info.mtimeMs,
-      () => null,
-    );
-    if (age === null) continue;
-    if (age > staleMs) {
-      await rm(lockPath, { force: true });
-      continue;
-    }
-    if (Date.now() - started > waitMs) throw new QueueLockedError(lockPath);
-    await pause(delay + Math.random() * delay);
-    delay = Math.min(delay * 2, 100);
-  }
-  try {
-    return await work({
-      touch: async () => {
-        const now = new Date();
-        await utimes(lockPath, now, now).catch(() => {});
-      },
-    });
-  } finally {
-    // Only our own lock: one taken over as stale by another process stays theirs.
-    const current = await readFile(lockPath, 'utf8').catch(() => null);
-    if (current === token) await rm(lockPath, { force: true });
-  }
-}
-
-/** Writes JSON to `path` through a temporary file and a rename, so readers never see half a file. */
-async function writeAtomically(path: string, value: unknown): Promise<void> {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
-  try {
-    await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-    await chmod(temp, 0o600);
-    await rename(temp, path);
-  } catch (error) {
-    await rm(temp, { force: true });
-    throw error;
-  }
 }
 
 /**
@@ -194,9 +105,14 @@ export function listQueue(io: CliIo): Promise<CliQueueEntry[]> {
   return readQueue(io);
 }
 
-/** How many writes wait for the server at `url`. */
-export async function countQueued(io: CliIo, url: string): Promise<number> {
-  return (await readQueue(io)).filter((entry) => entry.url === url).length;
+/**
+ * How many writes wait for the server at `url`, in the workspace when it is known. Entries from 0.9
+ * name no workspace and count everywhere on their server.
+ */
+export async function countQueued(io: CliIo, url: string, workspaceId?: string | null): Promise<number> {
+  return (await readQueue(io)).filter(
+    (entry) => entry.url === url && (!workspaceId || !entry.workspaceId || entry.workspaceId === workspaceId),
+  ).length;
 }
 
 /** Removes one entry by id; null when there is none with that id. */
@@ -261,10 +177,18 @@ async function readStatuses(io: Io): Promise<RememberedStatuses> {
 }
 
 /**
+ * Where statuses are remembered: per server and workspace, so PAY-1 of one workspace never lends its
+ * status to PAY-1 of another. Per server alone when the workspace is not known (ZAMU_KEY).
+ */
+export function statusBucket(url: string, workspaceId: string | null | undefined): string {
+  return workspaceId ? `${url} ${workspaceId}` : url;
+}
+
+/**
  * Remembers the status of tasks the server returned. Best effort: a failure here never fails the
  * command, it only means a later status change can't be queued.
  */
-export async function rememberStatuses(io: CliIo, url: string, tasks: readonly SeenTask[]): Promise<void> {
+export async function rememberStatuses(io: CliIo, bucket: string, tasks: readonly SeenTask[]): Promise<void> {
   if (tasks.length === 0) return;
   try {
     const path = statusesPath(io);
@@ -272,7 +196,7 @@ export async function rememberStatuses(io: CliIo, url: string, tasks: readonly S
       path,
       async () => {
         const file = await readStatuses(io);
-        const server = { ...(file.servers[url] ?? {}) };
+        const server = { ...(file.servers[bucket] ?? {}) };
         const at = new Date(io.now?.() ?? Date.now()).toISOString();
         let changed = false;
         for (const task of tasks) {
@@ -288,7 +212,7 @@ export async function rememberStatuses(io: CliIo, url: string, tasks: readonly S
           .slice(0, MAX_REMEMBERED);
         await writeAtomically(path, {
           ...file,
-          servers: { ...file.servers, [url]: Object.fromEntries(kept) },
+          servers: { ...file.servers, [bucket]: Object.fromEntries(kept) },
         });
       },
       { waitMs: 2_000 },
@@ -300,11 +224,11 @@ export async function rememberStatuses(io: CliIo, url: string, tasks: readonly S
 
 async function rememberedStatus(
   io: CliIo,
-  url: string,
+  bucket: string,
   key: string,
   project: string | null,
 ): Promise<TaskStatus | null> {
-  const server = (await readStatuses(io)).servers[url] ?? {};
+  const server = (await readStatuses(io)).servers[bucket] ?? {};
   for (const name of refNames(key, project)) {
     const found = server[name];
     if (found) return found.status;
@@ -481,8 +405,12 @@ export function reportQueued(context: CommandContext, queued: QueuedWrite): void
 interface QueueSession {
   io: CliIo;
   url: string;
-  /** Fingerprint of the key this invocation uses: it sends only the writes that key queued. */
+  /** Fingerprint of the key this invocation uses. */
   keyId: string | null;
+  /** The workspace of the login this invocation uses; null when not known (ZAMU_KEY). */
+  workspaceId: string | null;
+  /** Finds the stored login a write was queued with (CommandContext.loginFor). */
+  loginFor: CommandContext['loginFor'];
   /** Set once a request of this invocation got no answer: the rest fail (or queue) without waiting. */
   offline: unknown;
   replay?: Promise<void>;
@@ -517,7 +445,7 @@ async function append(
   input: Record<string, unknown>,
   status: TaskStatus | null,
 ): Promise<CliQueueEntry> {
-  const { io, url } = session;
+  const { io, url, workspaceId } = session;
   const taskKey = String(input.key ?? '').toUpperCase();
   const project = inputProject(input);
   return withLock(queuePath(io), async () => {
@@ -526,12 +454,17 @@ async function append(
     if (status !== null) {
       const earlier = entries
         .filter(
-          (entry) => entry.url === url && entry.taskKey === taskKey && entry.procedure === 'tasks.update',
+          (entry) =>
+            entry.url === url &&
+            (entry.workspaceId ?? null) === workspaceId &&
+            entry.taskKey === taskKey &&
+            entry.procedure === 'tasks.update',
         )
         .map((entry) => TaskStatus.safeParse(entry.input.status))
         .filter((parsed) => parsed.success)
         .at(-1);
-      lastSeenStatus = earlier?.data ?? (await rememberedStatus(io, url, taskKey, project));
+      lastSeenStatus =
+        earlier?.data ?? (await rememberedStatus(io, statusBucket(url, workspaceId), taskKey, project));
       if (lastSeenStatus === null) throw new NoKnownStatus();
     }
     const entry = CliQueueEntry.parse({
@@ -539,6 +472,7 @@ async function append(
       queuedAt: new Date(io.now?.() ?? Date.now()).toISOString(),
       url,
       ...(session.keyId ? { keyId: session.keyId } : {}),
+      ...(workspaceId ? { workspaceId } : {}),
       project,
       taskKey,
       procedure,
@@ -620,6 +554,7 @@ function problemText(error: ORPCError<string, unknown>): string {
 /** Sends one queued write and reports it on stderr. 'stop' keeps it and ends the replay. */
 async function send(client: ApiClient, session: QueueSession, entry: CliQueueEntry): Promise<SendOutcome> {
   const { io } = session;
+  const bucket = statusBucket(entry.url, entry.workspaceId ?? session.workspaceId);
   const label = `${entry.taskKey} ${entry.summary} (queued ${formatTime(entry.queuedAt)})`;
   const guarded =
     entry.procedure === 'tasks.update' && entry.input.status !== undefined && entry.lastSeenStatus !== null;
@@ -629,7 +564,7 @@ async function send(client: ApiClient, session: QueueSession, entry: CliQueueEnt
       entry.procedure === 'tasks.update'
         ? await client.tasks.update(input as Parameters<ApiClient['tasks']['update']>[0])
         : await client.comments.create(input as Parameters<ApiClient['comments']['create']>[0]);
-    await rememberStatuses(io, session.url, seenTasks(entry.procedure, result));
+    await rememberStatuses(io, bucket, seenTasks(entry.procedure, result));
     io.stderr(`Sent: ${label}\n`);
     return 'done';
   } catch (error) {
@@ -644,7 +579,7 @@ async function send(client: ApiClient, session: QueueSession, entry: CliQueueEnt
     const status = typeof error.status === 'number' ? error.status : 500;
     if (error.code === 'TASK_CHANGED' && guarded) {
       const current = (error.data as { task?: unknown } | undefined)?.task;
-      if (isSeenTask(current)) await rememberStatuses(io, session.url, [current]);
+      if (isSeenTask(current)) await rememberStatuses(io, bucket, [current]);
       const where = isSeenTask(current)
         ? `already moved to ${statusLabel(current.status)}`
         : 'moved meanwhile';
@@ -670,27 +605,59 @@ async function send(client: ApiClient, session: QueueSession, entry: CliQueueEnt
 }
 
 /**
+ * The client a queued write goes out with: the stored login of its workspace and key, else this
+ * command's own when the key matches. Null when neither fits: the write waits for that key.
+ */
+async function replayClient(
+  client: ApiClient,
+  session: QueueSession,
+  entry: CliQueueEntry,
+  found: Map<string, ApiClient | null>,
+): Promise<ApiClient | null> {
+  const ownKey = !entry.keyId || entry.keyId === session.keyId;
+  const ownWorkspace =
+    !entry.workspaceId || !session.workspaceId || entry.workspaceId === session.workspaceId;
+  if (ownKey && ownWorkspace) return client;
+  const id = `${entry.workspaceId ?? ''} ${entry.keyId ?? ''}`;
+  if (!found.has(id)) {
+    const login = await session
+      .loginFor({ url: entry.url, workspaceId: entry.workspaceId, keyId: entry.keyId })
+      .catch(() => null);
+    found.set(id, login?.client ?? null);
+  }
+  return found.get(id) ?? null;
+}
+
+/**
  * Sends this server's queued writes, oldest first, holding the lock so two processes never send one
- * twice. A network failure (or a 401, 408, 429 or 5xx) stops it and keeps the rest; any other answer
- * removes the entry. Reports go to stderr, so --json output stays one result.
+ * twice, each with the login that queued it. A network failure (or a 401, 408, 429 or 5xx) stops it
+ * and keeps the rest; any other answer removes the entry. Reports go to stderr, so --json output
+ * stays one result.
  */
 async function replay(client: ApiClient, session: QueueSession): Promise<void> {
   const { io } = session;
+  // A request already got no answer (while picking the login): don't wait for another.
+  if (session.offline) return;
   try {
     await withLock(queuePath(io), async (lock) => {
       let entries = await readQueue(io, { repair: true });
       const here = entries.filter((entry) => entry.url === session.url);
       // A write goes out under the key that queued it, so its author stays right. Writes queued by
-      // another key wait for a command that uses that key.
-      const pending = here.filter((entry) => !entry.keyId || entry.keyId === session.keyId);
+      // a key no stored login holds wait for a command that uses that key.
+      const found = new Map<string, ApiClient | null>();
+      const pending: { entry: CliQueueEntry; client: ApiClient }[] = [];
+      for (const entry of here) {
+        const sender = await replayClient(client, session, entry, found);
+        if (sender) pending.push({ entry, client: sender });
+      }
       const others = here.length - pending.length;
       if (others > 0) {
         io.stderr(
           `zamu: ${others === 1 ? '1 queued write was' : `${others} queued writes were`} made with another key and ${others === 1 ? 'waits' : 'wait'} for it (zamu queue lists them).\n`,
         );
       }
-      for (const [index, entry] of pending.entries()) {
-        if ((await send(client, session, entry)) === 'stop') {
+      for (const [index, { entry, client: sender }] of pending.entries()) {
+        if ((await send(sender, session, entry)) === 'stop') {
           const left = pending.length - index;
           if (session.offline) {
             io.stderr(
@@ -714,8 +681,6 @@ async function replay(client: ApiClient, session: QueueSession): Promise<void> {
 // The client every command gets
 // ---------------------------------------------------------------------------
 
-type Procedure = (...args: unknown[]) => Promise<unknown>;
-
 /**
  * Wraps an API client for one invocation: the first call sends the queued writes, every task the
  * server returns is remembered, and a queueable write that gets no answer is queued (QueuedWrite).
@@ -735,11 +700,10 @@ function queueingClient(client: ApiClient, session: QueueSession): ApiClient {
       if (plan?.queueable) return queueOrFail(session, name, input, plan, failure);
       throw unreachable(session, failure, notQueued(plan));
     }
-    let target: unknown = client;
-    for (const part of path) target = (target as Record<string, unknown>)[part];
+    const bucket = statusBucket(session.url, session.workspaceId);
     try {
-      const result = await (target as Procedure)(...args);
-      await rememberStatuses(session.io, session.url, seenTasks(procedure, result));
+      const result = await callProcedure(client, path, args);
+      await rememberStatuses(session.io, bucket, seenTasks(procedure, result));
       return result;
     } catch (error) {
       if (isNetworkFailure(error)) {
@@ -749,19 +713,12 @@ function queueingClient(client: ApiClient, session: QueueSession): ApiClient {
       }
       if (error instanceof ORPCError && error.code === 'TASK_CHANGED') {
         const current = (error.data as { task?: unknown } | undefined)?.task;
-        if (isSeenTask(current)) await rememberStatuses(session.io, session.url, [current]);
+        if (isSeenTask(current)) await rememberStatuses(session.io, bucket, [current]);
       }
       throw error;
     }
   };
-  const proxy = (path: string[]): unknown =>
-    new Proxy(() => {}, {
-      // `then` must stay undefined, or awaiting the client would call it.
-      get: (_target, property) =>
-        typeof property === 'string' && property !== 'then' ? proxy([...path, property]) : undefined,
-      apply: (_target, _this, args: unknown[]) => call(path, args),
-    });
-  return proxy([]) as ApiClient;
+  return proxyClient(call);
 }
 
 function notQueued(plan: Queueability | null): string[] {
@@ -779,8 +736,16 @@ export function withOfflineQueue(context: CommandContext): CommandContext {
     const client = await base();
     const url = context.url as string;
     const keyId = context.keyId ?? null;
-    if (!session || session.url !== url || session.keyId !== keyId) {
-      session = { io: context.io, url, keyId, offline: null };
+    const workspaceId = context.workspaceId ?? null;
+    if (!session || session.url !== url || session.keyId !== keyId || session.workspaceId !== workspaceId) {
+      session = {
+        io: context.io,
+        url,
+        keyId,
+        workspaceId,
+        loginFor: context.loginFor,
+        offline: context.offline ?? null,
+      };
     }
     return queueingClient(client, session);
   };

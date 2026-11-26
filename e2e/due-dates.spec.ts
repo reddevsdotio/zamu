@@ -4,7 +4,7 @@
 // Days are the server's (compose sets no APP_TIME_ZONE, so UTC), and the browser runs in UTC too. The tests
 // build on each other, so they share one page and run in order.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
-import { api, collectPageErrors, homeURL, settle, signInAsAdmin } from './session';
+import { api, collectPageErrors, homeURL, settle, signInAsAdmin, w } from './session';
 
 const project = { name: 'Releases', key: 'REL' };
 
@@ -93,7 +93,7 @@ test('seed tasks due in the past, tomorrow and later, one done and one with no d
 });
 
 test('the list shows overdue, tomorrow and later dates; a done task keeps its date quietly', async () => {
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await expect(row(tasks.overdue.key)).toContainText('3 days overdue');
   await expect(row(tasks.tomorrow.key)).toContainText('Tomorrow');
@@ -101,14 +101,14 @@ test('the list shows overdue, tomorrow and later dates; a done task keeps its da
   await expect(row(tasks.none.key)).not.toContainText(/overdue|Today|Tomorrow/);
 
   // Done starts folded in the list; the task view shows the date without "overdue".
-  await page.goto(`/p/${project.key}/${tasks.done.key}`);
+  await page.goto(w(`/p/${project.key}/${tasks.done.key}`));
   await settle(page);
   await expect(dueButton()).toContainText(shortDate(tasks.done.dueDate));
   await expect(dueButton()).not.toContainText('overdue');
 });
 
 test('the due-date picker: Today, a typed date, Clear due date', async () => {
-  await page.goto(`/p/${project.key}/${tasks.none.key}`);
+  await page.goto(w(`/p/${project.key}/${tasks.none.key}`));
   await settle(page);
   await dueButton().click();
   const picker = page.getByRole('dialog', { name: 'Due date' });
@@ -132,7 +132,7 @@ test('the due-date picker: Today, a typed date, Clear due date', async () => {
 });
 
 test('the Due date filter keeps the overdue tasks', async () => {
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await page.getByRole('button', { name: 'Filter', exact: true }).click();
   await page.getByRole('menu', { name: 'Filter' }).getByRole('menuitem', { name: 'Due date' }).click();
@@ -149,7 +149,7 @@ test('the Due date filter keeps the overdue tasks', async () => {
 });
 
 test('Home: Overdue lists your late task; the deadlines strip has the close dates', async () => {
-  await page.goto('/');
+  await page.goto(w());
   await expect(page).toHaveURL(homeURL);
   await settle(page);
   const overdue = page.getByRole('region', { name: /^Overdue \d+/ });

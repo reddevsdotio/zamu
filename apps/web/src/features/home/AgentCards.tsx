@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import type { HomeAgent } from '@zamu/contracts';
+import { useWorkspaceSlug } from '~/lib/workspace';
 import { Avatar, cn, Pill } from '~/ui';
 import { actionText, actsForText, agoText, forText } from './format';
 
@@ -32,10 +33,11 @@ function TaskKeyLink({
   projectKey: string;
   className?: string;
 }) {
+  const workspace = useWorkspaceSlug();
   return (
     <Link
-      to="/p/$projectKey/$taskKey"
-      params={{ projectKey, taskKey }}
+      to="/w/$workspace/p/$projectKey/$taskKey"
+      params={{ workspace, projectKey, taskKey }}
       className={cn(
         'shrink-0 rounded-sm text-xs font-medium text-fg-3 no-underline tabular-nums outline-none hover:text-fg focus-visible:shadow-[var(--focus-ring)]',
         className,

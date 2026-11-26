@@ -2,13 +2,26 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useSyncExternalStore } from 'react';
 import { meQuery } from '~/features/tasks/queries';
 import type { GroupBy } from '~/features/views';
+import { storageKeyPrefix, workspaceStorageKey } from '~/lib/storage-keys';
+import { useApi, useWorkspaceId } from '~/lib/workspace';
 
-// Collapsed columns of a board, remembered per person, project and column field in localStorage:
-//   zamu:board-columns:v1:<user id>:<project key>:<group by>  = { "done": true, "todo": false }
+// Collapsed columns of a board, remembered per workspace, person, project and column field in localStorage:
+//   zamu:board-columns:v2:<workspace id>:<user id>:<project key>:<group by>  = { "done": true, "todo": false }
+// Columns saved before 0.10 (zamu:board-columns:v1:…, without the workspace) are not read.
 // Only the person's changes are stored; a column without an entry takes the default (Done and Canceled
 // start collapsed on a status board).
 
-const PREFIX = 'zamu:board-columns:v1';
+const PREFIX = storageKeyPrefix('board-columns');
+
+/** The localStorage key of one person's columns on one board; `userId` null until me.get answers. */
+export function foldedColumnsKey(
+  workspaceId: string,
+  userId: string | null,
+  projectKey: string,
+  groupBy: GroupBy,
+): string {
+  return workspaceStorageKey('board-columns', workspaceId, userId ?? '~', projectKey, groupBy);
+}
 
 export type FoldOverrides = Readonly<Record<string, boolean>>;
 
@@ -88,8 +101,10 @@ function write(key: string, value: FoldOverrides, persist: boolean) {
  * signed-in person is known, changes stay in memory.
  */
 export function useFoldedColumns(projectKey: string, groupBy: GroupBy) {
-  const userId = useQuery(meQuery()).data?.user.id ?? null;
-  const key = `${PREFIX}:${userId ?? '~'}:${projectKey}:${groupBy}`;
+  const api = useApi();
+  const workspaceId = useWorkspaceId();
+  const userId = useQuery(meQuery(api)).data?.user.id ?? null;
+  const key = foldedColumnsKey(workspaceId, userId, projectKey, groupBy);
   const overrides = useSyncExternalStore(
     subscribe,
     () => read(key),

@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { membersQuery } from '~/features/tasks/queries';
 import type { BoardLanes, CycleFilterValue, TaskListSearch, TaskView } from '~/features/tasks/search';
 import { PRIORITY_OPTIONS, STATUS_OPTIONS } from '~/features/tasks/TaskFields';
-import { orpc } from '~/lib/orpc';
+import { useApi } from '~/lib/workspace';
 import {
   Button,
   CycleGlyph,
@@ -51,13 +51,14 @@ export function TaskFilterBar({
   showLanes = false,
   hiddenCount,
 }: TaskFilterBarProps) {
-  const members = useQuery(membersQuery()).data?.items;
+  const api = useApi();
+  const members = useQuery(membersQuery(api)).data?.items;
   const milestones = useQuery({
-    ...orpc.milestones.list.queryOptions({ input: { project: projectKey } }),
+    ...api.orpc.milestones.list.queryOptions({ input: { project: projectKey } }),
     enabled: usesMilestones,
   }).data?.items;
   const cycles = useQuery({
-    ...orpc.cycles.list.queryOptions({ input: { project: projectKey } }),
+    ...api.orpc.cycles.list.queryOptions({ input: { project: projectKey } }),
     enabled: usesCycles,
   }).data?.items;
 

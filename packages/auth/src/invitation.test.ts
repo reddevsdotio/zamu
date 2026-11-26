@@ -2,8 +2,14 @@ import { schema } from '@zamu/db';
 import { createTestDatabase, type TestDatabase } from '@zamu/db/test';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { getActorFromRequest } from './actor';
 import { bootstrapAdmin } from './bootstrap';
-import { AcceptInvitationError, acceptInvitationWithSignUp } from './invitation';
+import {
+  AcceptInvitationError,
+  acceptInvitationAsMember,
+  acceptInvitationWithSignUp,
+  hasPersonWithEmail,
+} from './invitation';
 import { cookieHeaders, testAuth } from './testing/helpers';
 
 describe('acceptInvitationWithSignUp', () => {
@@ -152,5 +158,154 @@ describe('acceptInvitationWithSignUp', () => {
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(await usersWithEmail('race@example.com')).toHaveLength(1);
     expect(await invitationStatus(invitation.id)).toBe('accepted');
+  });
+});
+
+describe('acceptInvitationAsMember', () => {
+  let database: TestDatabase;
+  let auth: ReturnType<typeof testAuth>;
+  let ownerHeaders: Headers;
+  let acme: string;
+  let globex: string;
+  const password = 'correct horse battery';
+
+  async function signIn(email: string) {
+    const result = await auth.api.signInEmail({ body: { email, password }, returnHeaders: true });
+    return cookieHeaders(result.headers);
+  }
+
+  /** A person with a password, member of Acme only. */
+  async function acmeMember(email: string) {
+    const [user] = await database.db
+      .insert(schema.user)
+      .values({ name: email, email, kind: 'person' })
+      .returning();
+    if (!user) throw new Error('user insert failed');
+    const context = await auth.$context;
+    await database.db.insert(schema.account).values({
+      accountId: user.id,
+      providerId: 'credential',
+      userId: user.id,
+      password: await context.password.hash(password),
+    });
+    await database.db.insert(schema.member).values({ organizationId: acme, userId: user.id, role: 'member' });
+    return user;
+  }
+
+  async function inviteToGlobex(email: string, role: 'member' | 'admin' = 'member') {
+    return auth.api.createInvitation({
+      headers: ownerHeaders,
+      body: { email, role, organizationId: globex },
+    });
+  }
+
+  async function roles(userId: string) {
+    const rows = await database.db
+      .select({ organizationId: schema.member.organizationId, role: schema.member.role })
+      .from(schema.member)
+      .where(eq(schema.member.userId, userId));
+    return Object.fromEntries(rows.map((row) => [row.organizationId, row.role]));
+  }
+
+  async function errorCode(promise: Promise<unknown>) {
+    const error = await promise.catch((e) => e);
+    expect(error).toBeInstanceOf(AcceptInvitationError);
+    return (error as AcceptInvitationError).code;
+  }
+
+  beforeAll(async () => {
+    database = await createTestDatabase();
+    auth = testAuth(database.db);
+    const result = await bootstrapAdmin(
+      { auth, db: database.db },
+      { name: 'Ana', email: 'ana@example.com', password, workspaceName: 'Acme' },
+    );
+    acme = result.workspaceId;
+    const [second] = await database.db
+      .insert(schema.organization)
+      .values({ name: 'Globex', slug: 'globex' })
+      .returning();
+    if (!second) throw new Error('no globex');
+    globex = second.id;
+    await database.db
+      .insert(schema.member)
+      .values({ organizationId: globex, userId: result.userId, role: 'owner' });
+    ownerHeaders = await signIn('ana@example.com');
+  });
+
+  afterAll(async () => {
+    await database?.drop();
+  });
+
+  it('adds a signed-in person to a second workspace with the invited role and opens it', async () => {
+    const tomas = await acmeMember('tomas@example.com');
+    const invitation = await inviteToGlobex('Tomas@Example.com', 'admin');
+    const headers = await signIn('tomas@example.com');
+
+    const result = await acceptInvitationAsMember({ auth, db: database.db }, invitation.id, { headers });
+    expect(result).toEqual({ userId: tomas.id, workspaceId: globex, workspaceSlug: 'globex' });
+    expect(await roles(tomas.id)).toEqual({ [acme]: 'member', [globex]: 'admin' });
+    const [row] = await database.db
+      .select({ status: schema.invitation.status })
+      .from(schema.invitation)
+      .where(eq(schema.invitation.id, invitation.id));
+    expect(row?.status).toBe('accepted');
+    // The workspace used last is the new one, so the session lands there without a header.
+    expect(await getActorFromRequest({ auth, db: database.db }, { headers })).toMatchObject({
+      userId: tomas.id,
+      workspaceId: globex,
+      role: 'admin',
+    });
+
+    expect(
+      await errorCode(acceptInvitationAsMember({ auth, db: database.db }, invitation.id, { headers })),
+    ).toBe('INVITATION_NOT_USABLE');
+  });
+
+  it('never accepts for another account', async () => {
+    const lia = await acmeMember('lia@example.com');
+    await acmeMember('mo@example.com');
+    const invitation = await inviteToGlobex('lia@example.com');
+    const headers = await signIn('mo@example.com');
+    const error = await acceptInvitationAsMember({ auth, db: database.db }, invitation.id, { headers }).catch(
+      (e) => e,
+    );
+    expect(error).toBeInstanceOf(AcceptInvitationError);
+    expect(error.code).toBe('WRONG_ACCOUNT');
+    expect(error.message).toBe(
+      'This invitation is for lia@example.com. You are signed in as mo@example.com.',
+    );
+    expect(await roles(lia.id)).toEqual({ [acme]: 'member' });
+    const [row] = await database.db
+      .select({ status: schema.invitation.status })
+      .from(schema.invitation)
+      .where(eq(schema.invitation.id, invitation.id));
+    expect(row?.status).toBe('pending');
+  });
+
+  it('refuses without a session, and for unusable invitations', async () => {
+    await acmeMember('ned@example.com');
+    const invitation = await inviteToGlobex('ned@example.com');
+    expect(
+      await errorCode(
+        acceptInvitationAsMember({ auth, db: database.db }, invitation.id, { headers: new Headers() }),
+      ),
+    ).toBe('NOT_SIGNED_IN');
+
+    const headers = await signIn('ned@example.com');
+    const later = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000);
+    expect(
+      await errorCode(
+        acceptInvitationAsMember({ auth, db: database.db }, invitation.id, { headers, now: later }),
+      ),
+    ).toBe('INVITATION_NOT_USABLE');
+    expect(
+      await errorCode(acceptInvitationAsMember({ auth, db: database.db }, 'not-a-uuid', { headers })),
+    ).toBe('INVITATION_NOT_USABLE');
+  });
+
+  it('tells whether a person has the email', async () => {
+    expect(await hasPersonWithEmail(database.db, ' ANA@example.com ')).toBe(true);
+    expect(await hasPersonWithEmail(database.db, 'nobody@example.com')).toBe(false);
   });
 });

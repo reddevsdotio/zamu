@@ -10,7 +10,7 @@
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { createCli, parseJson } from './cli';
 import { createGitRepo, type GitRepo } from './git-repo';
-import { addAgent, admin, api, collectPageErrors, settle, signInAsAdmin } from './session';
+import { addAgent, admin, api, collectPageErrors, settle, signInAsAdmin, w } from './session';
 import { baseURL } from './stack';
 
 const project = { name: 'Payouts', key: 'OUT' };
@@ -204,7 +204,7 @@ test('the agent is refused at In review while a criterion is open', async () => 
 });
 
 test('the person waives the open criterion in the finishing dialog and moves the task', async () => {
-  await page.goto(`/p/${project.key}/${taskKey}`);
+  await page.goto(w(`/p/${project.key}/${taskKey}`));
   await settle(page);
   await expect(workList('criterion')).toContainText(criteria[0] as string);
   await expect(workList('criterion')).toContainText(criteria[1] as string);
@@ -278,7 +278,7 @@ test("the Notes filter shows the agent's notes; History shows the machine and br
 });
 
 test('Task defaults: default done items start every new task', async () => {
-  await page.goto(`/p/${project.key}/settings/defaults`);
+  await page.goto(w(`/p/${project.key}/settings/defaults`));
   await settle(page);
   await expect(page.getByRole('heading', { name: 'Task defaults' })).toBeVisible();
   await expect(page.getByText('No default items')).toBeVisible();
@@ -301,7 +301,7 @@ test('Task defaults: default done items start every new task', async () => {
 
   // A task created in the web app starts with them.
   const title = 'Send payout receipts';
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await page.keyboard.press('c');
   const create = page.getByRole('dialog', { name: 'New task' });
@@ -325,7 +325,7 @@ test('Task defaults: default done items start every new task', async () => {
   expect(created.doneItems?.map(({ text, state }) => ({ text, state }))).toEqual(
     defaults.map((text) => ({ text, state: 'open' })),
   );
-  await page.goto(`/p/${project.key}/${createdKey}`);
+  await page.goto(w(`/p/${project.key}/${createdKey}`));
   await settle(page);
   for (const text of defaults) await expect(workList('done')).toContainText(text);
   await expect(workList('done')).toContainText('from the project defaults');

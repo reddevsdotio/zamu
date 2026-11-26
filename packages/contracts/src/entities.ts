@@ -1116,6 +1116,50 @@ export const AgentCreated = z.object({
 export type AgentCreated = z.output<typeof AgentCreated>;
 
 // ---------------------------------------------------------------------------
+// Workspaces (0.10, PM-39)
+// ---------------------------------------------------------------------------
+
+/**
+ * A workspace as clients name it. `slug` is its current slug (WorkspaceSlug for every slug written
+ * from 0.10 on; outputs only require it to be non-empty).
+ */
+export const WorkspaceRef = z.object({
+  id: WorkspaceId,
+  name: z.string(),
+  slug: z.string().min(1),
+});
+export type WorkspaceRef = z.output<typeof WorkspaceRef>;
+
+/** A workspace the caller belongs to, with the caller's role there. */
+export const Workspace = WorkspaceRef.extend({
+  role: WorkspaceRole,
+});
+export type Workspace = z.output<typeof Workspace>;
+
+/**
+ * Every workspace the person belongs to, by name, for the switcher and the palette. `canCreate`:
+ * the creation policy lets them create one, so the switcher shows "New workspace".
+ */
+export const MyWorkspaces = z.object({
+  items: z.array(Workspace),
+  canCreate: z.boolean(),
+});
+export type MyWorkspaces = z.output<typeof MyWorkspaces>;
+
+/**
+ * What deleting a workspace removes, for the confirm copy ("Deletes Acme with 3 projects, 120
+ * tasks and 2 agents."): its projects and their tasks, the agents that belong to no other workspace,
+ * and every API key for it.
+ */
+export const WorkspaceContents = z.object({
+  projects: z.number().int().nonnegative(),
+  tasks: z.number().int().nonnegative(),
+  agents: z.number().int().nonnegative(),
+  keys: z.number().int().nonnegative(),
+});
+export type WorkspaceContents = z.output<typeof WorkspaceContents>;
+
+// ---------------------------------------------------------------------------
 // Me
 // ---------------------------------------------------------------------------
 
@@ -1134,11 +1178,8 @@ export const Me = z.object({
     /** People choose it; agents keep "system". */
     theme: Theme.default('system'),
   }),
-  workspace: z.object({
-    id: WorkspaceId,
-    name: z.string(),
-    slug: z.string(),
-  }),
+  /** The workspace the request resolved to: the key's own, or for a session the one it named. */
+  workspace: WorkspaceRef,
   role: WorkspaceRole,
   auth: z.object({
     method: AuthMethod,

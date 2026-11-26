@@ -7,6 +7,8 @@ import {
 } from '@zamu/contracts';
 import { type FormEvent, useState } from 'react';
 import { errorMessage } from '~/features/settings/result';
+import { connectionsHref } from '~/features/shell/paths';
+import { useWorkspaceSlug } from '~/lib/workspace';
 import {
   Banner,
   Button,
@@ -71,6 +73,7 @@ function AccessProblem({
   /** The project's repository URL; detection only has the short form. */
   repository: string | null;
 }) {
+  const workspace = useWorkspaceSlug();
   const repo = repository ? parseRepositoryUrl(repository) : null;
   const host = repo?.host ?? detection.repository.split('/')[0] ?? detection.repository;
   const path = repo?.path ?? detection.repository;
@@ -94,7 +97,7 @@ function AccessProblem({
         <b className="font-semibold">
           {host} rejected the token of {name}.
         </b>{' '}
-        Replace the token in <TextLink href="/settings/connections">Git connections</TextLink>, or pick
+        Replace the token in <TextLink href={connectionsHref(workspace)}>Git connections</TextLink>, or pick
         another connection.
       </DetailBox>
     );
@@ -261,6 +264,7 @@ export function SourceStep({
   folder,
   onFolderChange,
 }: SourceStepProps) {
+  const workspace = useWorkspaceSlug();
   const [editingFolder, setEditingFolder] = useState(false);
   const repo = repository ? parseRepositoryUrl(repository) : null;
   const connection = connections?.find((item) => item.id === connectionId);
@@ -271,7 +275,7 @@ export function SourceStep({
   const connectionHint = (
     <>
       Or{' '}
-      <TextLink href="/settings/connections" newTab>
+      <TextLink href={connectionsHref(workspace)} newTab>
         add a connection
       </TextLink>{' '}
       in a new tab; this list updates when you come back.
@@ -317,7 +321,7 @@ export function SourceStep({
       ) : connections && fitting.length === 0 && repo ? (
         <DetailBox tone="error">
           <b className="font-semibold">No connection reads {repo.host} yet.</b> Add one in{' '}
-          <TextLink href="/settings/connections" newTab>
+          <TextLink href={connectionsHref(workspace)} newTab>
             Git connections
           </TextLink>
           , then come back to this page.

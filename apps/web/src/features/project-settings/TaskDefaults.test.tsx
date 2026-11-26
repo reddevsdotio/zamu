@@ -1,25 +1,15 @@
 // Task defaults: the empty state, the list with keyboard reorder, rewording in place, remove with Undo,
 // adding, the member view, and the pure list edits behind them.
 import { ORPCError } from '@orpc/client';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import { renderInWorkspace as render } from '~/lib/testing';
+import { asWorkspaceSlug } from '~/lib/workspace-paths';
 import { projectSettingsHref, settingsSection } from './ProjectSettingsLayout';
 import { TaskDefaultsView } from './TaskDefaultsSettings';
 import { appliesText, cleanItem, defaultsFailure, itemError, moveItem, moveItemTo } from './task-defaults';
-
-// The screens are rendered from props; the stub keeps the API and server modules out.
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
-  const fail = (): unknown =>
-    new Proxy(() => {}, {
-      get: (_target, key) => (typeof key === 'string' ? fail() : undefined),
-      apply: () => Promise.reject(new Error('no API in these tests')),
-    });
-  const client = fail();
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
 
 const ITEMS = ['Tests and lint pass', 'Changelog has a line', 'Docs updated when behaviour changes'];
 
@@ -213,8 +203,10 @@ describe('Task defaults list edits', () => {
 
 describe('Task defaults route', () => {
   it('has its own settings path', () => {
-    expect(projectSettingsHref('PAY', 'defaults')).toBe('/p/PAY/settings/defaults');
-    expect(settingsSection('/p/PAY/settings/defaults/')).toBe('defaults');
-    expect(settingsSection('/p/PAY/settings/backlog')).toBe('backlog');
+    expect(projectSettingsHref(asWorkspaceSlug('acme'), 'PAY', 'defaults')).toBe(
+      '/w/acme/p/PAY/settings/defaults',
+    );
+    expect(settingsSection('/w/acme/p/PAY/settings/defaults/')).toBe('defaults');
+    expect(settingsSection('/w/acme/p/PAY/settings/backlog')).toBe('backlog');
   });
 });

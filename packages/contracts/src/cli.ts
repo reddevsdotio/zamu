@@ -20,8 +20,9 @@ import {
   TaskListPage,
   TimelineCounts,
   TimelineItem,
+  WorkspaceRef,
 } from './entities';
-import { ProjectKey, ProjectKeyInput, TaskStatus, Timestamp } from './primitives';
+import { ProjectKey, ProjectKeyInput, TaskStatus, Timestamp, WorkspaceId } from './primitives';
 import { Problem } from './problem';
 
 // Versioned `zamu ... --json` output. Every result is { "schema": "zamu.v1.<name>", "data": ... }.
@@ -50,6 +51,93 @@ export const PROJECT_FILE_NAME = '.zamu.json';
 /** Contents of .zamu.json, committed at the repository root or in a monorepo subfolder. */
 export const ProjectFile = z.strictObject({ project: ProjectKeyInput });
 export type ProjectFile = z.output<typeof ProjectFile>;
+
+// ---------------------------------------------------------------------------
+// 0.10: logins per workspace (PM-40)
+// ---------------------------------------------------------------------------
+
+export const CLI_WORKSPACE_SOURCES = ['flag', 'env', 'clone', 'default'] as const;
+/**
+ * Where zamu took the login from: --workspace, ZAMU_KEY and ZAMU_URL, the login cached or matched
+ * for this clone's git remote, or the default login.
+ */
+export const CliWorkspaceSource = z.enum(CLI_WORKSPACE_SOURCES);
+export type CliWorkspaceSource = z.infer<typeof CliWorkspaceSource>;
+
+/** One stored login: a key for one workspace on one server. */
+export const CliLogin = z.object({
+  url: z.url(),
+  key: z.string().min(1),
+  workspace: WorkspaceRef,
+  /** The login used when nothing else picks one. Exactly one stored login is the default. */
+  default: z.boolean(),
+});
+export type CliLogin = z.output<typeof CliLogin>;
+
+/**
+ * $XDG_CONFIG_HOME/zamu/config.json from 0.10. A 0.9 file ({ url, key }, CliConfigFileV1) is
+ * converted on the first command that reaches the server, and read as is while offline.
+ */
+export const CliConfigFile = z
+  .object({
+    version: z.literal(2),
+    logins: z.array(CliLogin),
+  })
+  .superRefine((file, ctx) => {
+    const seen = new Set<string>();
+    for (const [index, login] of file.logins.entries()) {
+      const id = `${login.url.replace(/\/+$/, '')} ${login.workspace.id}`;
+      if (seen.has(id)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['logins', index],
+          message: 'Keep one login per server and workspace',
+        });
+      }
+      seen.add(id);
+    }
+    const defaults = file.logins.filter((login) => login.default).length;
+    if (file.logins.length > 0 && defaults !== 1) {
+      ctx.addIssue({ code: 'custom', path: ['logins'], message: 'Mark exactly one login as the default' });
+    }
+  });
+export type CliConfigFile = z.output<typeof CliConfigFile>;
+
+/** The config file of zamu 0.9 and earlier: one server and one key, no workspace. */
+export const CliConfigFileV1 = z.object({
+  url: z.url(),
+  key: z.string().min(1),
+});
+export type CliConfigFileV1 = z.output<typeof CliConfigFileV1>;
+
+/** A stored login as the CLI prints it: never the key. */
+export const CliLoginView = z.object({
+  url: z.url(),
+  workspace: WorkspaceRef,
+  default: z.boolean(),
+});
+export type CliLoginView = z.output<typeof CliLoginView>;
+
+/** Where the clone cache lives, under $XDG_STATE_HOME (default ~/.local/state), next to the queue. */
+export const CLI_CLONES_FILE_NAME = 'clones.json';
+
+/**
+ * The login matched for one clone, by its remote key (host/path of the git remote). Used until a
+ * command gets 403 or 404 for the project, then matched again.
+ */
+export const CliCloneEntry = z.object({
+  url: z.url(),
+  workspaceId: WorkspaceId,
+  matchedAt: Timestamp,
+});
+export type CliCloneEntry = z.output<typeof CliCloneEntry>;
+
+/** $XDG_STATE_HOME/zamu/clones.json, written atomically under a lock file like the queue. */
+export const CliClonesFile = z.object({
+  version: z.literal(1),
+  clones: z.record(z.string(), CliCloneEntry),
+});
+export type CliClonesFile = z.output<typeof CliClonesFile>;
 
 export const CLI_LINK_ACTIONS = ['linked', 'replaced', 'unchanged', 'cleared', 'created', 'updated'] as const;
 
@@ -116,6 +204,11 @@ export const CliQueueEntry = z.object({
    * sends it, so a write keeps its author. Missing on entries from before the field existed.
    */
   keyId: z.string().min(8).max(64).optional(),
+  /**
+   * The workspace of the login that queued the write (0.10); replay uses that login. Missing on
+   * entries from 0.9, which replay with the login picked for their server today.
+   */
+  workspaceId: WorkspaceId.optional(),
   /** The project the command resolved, when it did. */
   project: ProjectKey.nullable(),
   /** The task as the command named it (PAY-142, or a Backlog.md id). */
@@ -139,17 +232,41 @@ export type CliQueueFile = z.output<typeof CliQueueFile>;
 
 /** Data schema for each CLI result name. */
 export const cliDataSchemas = {
-  /** zamu login */
-  login: z.object({ url: z.url(), me: Me }),
-  /** zamu logout */
-  logout: z.object({ url: z.url().nullable() }),
+  /**
+   * zamu login. 0.10: `replaced` is true when a login for that server and workspace existed, and
+   * `default` tells whether the new login is the default.
+   */
+  login: z.object({
+    url: z.url(),
+    me: Me,
+    replaced: z.boolean().optional(),
+    default: z.boolean().optional(),
+  }),
+  /**
+   * zamu logout [--workspace <slug>] [--all]. `url` is the server of the login removed (the first
+   * one with --all), or null when there was none. `removed` (0.10) lists every login removed.
+   */
+  logout: z.object({
+    url: z.url().nullable(),
+    removed: z.array(CliLoginView).optional(),
+  }),
   /**
    * zamu whoami. `project` (M2.1) is the project commands use here, or null. `queued` (M6): writes
-   * waiting in the offline queue for this server.
+   * waiting in the offline queue for this server. `workspaceSource` (0.10): how the login was picked.
    */
   whoami: Me.extend({
     project: CliResolvedProject.nullable().optional(),
     queued: z.number().int().nonnegative().optional(),
+    workspaceSource: CliWorkspaceSource.optional(),
+  }),
+  /**
+   * zamu workspaces [--default <slug>] (0.10): the stored logins. `current` marks the login commands use here; `source` says how it
+   * was picked, null when none applies (no login, or several match this clone). With ZAMU_KEY set,
+   * no stored login is current and `source` is env.
+   */
+  workspaces: z.object({
+    items: z.array(CliLoginView.extend({ current: z.boolean() })),
+    source: CliWorkspaceSource.nullable(),
   }),
   /** zamu projects list */
   'projects.list': ProjectList,

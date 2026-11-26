@@ -4,7 +4,7 @@
 // lose it. The tests build on each other, so they share one page and run in order. The spec signs in as the
 // admin of the other specs, or sets the server up when it runs alone.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
-import { api, collectPageErrors, settle, signInAsAdmin } from './session';
+import { api, collectPageErrors, settle, signInAsAdmin, w } from './session';
 
 const project = { name: 'Storefront', key: 'SHOP' };
 const titles = [
@@ -89,7 +89,7 @@ test('seed a project with four tasks', async () => {
 });
 
 test('L on a list row opens the label picker; a new name creates the label', async () => {
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await row('SHOP-1').focus();
   await expect(row('SHOP-1')).toHaveAttribute('data-cursor', 'true');
@@ -120,7 +120,7 @@ test('L on a list row opens the label picker; a new name creates the label', asy
 });
 
 test('the task view adds an existing label and creates another', async () => {
-  await page.goto(`/p/${project.key}/SHOP-2`);
+  await page.goto(w(`/p/${project.key}/SHOP-2`));
   await settle(page);
   const button = page
     .getByRole('complementary', { name: 'Properties' })
@@ -152,7 +152,7 @@ test('the task view adds an existing label and creates another', async () => {
 });
 
 test('the list filters by label', async () => {
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await page.getByRole('button', { name: 'Filter', exact: true }).click();
   await page.getByRole('menu', { name: 'Filter' }).getByRole('menuitem', { name: 'Labels' }).click();
@@ -183,7 +183,7 @@ test('the list filters by label', async () => {
 });
 
 test('Settings > Labels: rename in place, refuse a name the project has', async () => {
-  await page.goto(`/p/${project.key}/settings/labels`);
+  await page.goto(w(`/p/${project.key}/settings/labels`));
   await settle(page);
   await expect(page.getByRole('heading', { name: 'Labels', level: 2 })).toBeVisible();
   await expect(labelRow('frontend')).toContainText('2 tasks');
@@ -220,7 +220,7 @@ test('Settings > Labels: delete says how many tasks lose the label', async () =>
   expect(await labelsOf('SHOP-3')).toEqual([]);
 
   // The list shows the change.
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await expect(row('SHOP-2')).toContainText('web');
   await expect(row('SHOP-3')).not.toContainText('backend');

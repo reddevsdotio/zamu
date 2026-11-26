@@ -5,7 +5,7 @@
 // share one page and run in order.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { createCli, parseJson } from './cli';
-import { admin, homeURL, openNewProject, setUpServer, signInAsAdmin } from './session';
+import { admin, homeURL, openNewProject, setUpServer, signInAsAdmin, w } from './session';
 import { baseURL } from './stack';
 
 const project = { name: 'Payments', key: 'PAY' };
@@ -123,7 +123,7 @@ test('first run: set up the admin account and the workspace', async () => {
 });
 
 test('sign out, wrong password banner, sign in', async () => {
-  await page.goto('/');
+  await page.goto(w());
   await settle();
   await page.getByRole('button', { name: `${admin.name}: account menu` }).click();
   await page.getByRole('dialog', { name: 'Account' }).getByRole('menuitem', { name: 'Sign out' }).click();
@@ -222,18 +222,18 @@ test('J and K move the cursor; Enter opens the task view, where the status chang
 test('Esc goes back to the list with the task focused; old ?task= links open the task view', async () => {
   await blur();
   await page.keyboard.press('Escape');
-  await expect.poll(() => new URL(page.url()).pathname).toBe(`/p/${project.key}`);
+  await expect.poll(() => new URL(page.url()).pathname).toBe(w(`/p/${project.key}`));
   await settle();
   await expect(page.locator(`[role="row"][data-task-key="${viewedTask}"]`)).toBeFocused();
 
   // M1 to M4 linked the list's pane with ?task=; those links now open the task view.
-  await page.goto(`/p/${project.key}?task=${viewedTask}`);
+  await page.goto(w(`/p/${project.key}?task=${viewedTask}`));
   await expect(page).toHaveURL(new RegExp(`/p/${project.key}/${viewedTask}$`), { timeout: 10_000 });
   await settle();
 });
 
 test('add agent e2e-agent with a read-write key scoped to PAY and copy the key', async () => {
-  await page.goto('/settings/members');
+  await page.goto(w('/settings/members'));
   await settle();
   await page.getByRole('button', { name: 'Add agent' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add agent' });
@@ -286,7 +286,7 @@ test('the CLI lists and updates tasks with the agent key', async () => {
 });
 
 test('the task view shows the agent change as "<agent> for <person>"', async () => {
-  await page.goto(`/p/${project.key}/${agentTask}`);
+  await page.goto(w(`/p/${project.key}/${agentTask}`));
   await settle();
   await expect(properties().getByRole('button', { name: 'Status' })).toContainText('In progress');
   // The history names the agent and the first name of its person.
@@ -295,7 +295,7 @@ test('the task view shows the agent change as "<agent> for <person>"', async () 
 });
 
 test('a revoked key makes the CLI exit with code 2', async () => {
-  await page.goto('/settings/api-keys');
+  await page.goto(w('/settings/api-keys'));
   await settle();
   const row = page.getByRole('row').filter({ hasText: agentName }).first();
   await row.getByRole('button', { name: 'Revoke' }).click();
@@ -314,7 +314,7 @@ test('task list screenshots in light and dark', async ({ browser }, testInfo) =>
     const themed = await browser.newContext({ colorScheme, storageState });
     const themedPage = await themed.newPage();
     themedPage.on('pageerror', (error) => pageErrors.push(`pageerror (${colorScheme}): ${error.message}`));
-    await themedPage.goto(`/p/${project.key}`);
+    await themedPage.goto(w(`/p/${project.key}`));
     await settle(themedPage);
     await expect(themedPage.getByText(taskTitles[0] ?? '').first()).toBeVisible();
     await testInfo.attach(`task-list-${colorScheme}`, {

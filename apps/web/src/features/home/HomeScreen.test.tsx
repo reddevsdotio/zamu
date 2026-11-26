@@ -24,6 +24,8 @@ import { HOME_GROUPS_BY_TAB } from '@zamu/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closePeek, usePeek } from '~/features/peek/store';
 import { readTaskNavigation } from '~/features/views';
+import { testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 import { UIProvider } from '~/ui';
 import { HomeScreen } from './HomeScreen';
 import { parseHomeSearch } from './search';
@@ -36,8 +38,8 @@ vi.setConfig({ testTimeout: 30_000 });
 
 const api = vi.hoisted(() => ({ current: null as null | { client: unknown; calls: GetHomeInput[] } }));
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const forward = (path: string[]): unknown =>
     new Proxy(() => {}, {
       get: (_target, key) => (typeof key === 'string' ? forward([...path, key]) : undefined),
@@ -48,8 +50,8 @@ vi.mock('~/lib/orpc', async () => {
       },
     });
   const client = forward([]);
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -182,6 +184,8 @@ const CLAUDE_CARD: HomeAgent = {
 };
 
 interface FakeOptions {
+  /** A new workspace: no projects yet. */
+  noProjects?: boolean;
   /** Mine with nothing waiting (frame 102). */
   clear?: boolean;
 }
@@ -254,7 +258,7 @@ function createFake(options: FakeOptions = {}) {
     members: { list: async () => ({ items: [] }) },
     projects: {
       list: async () => ({
-        items: [PAY, WEB].map((project) => ({
+        items: (options.noProjects ? [] : [PAY, WEB]).map((project) => ({
           ...project,
           description: null,
           usesMilestones: true,
@@ -294,7 +298,7 @@ function PeekProbe() {
   return <output aria-label="peek">{peek ? `${peek.key} from ${peek.from}` : 'closed'}</output>;
 }
 
-function renderHome(url = '/') {
+function renderHome(url = '/w/acme') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, refetchInterval: false } },
   });
@@ -308,7 +312,7 @@ function renderHome(url = '/') {
   });
   const home = createRoute({
     getParentRoute: () => root,
-    path: '/',
+    path: '/w/$workspace',
     validateSearch: parseHomeSearch,
     component: function HomeRoute() {
       return <HomeScreen search={home.useSearch()} />;
@@ -316,18 +320,25 @@ function renderHome(url = '/') {
   });
   const taskPage = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/$taskKey',
+    path: '/w/$workspace/p/$projectKey/$taskKey',
     component: function TaskRoute() {
       return <p>task page {(taskPage.useParams() as { taskKey: string }).taskKey}</p>;
     },
   });
+  const membersPage = createRoute({
+    getParentRoute: () => root,
+    path: '/w/$workspace/settings/members',
+    component: () => <p>members page</p>,
+  });
   const router = createRouter({
-    routeTree: root.addChildren([home, taskPage]),
+    routeTree: root.addChildren([home, taskPage, membersPage]),
     history: createMemoryHistory({ initialEntries: [url] }),
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <WorkspaceProvider workspace={workspace}>
+        <RouterProvider router={router} />
+      </WorkspaceProvider>
     </QueryClientProvider>,
   );
   return { router };
@@ -401,7 +412,7 @@ describe('Home', () => {
   });
 
   it('shows agent cards and what waits on a person on Agents, without deadlines', async () => {
-    renderHome('/?tab=agents');
+    renderHome('/w/acme?tab=agents');
     const card = await screen.findByRole('article', { name: 'claude-dev' });
     expect(within(card).getByText('Working')).toBeInTheDocument();
     expect(within(card).getByText('acts for Ana')).toBeInTheDocument();
@@ -431,6 +442,19 @@ describe('Home', () => {
     expect(row('WEB-13')).toBeInTheDocument();
   });
 
+  it('shows the first steps in a workspace without projects', async () => {
+    api.current = createFake({ clear: true, noProjects: true });
+    const user = userEvent.setup();
+    const { router } = renderHome();
+    expect(await screen.findByRole('heading', { name: 'Nothing to show yet' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'All clear' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Create a project' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New project' })).toBeInTheDocument();
+    // Ana owns the workspace, so she sees the agent step too.
+    await user.click(screen.getByRole('button', { name: 'Open Members' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/w/acme/settings/members'));
+  });
+
   it('moves with J / K, peeks with Space and opens the task view with Enter', async () => {
     const user = userEvent.setup();
     const { router } = renderHome();
@@ -451,11 +475,11 @@ describe('Home', () => {
 
     await user.keyboard('{Enter}');
     expect(await screen.findByText('task page PAY-120')).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe('/p/PAY/PAY-120');
-    expect(readTaskNavigation()).toMatchObject({
+    expect(router.state.location.pathname).toBe('/w/acme/p/PAY/PAY-120');
+    expect(readTaskNavigation(workspace.id)).toMatchObject({
       keys: ['PAY-120', 'PAY-142', 'WEB-193', 'WEB-13'],
       from: 'Home',
-      returnTo: '/',
+      returnTo: '/w/acme',
     });
   });
 
@@ -473,7 +497,7 @@ describe('Home', () => {
 
   it('reads the filter from the URL, sends it, and clears it from the chips', async () => {
     const user = userEvent.setup();
-    const { router } = renderHome('/?project=PAY&label=backend&priority=high');
+    const { router } = renderHome('/w/acme?project=PAY&label=backend&priority=high');
     await screen.findByText('Idempotency keys for payouts');
     expect(api.current?.calls[0]).toEqual({
       tab: 'mine',

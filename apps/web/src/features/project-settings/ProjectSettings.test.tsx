@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event';
 import { type ReactNode, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { meQuery, projectsQuery } from '~/features/projects/queries';
+import { renderInWorkspace, testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 import { BacklogStatusView, NoSource, setupHref } from './BacklogSettings';
 import {
   announceProjectDeleted,
@@ -20,8 +22,8 @@ import { webhookSteps } from './WebhookDialog';
 // These screens are rendered from props; the stub keeps the API and server modules out. Only
 // client.projects.delete answers, through `api.deleteProject`.
 const api = vi.hoisted(() => ({ deleteProject: vi.fn(), navigate: vi.fn() }));
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const fail = (path: string[] = []): unknown =>
     new Proxy(() => {}, {
       get: (_target, key) => (typeof key === 'string' ? fail([...path, key]) : undefined),
@@ -31,15 +33,19 @@ vi.mock('~/lib/orpc', async () => {
           : Promise.reject(new Error('no API in these tests')),
     });
   const client = fail();
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 vi.mock('@tanstack/react-router', async (original) => ({
   ...(await original<typeof import('@tanstack/react-router')>()),
   useNavigate: () => api.navigate,
 }));
 
 function withQuery(children: ReactNode) {
-  return <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={new QueryClient()}>
+      <WorkspaceProvider workspace={workspace}>{children}</WorkspaceProvider>
+    </QueryClientProvider>
+  );
 }
 
 const PROJECT: GeneralProject = {
@@ -175,12 +181,12 @@ describe('Backlog.md settings', () => {
     );
     expect(within(source).getByRole('link', { name: '9 hidden, removed from Backlog.md' })).toHaveAttribute(
       'href',
-      '/p/PAY?hidden=only',
+      '/w/acme/p/PAY?hidden=only',
     );
     expect(screen.getByText('None. Every file was read and every value is mapped.')).toBeVisible();
     expect(screen.getByRole('link', { name: 'Edit mappings' })).toHaveAttribute(
       'href',
-      '/p/PAY/backlog-setup?step=mappings&edit=1',
+      '/w/acme/p/PAY/backlog-setup?step=mappings&edit=1',
     );
     expect(screen.getByText('fallback')).toBeVisible();
     await user.click(within(source).getByRole('button', { name: 'Refresh now' }));
@@ -281,20 +287,24 @@ describe('Backlog.md settings', () => {
   });
 
   it('offers mirror and import on an empty project', () => {
-    render(<NoSource project={{ key: 'OPS', repository: PROJECT.repository }} hasTasks={false} canManage />);
+    renderInWorkspace(
+      <NoSource project={{ key: 'OPS', repository: PROJECT.repository }} hasTasks={false} canManage />,
+    );
     expect(screen.getByRole('link', { name: 'Set up a mirror' })).toHaveAttribute(
       'href',
-      '/p/OPS/backlog-setup?mode=mirror',
+      '/w/acme/p/OPS/backlog-setup?mode=mirror',
     );
     expect(screen.getByRole('link', { name: 'Import' })).toHaveAttribute(
       'href',
-      setupHref('OPS', { mode: 'import' }),
+      setupHref(workspace.slug, 'OPS', { mode: 'import' }),
     );
     expect(screen.getByText(/Repository: gitlab\.com\/reddevs\/ops-runbooks, from General/)).toBeVisible();
   });
 
   it('turns setup off for a project that has tasks', () => {
-    render(<NoSource project={{ key: 'WEB', repository: PROJECT.repository }} hasTasks canManage />);
+    renderInWorkspace(
+      <NoSource project={{ key: 'WEB', repository: PROJECT.repository }} hasTasks canManage />,
+    );
     expect(screen.getByRole('button', { name: 'Set up a mirror' })).toBeDisabled();
     expect(screen.getByText(/already has tasks/)).toBeVisible();
   });
@@ -387,17 +397,19 @@ describe('Delete project', () => {
       createdAt: '2026-10-01T10:00:00.000Z',
       updatedAt: '2026-10-01T10:00:00.000Z',
     });
-    queryClient.setQueryData(projectsQuery().queryKey, {
+    queryClient.setQueryData(projectsQuery(workspace.api).queryKey, {
       items: [project('OPS', 'Operations'), project('WEB', 'Website')],
     } as never);
-    queryClient.setQueryData(meQuery().queryKey, { role } as never);
+    queryClient.setQueryData(meQuery(workspace.api).queryKey, { role } as never);
     return queryClient;
   }
 
   it('is offered to owners and admins only', () => {
     const member = render(
       <QueryClientProvider client={queryClientWith('member')}>
-        <GeneralSettings projectKey="OPS" />
+        <WorkspaceProvider workspace={workspace}>
+          <GeneralSettings projectKey="OPS" />
+        </WorkspaceProvider>
       </QueryClientProvider>,
     );
     expect(screen.getByRole('form', { name: 'General' })).toBeVisible();
@@ -405,7 +417,9 @@ describe('Delete project', () => {
     member.unmount();
     render(
       <QueryClientProvider client={queryClientWith('admin')}>
-        <GeneralSettings projectKey="OPS" />
+        <WorkspaceProvider workspace={workspace}>
+          <GeneralSettings projectKey="OPS" />
+        </WorkspaceProvider>
       </QueryClientProvider>,
     );
     expect(screen.getByText('Delete this project')).toBeVisible();
@@ -420,7 +434,9 @@ describe('Delete project', () => {
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
     render(
       <QueryClientProvider client={queryClient}>
-        <DeleteHarness />
+        <WorkspaceProvider workspace={workspace}>
+          <DeleteHarness />
+        </WorkspaceProvider>
       </QueryClientProvider>,
     );
     await user.click(screen.getByRole('button', { name: 'Delete project' }));
@@ -430,8 +446,10 @@ describe('Delete project', () => {
 
     expect(await screen.findByRole('status')).toHaveTextContent('Deleted OPS');
     expect(api.deleteProject).toHaveBeenCalledWith({ project: 'OPS', confirmKey: 'ops' });
-    expect(api.navigate).toHaveBeenCalledWith({ to: '/' });
-    const cached = queryClient.getQueryData(projectsQuery().queryKey) as { items: { key: string }[] };
+    expect(api.navigate).toHaveBeenCalledWith({ to: '/w/$workspace', params: { workspace: 'acme' } });
+    const cached = queryClient.getQueryData(projectsQuery(workspace.api).queryKey) as {
+      items: { key: string }[];
+    };
     expect(cached.items.map((item) => item.key)).toEqual(['WEB']);
     await waitFor(() => {
       const keys = invalidate.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));

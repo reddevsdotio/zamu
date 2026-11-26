@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import type { ProjectBacklogSummary, Task } from '@zamu/contracts';
 import { useState } from 'react';
 import { Button as AriaButton } from 'react-aria-components';
-import { orpc } from '~/lib/orpc';
+import type { WorkspaceApi } from '~/lib/orpc';
+import { useApi } from '~/lib/workspace';
 import { CaretGlyph, cn, SourceBadge, SourceStatusDot } from '~/ui';
 import { useNow } from './clock';
 import { atTime, formatDay } from './format';
@@ -18,16 +19,17 @@ export function useBacklogSummary(projectKey: string): {
   summary: ProjectBacklogSummary | null;
   projectName: string | undefined;
 } {
+  const api = useApi();
   const project = useQuery({
-    ...projectsQuery(),
+    ...projectsQuery(api),
     select: (data) => data.items.find((item) => item.key === projectKey),
   }).data;
   return { summary: project?.backlog ?? null, projectName: project?.name };
 }
 
 /** Project-level Backlog.md history (first read, detach), for tasks that came from Backlog.md. */
-export function backlogHistoryQuery(projectKey: string) {
-  return orpc.backlog.status.queryOptions({
+export function backlogHistoryQuery(api: WorkspaceApi, projectKey: string) {
+  return api.orpc.backlog.status.queryOptions({
     input: { project: projectKey, problemsLimit: 1 },
     retry: false,
     staleTime: 60_000,
@@ -123,9 +125,10 @@ export function RemovedBanner({
   branch: string | null | undefined;
   className?: string;
 }) {
+  const api = useApi();
   const now = useNow();
   const commit = useQuery({
-    ...timelineQuery(task.key),
+    ...timelineQuery(api, task.key),
     select: (data) => {
       const hides = data.items.filter((item) => item.kind === 'activity' && item.type === 'task.hidden');
       const last = hides[hides.length - 1];

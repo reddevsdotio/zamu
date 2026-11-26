@@ -1,8 +1,12 @@
-import { type Db, type DbOrTx, schema } from '@zamu/db';
-import { asc, sql } from 'drizzle-orm';
+// First-run setup: the first person, the first workspace and its owner, and where setup stands. Setup
+// happens once per server: once a workspace exists it never reopens, whatever is created or deleted later.
+import { suggestWorkspaceSlug, workspaceSlugWithNumber } from '@zamu/contracts';
+import { type Db, type DbOrTx, schema, type Tx } from '@zamu/db';
+import { asc, eq, sql } from 'drizzle-orm';
 import type { Auth } from './auth';
 import { MIN_PASSWORD_LENGTH } from './options';
 import { authConfigOf } from './settings';
+import { findWorkspaceBySlug } from './workspace';
 
 /** Better Auth's default maximum password length. */
 const MAX_PASSWORD_LENGTH = 128;
@@ -57,16 +61,24 @@ export interface BootstrapAdminResult {
   workspaceId: string;
 }
 
-/** URL-safe slug for an organization; Better Auth requires one. */
+/**
+ * The slug suggested for a workspace name, following the workspace slug rule of @zamu/contracts
+ * (suggestWorkspaceSlug): "Acme Corp." gives `acme-corp`.
+ */
 export function slugify(value: string): string {
-  const slug = value
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
-  return slug || 'workspace';
+  return suggestWorkspaceSlug(value);
+}
+
+/**
+ * The slug of the first workspace: OIDC_WORKSPACE when it is set, so single sign-on finds the workspace
+ * it names, else one suggested from the name. A number is appended while the slug is taken.
+ */
+async function firstWorkspaceSlug(tx: Tx, auth: Auth | undefined, workspaceName: string): Promise<string> {
+  const base = (auth && authConfigOf(auth).sso?.workspace) || slugify(workspaceName);
+  for (let n = 1; ; n++) {
+    const candidate = workspaceSlugWithNumber(base, n);
+    if (!(await findWorkspaceBySlug(tx, candidate))) return candidate;
+  }
 }
 
 function validate(input: BootstrapAdminInput): BootstrapAdminInput {
@@ -117,10 +129,11 @@ export async function bootstrapAdmin(
     });
     const [workspace] = await tx
       .insert(schema.organization)
-      .values({ name: workspaceName, slug: slugify(workspaceName) })
+      .values({ name: workspaceName, slug: await firstWorkspaceSlug(tx, auth, workspaceName) })
       .returning();
     if (!workspace) throw new Error('bootstrapAdmin: organization insert returned no row');
     await tx.insert(schema.member).values({ organizationId: workspace.id, userId: user.id, role: 'owner' });
+    await tx.update(schema.user).set({ lastWorkspaceId: workspace.id }).where(eq(schema.user.id, user.id));
     return { userId: user.id, workspaceId: workspace.id };
   });
 
@@ -133,7 +146,7 @@ export async function bootstrapAdmin(
  * Where first-run setup stands:
  * - `account`: nobody exists yet; the first person to finish step 1 (password or SSO) becomes the admin.
  * - `workspace`: the admin signed up through SSO but has not named the workspace yet.
- * - `done`: a workspace exists.
+ * - `done`: a workspace exists, or did: deleting workspaces never reopens setup.
  */
 export type SetupState = 'account' | 'workspace' | 'done';
 
@@ -144,7 +157,16 @@ export async function setupState(db: DbOrTx): Promise<SetupState> {
     hasWorkspace.add(db);
     return 'done';
   }
-  return (await isFirstRun(db)) ? 'account' : 'workspace';
+  // No workspace now. Before setup only the first person can exist (new SSO identities are refused
+  // until it finishes), and everyone else joins through a workspace, so a second user means a workspace
+  // existed and has since been deleted. Setup stays done; people go on from the no-workspace screen.
+  const users = await db.select({ id: schema.user.id }).from(schema.user).limit(2);
+  if (users.length === 0) return 'account';
+  if (users.length > 1) {
+    hasWorkspace.add(db);
+    return 'done';
+  }
+  return 'workspace';
 }
 
 export interface BootstrapWorkspaceInput {
@@ -155,10 +177,11 @@ export interface BootstrapWorkspaceInput {
 
 /**
  * Setup step 2 after SSO: creates the workspace with `userId` as its owner. Only the first person may
- * do this, and only while no workspace exists (same advisory lock as bootstrapAdmin).
+ * do this, and only while setup is not done (same advisory lock as bootstrapAdmin). Pass `auth` so the
+ * workspace takes the OIDC_WORKSPACE slug when it is set.
  */
 export async function bootstrapWorkspace(
-  { db }: { db: Db },
+  { db, auth }: { db: Db; auth?: Auth },
   input: BootstrapWorkspaceInput,
 ): Promise<BootstrapAdminResult> {
   const workspaceName = input.workspaceName.trim();
@@ -166,8 +189,9 @@ export async function bootstrapWorkspace(
 
   const result = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(${BOOTSTRAP_LOCK_KEY})`);
-    const [existing] = await tx.select({ id: schema.organization.id }).from(schema.organization).limit(1);
-    if (existing) throw new BootstrapError('ALREADY_SET_UP', 'This server already has a workspace.');
+    if ((await setupState(tx)) === 'done') {
+      throw new BootstrapError('ALREADY_SET_UP', 'This server already has a workspace.');
+    }
     const [first] = await tx
       .select({ id: schema.user.id, kind: schema.user.kind })
       .from(schema.user)
@@ -181,10 +205,11 @@ export async function bootstrapWorkspace(
     }
     const [workspace] = await tx
       .insert(schema.organization)
-      .values({ name: workspaceName, slug: slugify(workspaceName) })
+      .values({ name: workspaceName, slug: await firstWorkspaceSlug(tx, auth, workspaceName) })
       .returning();
     if (!workspace) throw new Error('bootstrapWorkspace: organization insert returned no row');
     await tx.insert(schema.member).values({ organizationId: workspace.id, userId: first.id, role: 'owner' });
+    await tx.update(schema.user).set({ lastWorkspaceId: workspace.id }).where(eq(schema.user.id, first.id));
     return { userId: first.id, workspaceId: workspace.id };
   });
 

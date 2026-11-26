@@ -2,7 +2,7 @@ import { AccountFields, InviteFields, SignInFields, WorkspaceFields } from '@zam
 import { useState } from 'react';
 import { Link } from 'react-aria-components';
 import { AUTH_ERRORS } from '~/lib/auth-client';
-import { Banner, Button, TextField } from '~/ui';
+import { Banner, Button, buttonStyles, TextField } from '~/ui';
 import { AuthForm, AuthHeading, SetupSteps } from './AuthLayout';
 import { type FieldErrors, fieldErrors, hasErrors, passwordHint } from './validation';
 
@@ -12,8 +12,10 @@ import { type FieldErrors, fieldErrors, hasErrors, passwordHint } from './valida
 /** An error shown in the banner above a form. */
 export interface FormError {
   message: string;
-  /** Adds a "Go to sign in" link (already set up, account exists, unusable invitation). */
+  /** Adds a "Go to sign in" link (already set up, unusable invitation). */
   signInLink?: boolean;
+  /** Adds this link instead, such as "Sign in to join" back to an invitation. */
+  link?: { href: string; label: string };
 }
 
 export const WRONG_CREDENTIALS = 'Wrong email or password. Check both and try again.';
@@ -28,7 +30,14 @@ export function ErrorBanner({ error }: { error: FormError }) {
   return (
     <Banner>
       {error.message}
-      {error.signInLink ? (
+      {error.link ? (
+        <>
+          {' '}
+          <Link href={error.link.href} className={linkClass}>
+            {error.link.label}
+          </Link>
+        </>
+      ) : error.signInLink ? (
         <>
           {' '}
           <Link href="/signin" className={linkClass}>
@@ -494,6 +503,102 @@ export function InviteForm({
         </Button>
       </AuthForm>
       {sso ? <SsoBelow sso={sso} onError={ssoFailed} /> : null}
+    </>
+  );
+}
+
+/** The sign-in page, coming back to the invitation afterwards. */
+export function signInToJoinHref(invitationId: string): string {
+  return `/signin?redirect=${encodeURIComponent(`/invite/${invitationId}`)}`;
+}
+
+export interface JoinWorkspaceProps {
+  workspaceName: string;
+  /** Accepts the invitation; resolves to an error to show, or null once the workspace opens. */
+  onJoin: () => Promise<FormError | null>;
+}
+
+/** Signed in with the invited email: one button joins the workspace. */
+export function JoinWorkspace({ workspaceName, onJoin }: JoinWorkspaceProps) {
+  const [failure, setFailure] = useState<FormError | null>(null);
+  const { pending, run } = useSubmit<FormError>();
+  return (
+    <>
+      {failure ? <ErrorBanner error={failure} /> : null}
+      <Button
+        variant="primary"
+        size="lg"
+        fullWidth
+        autoFocus
+        isPending={pending}
+        onPress={async () => setFailure(await run(onJoin))}
+      >
+        {`Join ${workspaceName}`}
+      </Button>
+    </>
+  );
+}
+
+export interface WrongAccountProps {
+  /** Signs out; the page then shows the invitation to a signed-out visitor. */
+  onSignOut: () => Promise<void>;
+}
+
+/** Signed in with another email than the invitation's: the only way on is to sign out. */
+export function WrongAccount({ onSignOut }: WrongAccountProps) {
+  const [pending, setPending] = useState(false);
+  const [failure, setFailure] = useState<FormError | null>(null);
+  const press = async () => {
+    setPending(true);
+    try {
+      await onSignOut();
+    } catch {
+      setFailure({ message: "Couldn't sign out. Try again." });
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <>
+      {failure ? <ErrorBanner error={failure} /> : null}
+      <Button variant="primary" size="lg" fullWidth isPending={pending} onPress={press}>
+        Sign out
+      </Button>
+    </>
+  );
+}
+
+export interface SignInToJoinProps {
+  invitationId: string;
+  /** "Continue with {provider}", which signs in and joins in one go; the email must match. */
+  sso?: SsoAction;
+  /** False when PASSWORD_LOGIN=disabled: the SSO button is the only way in. */
+  passwordLogin?: boolean;
+  /** Shown in the banner on first render, such as an error the SSO redirect came back with. */
+  initialError?: FormError | null;
+}
+
+/** Signed out, and the invited email has an account: sign in, then come back and join. */
+export function SignInToJoin({
+  invitationId,
+  sso,
+  passwordLogin = true,
+  initialError = null,
+}: SignInToJoinProps) {
+  const [failure, setFailure] = useState<FormError | null>(initialError);
+  const ssoFailed = (message: string) => setFailure({ message });
+  return (
+    <>
+      {failure ? <ErrorBanner error={failure} /> : null}
+      {passwordLogin || !sso ? (
+        <Link
+          href={signInToJoinHref(invitationId)}
+          className={buttonStyles({ variant: 'primary', size: 'lg', fullWidth: true })}
+        >
+          Sign in to join
+        </Link>
+      ) : null}
+      {sso ? <SsoBelow sso={sso} onError={ssoFailed} alone={!passwordLogin} /> : null}
     </>
   );
 }

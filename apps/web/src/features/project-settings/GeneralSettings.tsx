@@ -13,7 +13,7 @@ import { meQuery } from '~/features/projects/queries';
 import { editRepositoryHint, RepositoryField } from '~/features/projects/RepositoryField';
 import { normalizeKeyInput, repositoryError, repositoryMessage } from '~/features/projects/validation';
 import { isAdminRole } from '~/features/settings/format';
-import { orpc } from '~/lib/orpc';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
 import { Banner, Button, Skeleton, Switch, TextArea, TextField, useHotkeys } from '~/ui';
 import { DeleteProjectDialog, DeleteProjectRow } from './DeleteProjectDialog';
 import {
@@ -32,12 +32,14 @@ import { hasTasksQuery, useDeleteProject } from './queries';
 
 /** The General page wired to the API. */
 export function GeneralSettings({ projectKey }: { projectKey: string }) {
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
   const project = useProjectSummary(projectKey);
-  const hasTasks = useQuery(hasTasksQuery(projectKey)).data;
+  const hasTasks = useQuery(hasTasksQuery(api, projectKey)).data;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const update = useMutation(orpc.projects.update.mutationOptions());
-  const me = useQuery(meQuery());
+  const update = useMutation(api.orpc.projects.update.mutationOptions());
+  const me = useQuery(meQuery(api));
   const canDelete = isAdminRole(me.data?.role);
   const remove = useDeleteProject(projectKey);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -57,10 +59,14 @@ export function GeneralSettings({ projectKey }: { projectKey: string }) {
       return generalFailure(error);
     }
     // The rail, the header tabs, the task fields and the planning pages read the flags from these.
-    await queryClient.invalidateQueries({ queryKey: orpc.projects.key() });
-    void queryClient.invalidateQueries({ queryKey: orpc.tasks.key() });
+    await queryClient.invalidateQueries({ queryKey: api.orpc.projects.key() });
+    void queryClient.invalidateQueries({ queryKey: api.orpc.tasks.key() });
     if (changes.key) {
-      void navigate({ to: '/p/$projectKey/settings', params: { projectKey: changes.key }, replace: true });
+      void navigate({
+        to: '/w/$workspace/p/$projectKey/settings',
+        params: { workspace, projectKey: changes.key },
+        replace: true,
+      });
     }
     return null;
   };

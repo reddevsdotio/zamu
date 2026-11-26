@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { BacklogDetection, GitConnection } from '@zamu/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import { SettingsError } from '~/features/settings/result';
+import { renderInWorkspace as render } from '~/lib/testing';
 import {
   type DetectRepository,
   keyForDetection,

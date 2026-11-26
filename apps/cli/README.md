@@ -37,9 +37,10 @@ Create an API key in Settings > API keys (agents get theirs when an admin adds t
 zamu login --key zamu_live_... --url https://zamu.example.com
 ```
 
-`zamu login` checks the key with `GET /api/v1/me` and stores the URL and key in
-`$XDG_CONFIG_HOME/zamu/config.json` (or `~/.config/zamu/config.json`), readable only by you (mode 0600).
-Without `--url` it uses `ZAMU_URL`, then the stored URL, then `http://localhost:3000`.
+`zamu login` checks the key with `GET /api/v1/me`, reads the key's workspace from the answer and stores
+the URL, the key and the workspace in `$XDG_CONFIG_HOME/zamu/config.json` (or
+`~/.config/zamu/config.json`), readable only by you (mode 0600). Without `--url` it uses `ZAMU_URL`, then
+the default login's server, then `http://localhost:3000`.
 
 To keep the key out of your shell history, pipe it in:
 
@@ -47,20 +48,58 @@ To keep the key out of your shell history, pipe it in:
 zamu login --key - --url https://zamu.example.com < key.txt
 ```
 
-`zamu logout` deletes the stored file. `zamu whoami` shows the user, workspace, role, key scope, the
-project zamu uses in the current folder and the writes waiting in the offline queue.
+`zamu whoami` shows the user, workspace, role, key scope, how zamu picked the login, the project zamu uses
+in the current folder and the writes waiting in the offline queue.
+
+### Several workspaces
+
+A key belongs to one workspace. Run `zamu login` once per workspace (and per server): zamu keeps one
+login for each, and logging in again with a new key for the same workspace replaces its key. The first
+login is the default; `zamu login --default` or `zamu workspaces --default <slug>` changes it.
+
+```sh
+zamu login --key zamu_live_... --url https://zamu.example.com   # Acme: the default
+zamu login --key zamu_live_...                                  # Globex, on the same server
+zamu workspaces                                                 # the logins, * marks the one used here
+zamu --workspace globex tasks list --mine                       # one command in Globex
+zamu logout                                                     # remove the login used here
+zamu logout --workspace globex                                  # or that one, or --all
+```
+
+Each command uses the first login that applies:
+1. `--workspace <slug>` (a slug or a workspace id; every command takes it).
+2. `ZAMU_KEY` (with `ZAMU_URL`), as before.
+3. The login zamu matched to this clone's git remote earlier, cached in
+   `$XDG_STATE_HOME/zamu/clones.json` (`~/.local/state/zamu/clones.json`).
+4. The login whose workspace has a project linked to the remote, or, when none is, the project the
+   nearest `.zamu.json` names. zamu asks every login at once, within the usual 5 seconds, and caches a
+   single match. When the cached login gets a 403 or 404, zamu matches again and, if another login fits,
+   sends the request again with it.
+5. The default login.
+
+With one login there is nothing to match. When a clone matches two or more logins (two workspaces each
+have a project `PAY`, and `.zamu.json` names `PAY`), the command stops with exit code 1 and lists the
+`--workspace` values to pass. `ZAMU_URL` without `ZAMU_KEY` narrows the logins to that server.
+
+Every request of a login names its workspace in the `x-zamu-workspace` header. The server refuses a key
+used for another workspace with 403 `WORKSPACE_MISMATCH` (exit code 4), so `ZAMU_KEY=... zamu --workspace
+globex ...` with an Acme key fails instead of reading Acme's data.
+
+The config file of zamu 0.9 (`{ "url", "key" }`) keeps working. The first command that reaches the
+server reads the key's workspace and writes the file back in the new form (`{ "version": 2, "logins" }`);
+offline, zamu uses the old file as it is.
 
 ### Environment variables
 
 Agents in CI usually skip `zamu login` and set:
 
-| Variable       | Meaning                                                                                |
-| -------------- | -------------------------------------------------------------------------------------- |
-| `ZAMU_URL`     | Server URL. Overrides the stored URL.                                                  |
-| `ZAMU_KEY`     | API key. Overrides the stored key. `ZAMU_API_KEY` (printed by the dev seed) works too. |
-| `ZAMU_PROJECT` | Project key for commands that need one, when `--project` is not given.                 |
-| `ZAMU_MACHINE` | Machine name sent with every request (default: the host name). See below.              |
-| `NO_COLOR`     | Turns colour off. `FORCE_COLOR=1` turns it on when output is piped.                    |
+| Variable       | Meaning                                                                                   |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| `ZAMU_URL`     | Server URL. With `ZAMU_KEY`, the server for that key; alone, only its logins are used.    |
+| `ZAMU_KEY`     | API key. Overrides the stored logins. `ZAMU_API_KEY` (printed by the dev seed) works too. |
+| `ZAMU_PROJECT` | Project key for commands that need one, when `--project` is not given.                    |
+| `ZAMU_MACHINE` | Machine name sent with every request (default: the host name). See below.                 |
+| `NO_COLOR`     | Turns colour off. `FORCE_COLOR=1` turns it on when output is piped.                       |
 
 ## Project of the current folder
 
@@ -389,10 +428,15 @@ the server answered.
 - `zamu queue` lists what waits (`zamu.v1.queue.list`) and `zamu queue drop ID` removes an entry
   (`zamu.v1.queue.drop`); neither contacts the server. `zamu whoami` shows how many writes still wait for
   its server (`queued`).
-- A queued write is sent only by a command that uses the key that queued it, so it keeps its author when a
-  person and an agent share a machine. The queue stores a fingerprint of the key, never the key. Writes
-  queued with another key wait, and zamu says how many. The machine and branch are those of the command
-  that sends the write.
+- A queued write keeps the login it was queued with: the next command that reaches the server sends it
+  with that stored login's key and workspace, whichever login the command itself uses. Entries from zamu
+  0.9 go out with the stored login that holds their key, else with the command's login. A write queued
+  with a key zamu doesn't store (a `ZAMU_KEY`) waits for a command that uses that key, so it keeps its
+  author when a person and an agent share a machine; zamu says how many wait. The queue stores a
+  fingerprint of the key, never the key. The machine and branch are those of the command that sends the
+  write.
+- Remembered statuses are kept per server and workspace, so `PAY-1` of one workspace never stands in for
+  `PAY-1` of another. `zamu queue` adds a WORKSPACE column when the writes belong to several.
 
 ### Machine and branch
 
@@ -487,6 +531,7 @@ Every command takes `--json` and prints one versioned result:
 | `zamu login`             | `zamu.v1.login`             |
 | `zamu logout`            | `zamu.v1.logout`            |
 | `zamu whoami`            | `zamu.v1.whoami`            |
+| `zamu workspaces`        | `zamu.v1.workspaces`        |
 | `zamu dashboard`         | `zamu.v1.dashboard`         |
 | `zamu projects list`     | `zamu.v1.projects.list`     |
 | `zamu projects delete`   | `zamu.v1.projects.delete`   |
@@ -542,21 +587,28 @@ one list, oldest first, told apart by `kind` (`activity`, `comment` or `note`), 
 the size of each filter (`all`, `comments`, `notes`, `history`). The task carries its work record:
 `criteria`, `doneItems`, `plan`, `planMeta`, `finalSummary` and `finalSummaryMeta`.
 
+`zamu.v1.login` adds `replaced` (a login for that server and workspace existed) and `default`.
+`zamu.v1.logout` adds `removed`: every login removed, without keys. `zamu.v1.whoami` adds
+`workspaceSource`: `flag`, `env`, `clone` or `default`. `zamu.v1.workspaces` is
+`{ "items": [{ "url", "workspace": { "id", "name", "slug" }, "default", "current" }], "source" }`, where
+`current` marks the login commands use here and `source` says how it was picked (`env` when `ZAMU_KEY` is
+set, null when the clone matches several logins).
+
 `zamu tasks update` with `--append-notes` alone prints `zamu.v1.notes.add` (the note); with other flags it
 prints `zamu.v1.tasks.update`. `zamu.v1.agents` adds `replacedBacklogBlock`.
 
 ## Exit codes
 
-| Code | Meaning                                                                                                            |
-| ---- | ------------------------------------------------------------------------------------------------------------------ |
-| 0    | OK                                                                                                                 |
-| 1    | Usage: bad arguments, unknown milestone names, or input the server rejected (400, 409, 422), `OPEN_ITEMS` included |
-| 2    | Auth: not logged in, or the key was refused (401)                                                                  |
-| 3    | Not found (404)                                                                                                    |
-| 4    | Forbidden: the key's scope or access does not allow it, or owners and admins only (403)                            |
-| 5    | Server: unreachable (and nothing queued), 5xx, or a response this version does not understand                      |
-| 6    | Backlog.md: the change belongs in Backlog.md, or the mirror is paused or detached (409)                            |
-| 7    | Queued: the server didn't answer, so the write waits in the offline queue for the next command                     |
+| Code | Meaning                                                                                                                                                 |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | OK                                                                                                                                                      |
+| 1    | Usage: bad arguments, unknown milestone names, input the server rejected (400, 409, 422), `OPEN_ITEMS` included, or a clone that matches several logins |
+| 2    | Auth: not logged in, or the key was refused (401)                                                                                                       |
+| 3    | Not found (404)                                                                                                                                         |
+| 4    | Forbidden: the key's scope or access does not allow it, owners and admins only, or the key is for another workspace (403)                               |
+| 5    | Server: unreachable (and nothing queued), 5xx, or a response this version does not understand                                                           |
+| 6    | Backlog.md: the change belongs in Backlog.md, or the mirror is paused or detached (409)                                                                 |
+| 7    | Queued: the server didn't answer, so the write waits in the offline queue for the next command                                                          |
 
 ## Development
 

@@ -14,6 +14,8 @@ import { ana, claudeDev, workItemFixtures } from '@zamu/contracts/testing/fixtur
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeApi, type FakeApi } from '~/features/tasks/fake-api';
 import { readTaskNavigation } from '~/features/views';
+import { testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 import { UIProvider } from '~/ui';
 import { PeekHost } from './PeekHost';
 import { closePeek, openPeek } from './store';
@@ -26,8 +28,8 @@ vi.setConfig({ testTimeout: 30_000 });
 
 const api = vi.hoisted(() => ({ current: null as FakeApi | null }));
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const forward = (path: string[]): unknown =>
     new Proxy(() => {}, {
       get: (_target, key) => (typeof key === 'string' ? forward([...path, key]) : undefined),
@@ -38,10 +40,10 @@ vi.mock('~/lib/orpc', async () => {
       },
     });
   const client = forward([]);
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
-function renderApp(url = '/p/PAY') {
+function renderApp(url = '/w/acme/p/PAY') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, refetchInterval: false } },
   });
@@ -55,12 +57,12 @@ function renderApp(url = '/p/PAY') {
   });
   const list = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/',
+    path: '/w/$workspace/p/$projectKey/',
     component: () => <p>List</p>,
   });
   const page = createRoute({
     getParentRoute: () => root,
-    path: '/p/$projectKey/$taskKey',
+    path: '/w/$workspace/p/$projectKey/$taskKey',
     component: function Page() {
       const { taskKey } = page.useParams();
       return <p>Task view {taskKey}</p>;
@@ -72,7 +74,9 @@ function renderApp(url = '/p/PAY') {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <WorkspaceProvider workspace={workspace}>
+        <RouterProvider router={router} />
+      </WorkspaceProvider>
     </QueryClientProvider>,
   );
   return { router };
@@ -136,7 +140,7 @@ describe('peek', () => {
   });
 
   it('opens the task view with Enter and remembers the list for J / K there', async () => {
-    const { router } = renderApp('/p/PAY');
+    const { router } = renderApp('/w/acme/p/PAY');
     await screen.findByText('List');
     act(() => openPeek({ key: 'PAY-2', keys: ['PAY-1', 'PAY-2'], from: 'Board' }));
     await within(await screen.findByRole('region', { name: 'Peek: PAY-2' })).findByRole('heading', {
@@ -144,11 +148,11 @@ describe('peek', () => {
     });
     await userEvent.setup().keyboard('{Enter}');
     await screen.findByText('Task view PAY-2');
-    expect(router.state.location.pathname).toBe('/p/PAY/PAY-2');
-    expect(readTaskNavigation()).toMatchObject({
+    expect(router.state.location.pathname).toBe('/w/acme/p/PAY/PAY-2');
+    expect(readTaskNavigation(workspace.id)).toMatchObject({
       keys: ['PAY-1', 'PAY-2'],
       from: 'Board',
-      returnTo: '/p/PAY',
+      returnTo: '/w/acme/p/PAY',
     });
     expect(screen.queryByRole('region', { name: /^Peek: / })).not.toBeInTheDocument();
   });

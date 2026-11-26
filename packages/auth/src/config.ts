@@ -1,5 +1,6 @@
 // Sign-in configuration read from environment variables: single sign-on with one OpenID Connect provider,
 // and whether password sign-in is allowed. Without any OIDC_* variable the server behaves as in M1.
+import { WorkspaceSlug } from '@zamu/contracts';
 
 /** New identities from the provider: `invite` only lets in existing accounts and invited people. */
 export const OIDC_SIGNUP_MODES = ['invite', 'auto'] as const;
@@ -34,6 +35,11 @@ export interface SsoConfig {
    * missing (providers such as Authentik that never verify). See docs/self-hosting.md for the trade-off.
    */
   trustEmail: boolean;
+  /**
+   * OIDC_WORKSPACE: the slug of the workspace that auto sign-up joins and admin groups apply to. Null:
+   * the oldest workspace. Invitations still open the workspace that sent them.
+   */
+  workspace: string | null;
 }
 
 export interface AuthConfig {
@@ -59,6 +65,7 @@ export interface AuthEnv {
   OIDC_ADMIN_GROUPS?: string | undefined;
   OIDC_GROUPS_CLAIM?: string | undefined;
   OIDC_TRUST_EMAIL?: string | undefined;
+  OIDC_WORKSPACE?: string | undefined;
   PASSWORD_LOGIN?: string | undefined;
   TRUSTED_IP_HEADERS?: string | undefined;
 }
@@ -146,6 +153,20 @@ export function readAuthConfig(env: AuthEnv): AuthConfig {
   }
   const trustEmail = trustValue === 'true';
 
+  // Slugs are lower case; accept "Acme" for acme. The workspace itself is checked against the database
+  // at startup (oidcWorkspaceProblem), since it may not exist before setup.
+  const workspaceValue = read(env, 'OIDC_WORKSPACE')?.toLowerCase();
+  let workspace: string | null = null;
+  if (workspaceValue) {
+    const parsed = WorkspaceSlug.safeParse(workspaceValue);
+    if (parsed.success) workspace = parsed.data;
+    else {
+      problems.push(
+        `OIDC_WORKSPACE must be a workspace slug such as "acme" (got "${env.OIDC_WORKSPACE}"): ${parsed.error.issues[0]?.message ?? 'invalid slug.'}`,
+      );
+    }
+  }
+
   if (!ssoEnabled && credentialsSet === 0) {
     const extras = (
       [
@@ -155,6 +176,7 @@ export function readAuthConfig(env: AuthEnv): AuthConfig {
         'OIDC_ADMIN_GROUPS',
         'OIDC_GROUPS_CLAIM',
         'OIDC_TRUST_EMAIL',
+        'OIDC_WORKSPACE',
       ] as const
     ).filter((name) => read(env, name));
     if (extras.length > 0) {
@@ -203,6 +225,7 @@ export function readAuthConfig(env: AuthEnv): AuthConfig {
             adminGroups,
             groupsClaim,
             trustEmail,
+            workspace,
           }
         : null,
     passwordLogin,

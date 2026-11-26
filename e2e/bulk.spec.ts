@@ -4,7 +4,7 @@
 // board X selects cards and S sets their status. Each change is one tasks.bulkUpdate call with one activity
 // row per task. The tests build on each other, so they share one page and run in order.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
-import { api, collectPageErrors, settle, signInAsAdmin } from './session';
+import { api, collectPageErrors, settle, signInAsAdmin, w } from './session';
 
 const project = { name: 'Triage', key: 'TRI' };
 const titles = ['Crash on empty cart', 'Slow search page', 'Typo on the pricing page', 'Broken footer link'];
@@ -81,7 +81,7 @@ test('seed four tasks in a native project', async () => {
 });
 
 test('X selects two rows; the action bar moves both to In review; Ctrl+Z undoes it', async () => {
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await row('TRI-1').focus();
   await page.keyboard.press('x');
@@ -152,7 +152,7 @@ test('Ctrl+A selects every task in the view; Esc clears the selection', async ()
 });
 
 test('the board: X selects two cards, S sets the status of both', async () => {
-  await page.goto(`/p/${project.key}?view=board`);
+  await page.goto(w(`/p/${project.key}?view=board`));
   await settle(page);
   for (const key of ['TRI-3', 'TRI-4']) {
     const card = page.locator(`[data-card-key="${key}"]`);

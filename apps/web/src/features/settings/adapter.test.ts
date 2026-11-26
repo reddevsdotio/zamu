@@ -8,18 +8,20 @@ import {
   createAgent,
   createApiKey,
   createInvitation,
+  LabelExists,
   listApiKeys,
   listInvitations,
   listMembers,
   removeMember,
   revokeApiKey,
+  SlugTaken,
 } from '@zamu/core';
 import { createWorld } from '@zamu/core/testing/fixtures';
 import { createTestDatabase, type TestDatabase } from '@zamu/db/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { seedDevData } from '../../server/seed';
 import { runAs, runForRequest } from './adapter';
-import type { SettingsResult } from './result';
+import { SettingsError, type SettingsResult, unwrap } from './result';
 
 const ORIGIN = 'http://localhost:3000';
 const SECRET = 'test-secret-test-secret-test-secret-0123';
@@ -29,6 +31,7 @@ let core: CoreContext;
 let adminCookie: Headers;
 let adminId: string;
 let memberKey: Headers;
+let elsewhereSlug: string;
 
 const bearer = (key: string) => new Headers({ authorization: `Bearer ${key}` });
 
@@ -57,7 +60,8 @@ beforeAll(async () => {
   });
 
   // A non-admin person in another workspace, acting through their own workspace-wide write key.
-  const world = await createWorld(database.db, 'Elsewhere');
+  elsewhereSlug = `elsewhere-${crypto.randomUUID().slice(0, 8)}`;
+  const world = await createWorld(database.db, 'Elsewhere', { slug: elsewhereSlug });
   const key = await createApiKey(core, world.memberActor, {
     name: 'member key',
     scope: { projects: 'all', access: 'write' },
@@ -199,6 +203,60 @@ describe('settings adapter', () => {
     );
     const after = ok(await runForRequest(core, adminCookie, (c, actor) => listInvitations(c, actor)));
     expect(after.map((i) => i.email)).not.toContain('jo.park@reddevs.io');
+  });
+
+  it('returns NOT_A_MEMBER for a session that names a workspace of someone else, before calling core', async () => {
+    let called = false;
+    const headers = new Headers(adminCookie);
+    headers.set('x-zamu-workspace', elsewhereSlug);
+    const result = await runForRequest(core, headers, async () => {
+      called = true;
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'NOT_A_MEMBER',
+        message: `You are not a member of the workspace "${elsewhereSlug}".`,
+        issues: [],
+      },
+    });
+    expect(called).toBe(false);
+    const error = await unwrap(result).catch((e) => e);
+    expect(error).toBeInstanceOf(SettingsError);
+    expect(error.leftWorkspace).toBe(true);
+  });
+
+  it('returns WORKSPACE_MISMATCH for a key sent with another workspace slug', async () => {
+    const headers = new Headers(memberKey);
+    headers.set('x-zamu-workspace', 'no-such-workspace');
+    const result = await runForRequest(core, headers, async () => 'unreachable');
+    expect(result).toMatchObject({ ok: false, error: { code: 'WORKSPACE_MISMATCH' } });
+
+    headers.set('x-zamu-workspace', elsewhereSlug);
+    expect(await runForRequest(core, headers, async () => 'reached')).toEqual({ ok: true, data: 'reached' });
+  });
+
+  it('keeps the specific problem code and puts slug problems on the slug field', async () => {
+    const actor = { userId: adminId } as Actor;
+    const label = await runAs(core, actor, async () => {
+      throw new LabelExists('A label named Bug exists already.');
+    });
+    expect(label).toMatchObject({ ok: false, error: { code: 'LABEL_EXISTS' } });
+
+    const taken = await runAs(core, actor, async () => {
+      throw new SlugTaken('acme is taken. Pick another.');
+    });
+    expect(taken).toEqual({
+      ok: false,
+      error: {
+        code: 'SLUG_TAKEN',
+        message: 'acme is taken. Pick another.',
+        issues: [{ path: 'slug', message: 'acme is taken. Pick another.' }],
+      },
+    });
+    const error = await unwrap(taken).catch((e) => e);
+    expect(error.issueFor('slug')).toBe('acme is taken. Pick another.');
+    expect(error.leftWorkspace).toBe(false);
   });
 
   it('lets errors that are not core errors propagate', async () => {

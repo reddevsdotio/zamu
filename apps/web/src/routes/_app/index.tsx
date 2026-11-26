@@ -1,19 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { HomeScreen } from '~/features/home/HomeScreen';
-import { prefetchHome } from '~/features/home/queries';
-import { homeFilterOf, homeInput, homeTabOf, parseHomeSearch } from '~/features/home/search';
-import { settleOnServer } from '~/features/tasks/prefetch';
+import { redirectToLastWorkspace } from '~/lib/landing';
 
-// "/" is Home (frames 099–106): the page you land on after signing in. The tab and the filter are in
-// the search (?tab=everyone&project=PAY&label=backend&priority=urgent).
+// "/" lands in the workspace used last (its Home), else in the oldest one the person belongs to, else on
+// /welcome. Setup and sign-in guards run before this (routes/__root.tsx and routes/_app.tsx).
 export const Route = createFileRoute('/_app/')({
-  validateSearch: parseHomeSearch,
-  loaderDeps: ({ search }) => ({ input: homeInput(homeTabOf(search), homeFilterOf({ ...search })) }),
-  loader: ({ context, deps }) => settleOnServer(prefetchHome(context.queryClient, deps.input)),
-  head: () => ({ meta: [{ title: 'Home · Zamu' }] }),
-  component: HomeRoute,
+  beforeLoad: ({ location }) => redirectToLastWorkspace(location.href),
 });
-
-function HomeRoute() {
-  return <HomeScreen search={Route.useSearch()} />;
-}

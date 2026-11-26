@@ -30,7 +30,10 @@ x-app: &app
     OIDC_ADMIN_GROUPS: ${OIDC_ADMIN_GROUPS:-}
     OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-}
     OIDC_TRUST_EMAIL: ${OIDC_TRUST_EMAIL:-}
+    OIDC_WORKSPACE: ${OIDC_WORKSPACE:-}
     PASSWORD_LOGIN: ${PASSWORD_LOGIN:-}
+    # Who may create a workspace: everyone (the default) or owners. See docs/self-hosting.md.
+    WORKSPACE_CREATION: ${WORKSPACE_CREATION:-}
     # Client IP headers set by your reverse proxy, in order. See docs/self-hosting.md.
     TRUSTED_IP_HEADERS: ${TRUSTED_IP_HEADERS:-}
     # IANA time zone that decides when cycles end (midnight on their end date). Empty means UTC.

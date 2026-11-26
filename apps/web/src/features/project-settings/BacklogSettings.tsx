@@ -21,6 +21,8 @@ import { isAdminRole } from '~/features/settings/format';
 import { errorMessage } from '~/features/settings/result';
 import { useNow } from '~/features/tasks/clock';
 import { meQuery } from '~/features/tasks/queries';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
+import { type WorkspaceUrlSlug, workspacePath } from '~/lib/workspace-paths';
 import {
   Banner,
   Button,
@@ -79,13 +81,18 @@ import { UseConnectionDialog } from './UseConnectionDialog';
 import { WebhookDialog } from './WebhookDialog';
 
 /** Setup route of M3-10: `?mode=mirror|import` starts it, `?step=mappings&edit=1` edits mappings. */
-export function setupHref(projectKey: string, search: Record<string, string>): string {
-  return `/p/${encodeURIComponent(projectKey)}/backlog-setup?${new URLSearchParams(search).toString()}`;
+export function setupHref(
+  workspace: WorkspaceUrlSlug,
+  projectKey: string,
+  search: Record<string, string>,
+): string {
+  const path = `/p/${encodeURIComponent(projectKey)}/backlog-setup?${new URLSearchParams(search).toString()}`;
+  return workspacePath(workspace, path);
 }
 
 /** Hidden tasks of a project in the task list. */
-export function hiddenTasksHref(projectKey: string): string {
-  return `/p/${encodeURIComponent(projectKey)}?hidden=only`;
+export function hiddenTasksHref(workspace: WorkspaceUrlSlug, projectKey: string): string {
+  return workspacePath(workspace, `/p/${encodeURIComponent(projectKey)}?hidden=only`);
 }
 
 export interface BacklogSettingsProps {
@@ -114,8 +121,9 @@ export function BacklogSettings(props: BacklogSettingsProps) {
 }
 
 function BacklogSettingsBody({ projectKey, webhookOpen, onWebhookOpenChange }: BacklogSettingsProps) {
+  const api = useApi();
   const project = useProjectSummary(projectKey);
-  const me = useQuery(meQuery());
+  const me = useQuery(meQuery(api));
   const canManage = isAdminRole(me.data?.role);
   const hasSource = Boolean(project?.backlog);
   const [switchOpen, setSwitchOpen] = useState(false);
@@ -124,7 +132,7 @@ function BacklogSettingsBody({ projectKey, webhookOpen, onWebhookOpenChange }: B
   const refresh = useRefreshNow(projectKey);
   const status = useBacklogStatus(projectKey, hasSource, refresh.isRefreshing);
   const hasTasks = useQuery({
-    ...hasTasksQuery(projectKey),
+    ...hasTasksQuery(api, projectKey),
     enabled: project !== undefined && !hasSource,
   }).data;
   const switchToZamu = useSwitchToZamu(projectKey);
@@ -192,7 +200,7 @@ function BacklogSettingsBody({ projectKey, webhookOpen, onWebhookOpenChange }: B
             onOpenChange={setSwitchOpen}
             status={data}
             projectName={project.name}
-            onCheck={() => checkSwitch(projectKey)}
+            onCheck={() => checkSwitch(api, projectKey)}
             onSwitch={(confirmKey) => switchToZamu.mutateAsync(confirmKey)}
           />
           <UseConnectionDialog
@@ -238,6 +246,7 @@ export function NoSource({
   hasTasks: boolean | undefined;
   canManage: boolean;
 }) {
+  const workspace = useWorkspaceSlug();
   const repository = project.repository
     ? (parseRepositoryUrl(project.repository)?.short ?? project.repository)
     : null;
@@ -250,7 +259,7 @@ export function NoSource({
         {label}
       </Button>
     ) : (
-      <Link href={setupHref(project.key, { mode })} className={linkClass(variant)}>
+      <Link href={setupHref(workspace, project.key, { mode })} className={linkClass(variant)}>
         {label}
       </Link>
     );
@@ -370,6 +379,7 @@ function MirrorView({
   onUseAnotherConnection,
   now,
 }: Omit<BacklogStatusViewProps, 'projectName'> & { queued: boolean; now: number | null }) {
+  const workspace = useWorkspaceSlug();
   const reading = status.state === 'reading' || status.state === 'setup';
   const heading = statusHeading(status, now, { queued });
   const canAct = canManage;
@@ -453,7 +463,7 @@ function MirrorView({
           ) : null
         }
       >
-        <FactList items={sourceFacts(status, now, { canManage, onOpenWebhook })} />
+        <FactList items={sourceFacts(workspace, status, now, { canManage, onOpenWebhook })} />
       </Section>
       {reading && status.headCommit ? (
         <NoticeStrip marker={<SourceStatusDot state="reading" decorative />}>
@@ -606,6 +616,7 @@ function Section({
 const mono = 'font-mono text-xs';
 
 function sourceFacts(
+  workspace: WorkspaceUrlSlug,
   status: BacklogSourceStatus,
   now: number | null,
   { canManage, onOpenWebhook }: { canManage: boolean; onOpenWebhook: () => void },
@@ -726,7 +737,7 @@ function sourceFacts(
           <>
             {' · '}
             <Link
-              href={hiddenTasksHref(status.project.key)}
+              href={hiddenTasksHref(workspace, status.project.key)}
               className="text-fg underline decoration-line outline-none focus-visible:focus-ring"
             >
               {hidden} hidden, removed from Backlog.md
@@ -744,6 +755,7 @@ function sourceFacts(
 // ---------------------------------------------------------------------------
 
 function ProblemsSection({ status }: { status: BacklogSourceStatus }) {
+  const api = useApi();
   const [more, setMore] = useState<{ items: BacklogProblem[]; cursor: string | null } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -761,7 +773,7 @@ function ProblemsSection({ status }: { status: BacklogSourceStatus }) {
     setLoading(true);
     setError(null);
     try {
-      const page = await loadProblemPage(status.project.key, cursor);
+      const page = await loadProblemPage(api, status.project.key, cursor);
       setMore((current) => ({ items: [...(current?.items ?? []), ...page.items], cursor: page.nextCursor }));
     } catch (failure) {
       setError(errorMessage(failure));
@@ -848,6 +860,7 @@ function assigneeItems(mappings: BacklogMappingsView): OptionItem[] {
 }
 
 function MappingsSection({ status, canEdit }: { status: BacklogSourceStatus; canEdit: boolean }) {
+  const workspace = useWorkspaceSlug();
   const { mappings } = status;
   const detached = isDetached(status);
   const people = assigneeItems(mappings);
@@ -868,7 +881,7 @@ function MappingsSection({ status, canEdit }: { status: BacklogSourceStatus; can
       actions={
         canEdit ? (
           <Link
-            href={setupHref(status.project.key, { step: 'mappings', edit: '1' })}
+            href={setupHref(workspace, status.project.key, { step: 'mappings', edit: '1' })}
             className={buttonStyles({ variant: 'secondary', size: 'sm' })}
           >
             Edit mappings

@@ -1,20 +1,19 @@
-import type { ProjectWithCounts, Theme } from '@zamu/contracts';
+import type { ProjectWithCounts, Theme, WorkspaceRef } from '@zamu/contracts';
 import { useMemo, useRef } from 'react';
 import { PROJECT_COMMAND_PREFIX } from '~/features/palette/CommandPalette';
 import { type Command, openPalette, useRegisterCommands } from '~/features/palette/registry';
+import { generalSettingsHref } from '~/features/workspaces/paths';
+import { WorkspaceTile } from '~/features/workspaces/WorkspaceTile';
+import { asWorkspaceSlug, type WorkspaceUrlSlug, workspacePath } from '~/lib/workspace-paths';
 import { GearGlyph, PlusGlyph, ProjectTile, SidebarGlyph } from '~/ui';
-import {
-  HOME_HREF,
-  MY_KEYS_HREF,
-  type ProjectPage,
-  projectHref,
-  projectPageHref,
-  SETTINGS_HREF,
-} from './paths';
+import { homeHref, myKeysHref, type ProjectPage, projectHref, projectPageHref } from './paths';
 
-// The palette's built-in commands: pages, projects and their pages, create, theme, sidebar, shortcuts.
+// The palette's built-in commands: pages, projects and their pages, the person's other workspaces,
+// create (tasks, projects, workspaces), theme, sidebar, shortcuts.
 
 export interface ShellCommandsInput {
+  /** The workspace's slug: every page the commands open is under /w/<slug>/. */
+  workspace: WorkspaceUrlSlug;
   projects: readonly ProjectWithCounts[];
   currentProjectKey: string | undefined;
   /** The saved theme and what it shows right now (System resolves to light or dark). */
@@ -26,6 +25,11 @@ export interface ShellCommandsInput {
   createTask: (title?: string) => void;
   createProject: () => void;
   createFromBacklog: () => void;
+  /** The person's workspaces besides this one: "Switch to Globex" for each. */
+  otherWorkspaces?: readonly WorkspaceRef[];
+  /** The creation policy lets the person create a workspace: "New workspace" is listed. */
+  canCreateWorkspace?: boolean;
+  createWorkspace?: () => void;
   setTheme: (theme: Theme) => void;
   toggleSidebar: () => void;
   openShortcuts: () => void;
@@ -67,8 +71,21 @@ function Arrow() {
 
 const THEME_LABELS: Record<Theme, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 
+/** Id prefix of the "Switch to <workspace>" commands. */
+export const WORKSPACE_COMMAND_PREFIX = 'navigate.workspace.';
+
 export function buildShellCommands(input: ShellCommandsInput): Command[] {
-  const { projects, currentProjectKey, navigate } = input;
+  const { workspace, projects, currentProjectKey, navigate } = input;
+  const newWorkspace: Command = {
+    id: 'create.workspace',
+    title: 'New workspace',
+    section: 'create',
+    keywords: ['create', 'add', 'organization', 'team'],
+    icon: <PlusGlyph />,
+    run: () => {
+      input.createWorkspace?.();
+    },
+  };
   const commands: Command[] = [
     {
       id: 'create.task',
@@ -105,6 +122,7 @@ export function buildShellCommands(input: ShellCommandsInput): Command[] {
         input.createFromBacklog();
       },
     },
+    ...(input.canCreateWorkspace && input.createWorkspace ? [newWorkspace] : []),
     {
       id: 'navigate.home',
       title: 'Go to Home',
@@ -113,7 +131,7 @@ export function buildShellCommands(input: ShellCommandsInput): Command[] {
       shortcut: 'g h',
       icon: <Arrow />,
       run: () => {
-        navigate(HOME_HREF);
+        navigate(homeHref(workspace));
       },
     },
     {
@@ -138,7 +156,7 @@ export function buildShellCommands(input: ShellCommandsInput): Command[] {
       hint: 'Project',
       icon: <ProjectTile projectKey={project.key} name={project.name} />,
       run: () => {
-        navigate(projectHref(project.key));
+        navigate(projectHref(workspace, project.key));
       },
     });
   }
@@ -153,20 +171,33 @@ export function buildShellCommands(input: ShellCommandsInput): Command[] {
         ...(isCurrent && PAGE_SHORTCUTS[page] ? { shortcut: PAGE_SHORTCUTS[page] } : {}),
         icon: <ProjectTile projectKey={project.key} name={project.name} />,
         run: () => {
-          navigate(projectPageHref(project.key, page));
+          navigate(projectPageHref(workspace, project.key, page));
         },
       });
     }
+  }
+  for (const other of input.otherWorkspaces ?? []) {
+    commands.push({
+      id: `${WORKSPACE_COMMAND_PREFIX}${other.slug}`,
+      title: `Switch to ${other.name}`,
+      section: 'navigate',
+      keywords: ['workspace', other.slug],
+      hint: 'Workspace',
+      icon: <WorkspaceTile name={other.name} slug={other.slug} size={18} />,
+      run: () => {
+        navigate(workspacePath(asWorkspaceSlug(other.slug)));
+      },
+    });
   }
   commands.push(
     {
       id: 'navigate.settings',
       title: 'Go to workspace settings',
       section: 'navigate',
-      keywords: ['members', 'people', 'invite', 'connections'],
+      keywords: ['general', 'rename', 'members', 'people', 'invite', 'connections', 'leave', 'delete'],
       icon: <GearGlyph className="size-3.5" />,
       run: () => {
-        navigate(SETTINGS_HREF);
+        navigate(generalSettingsHref(workspace));
       },
     },
     {
@@ -176,7 +207,7 @@ export function buildShellCommands(input: ShellCommandsInput): Command[] {
       keywords: ['token', 'cli'],
       icon: <Arrow />,
       run: () => {
-        navigate(MY_KEYS_HREF);
+        navigate(myKeysHref(workspace));
       },
     },
     {
@@ -252,7 +283,16 @@ export function suggestedCommandIds(
 
 /** Registers the built-ins while the shell is mounted. */
 export function useShellCommands(input: ShellCommandsInput): void {
-  const { projects, currentProjectKey, theme, resolvedTheme, sidebarCollapsed } = input;
+  const {
+    workspace,
+    projects,
+    currentProjectKey,
+    theme,
+    resolvedTheme,
+    sidebarCollapsed,
+    otherWorkspaces,
+    canCreateWorkspace,
+  } = input;
   const ref = useRef(input);
   ref.current = input;
   // Rebuilt when what the titles and lists show changes; the actions read the latest callbacks.
@@ -265,11 +305,21 @@ export function useShellCommands(input: ShellCommandsInput): void {
         createTask: (title) => ref.current.createTask(title),
         createProject: () => ref.current.createProject(),
         createFromBacklog: () => ref.current.createFromBacklog(),
+        createWorkspace: () => ref.current.createWorkspace?.(),
         setTheme: (next) => ref.current.setTheme(next),
         toggleSidebar: () => ref.current.toggleSidebar(),
         openShortcuts: () => ref.current.openShortcuts(),
       }),
-    [projects, currentProjectKey, theme, resolvedTheme, sidebarCollapsed],
+    [
+      workspace,
+      projects,
+      currentProjectKey,
+      theme,
+      resolvedTheme,
+      sidebarCollapsed,
+      otherWorkspaces,
+      canCreateWorkspace,
+    ],
   );
   useRegisterCommands(commands);
 }

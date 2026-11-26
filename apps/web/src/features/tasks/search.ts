@@ -15,6 +15,7 @@ import {
   taskFilterSearch,
   toListTasksInput,
 } from '~/features/views/filters';
+import type { WorkspaceUrlSlug } from '~/lib/workspace-paths';
 
 // URL state of a project's tasks, list and board:
 //   /p/PAY?q=webhook&status=todo,in_progress&priority=high&assignee=me,agents&label=<id>,<id>
@@ -232,11 +233,18 @@ export function listInput(
  * no detail pane). Null when the search has no task.
  */
 export function taskLinkRedirect(
+  workspace: WorkspaceUrlSlug,
   projectKey: string,
   search: TaskListSearch,
-): { to: '/p/$projectKey/$taskKey'; params: { projectKey: string; taskKey: string } } | null {
+): {
+  to: '/w/$workspace/p/$projectKey/$taskKey';
+  params: { workspace: string; projectKey: string; taskKey: string };
+} | null {
   if (!search.task) return null;
-  return { to: '/p/$projectKey/$taskKey', params: { projectKey, taskKey: search.task } };
+  return {
+    to: '/w/$workspace/p/$projectKey/$taskKey',
+    params: { workspace, projectKey, taskKey: search.task },
+  };
 }
 
 /** Statuses of the hidden-tasks list: all of them, or the status filter. */

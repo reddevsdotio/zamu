@@ -3,6 +3,7 @@ import type { StatusCounts, TaskListItem, TaskStatus } from '@zamu/contracts';
 import { useEffect, useMemo } from 'react';
 import { taskListQuery } from '~/features/tasks/queries';
 import { type DisplayOptions, hideOldDone, type TaskFilter } from '~/features/views';
+import { useApi } from '~/lib/workspace';
 import { cardsOf } from './board-cache';
 import { boardColumnInput, boardColumnQuery, boardListInput } from './queries';
 
@@ -45,8 +46,9 @@ interface ColumnArgs {
 }
 
 function useColumn({ projectKey, filter, options }: ColumnArgs, status: TaskStatus, enabled: boolean) {
+  const api = useApi();
   return useInfiniteQuery({
-    ...boardColumnQuery(boardColumnInput(projectKey, filter, options, status)),
+    ...boardColumnQuery(api, boardColumnInput(projectKey, filter, options, status)),
     enabled,
   });
 }
@@ -153,7 +155,8 @@ export function useGroupedBoardData(
   options: DisplayOptions,
   enabled: boolean,
 ): GroupedBoardData {
-  const query = useQuery({ ...taskListQuery(boardListInput(projectKey, filter, options)), enabled });
+  const api = useApi();
+  const query = useQuery({ ...taskListQuery(api, boardListInput(projectKey, filter, options)), enabled });
   const hideAfter = options.hideDoneAfterDays;
   const items = query.data?.items;
   const tasks = useMemo(() => hideOldDone(items ?? [], hideAfter), [items, hideAfter]);

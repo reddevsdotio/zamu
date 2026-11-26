@@ -6,6 +6,8 @@ import { Link } from 'react-aria-components';
 import { isMirrored, MilestoneRefusal, ProjectHeader, useProjectSummary } from '~/features/project-header';
 import { useOptionalQuickCreate } from '~/features/shell/quick-create';
 import { taskListQuery } from '~/features/tasks/queries';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
+import { type WorkspaceUrlSlug, workspacePath } from '~/lib/workspace-paths';
 import { Button, cn, EmptyState, OPEN_STATUSES, Pill, type PillTone, Skeleton, useHotkeys } from '~/ui';
 import { formatDay } from './dates';
 import { FeatureOff } from './FeatureOff';
@@ -29,8 +31,11 @@ import { milestonesQuery } from './queries';
 // highlight, Enter or a click opens the milestone. New milestone in native projects only: mirrored
 // milestones come from the Backlog.md files (notes.md call 3).
 
-export function milestoneHref(projectKey: string, id: string): string {
-  return `/p/${encodeURIComponent(projectKey)}/milestones/${encodeURIComponent(id)}`;
+export function milestoneHref(workspace: WorkspaceUrlSlug, projectKey: string, id: string): string {
+  return workspacePath(
+    workspace,
+    `/p/${encodeURIComponent(projectKey)}/milestones/${encodeURIComponent(id)}`,
+  );
 }
 
 /** Target date first (none last), then name. */
@@ -85,10 +90,12 @@ export interface MilestonesScreenProps {
 }
 
 export function MilestonesScreen({ projectKey }: MilestonesScreenProps) {
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
   const navigate = useNavigate();
   const quickCreate = useOptionalQuickCreate();
   const project = useProjectSummary(projectKey);
-  const milestones = useQuery(milestonesQuery(projectKey));
+  const milestones = useQuery(milestonesQuery(api, projectKey));
   const today = useServerToday(projectKey);
   const [creating, setCreating] = useState(false);
   const [completedOpen, setCompletedOpen] = useState(false);
@@ -101,7 +108,7 @@ export function MilestonesScreen({ projectKey }: MilestonesScreenProps) {
 
   // Open blocked tasks per milestone, for the "2 blocked" pills: one request for the project.
   const blockedTasks = useQuery({
-    ...taskListQuery({ project: projectKey, blocked: true, status: [...OPEN_STATUSES] }),
+    ...taskListQuery(api, { project: projectKey, blocked: true, status: [...OPEN_STATUSES] }),
     enabled: Boolean(items?.length),
   });
   const blockedBy = useMemo(() => {
@@ -124,7 +131,7 @@ export function MilestonesScreen({ projectKey }: MilestonesScreenProps) {
     [open, completed, completedOpen],
   );
 
-  const openMilestone = (id: string) => void navigate({ href: milestoneHref(projectKey, id) });
+  const openMilestone = (id: string) => void navigate({ href: milestoneHref(workspace, projectKey, id) });
   const move = (step: 1 | -1) => {
     if (!rowIds.length) return;
     const index = focused ? rowIds.indexOf(focused) : -1;
@@ -295,8 +302,9 @@ interface MilestoneRowProps {
 }
 
 function MilestoneRow({ projectKey, milestone, today, blocked, isFocused, onFocus }: MilestoneRowProps) {
+  const workspace = useWorkspaceSlug();
   const navigate = useNavigate();
-  const href = milestoneHref(projectKey, milestone.id);
+  const href = milestoneHref(workspace, projectKey, milestone.id);
   const { progress } = milestone;
   const counted = progress.total - progress.canceled;
   const target = targetText(milestone, today);

@@ -18,6 +18,8 @@ import {
 } from '~/features/task-fields';
 import { useTaskNavigation } from '~/features/views';
 import { FileNotes, PlanSection, TaskSummary, WorkItemSection } from '~/features/work-record';
+import { useApi, useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
+import { type WorkspaceUrlSlug, workspacePath } from '~/lib/workspace-paths';
 import {
   Banner,
   Button,
@@ -65,8 +67,16 @@ export interface TaskPageProps {
  * The view the task came from (its URL with the filters), with the task focused: ?focus=, which the list
  * and the board read once (?task= would open the task view again).
  */
-export function backHref(projectKey: string, taskKey: string, returnTo: string | null): string {
-  const url = new URL(returnTo ?? `/p/${encodeURIComponent(projectKey)}`, 'http://local');
+export function backHref(
+  workspace: WorkspaceUrlSlug,
+  projectKey: string,
+  taskKey: string,
+  returnTo: string | null,
+): string {
+  const url = new URL(
+    returnTo ?? workspacePath(workspace, `/p/${encodeURIComponent(projectKey)}`),
+    'http://local',
+  );
   url.searchParams.delete('task');
   url.searchParams.set('focus', taskKey);
   return `${url.pathname}${url.search}`;
@@ -74,9 +84,10 @@ export function backHref(projectKey: string, taskKey: string, returnTo: string |
 
 /** The done items new tasks of the project start with, from the cached project list. */
 function useProjectDefaults(projectKey: string): readonly string[] {
+  const api = useApi();
   return (
     useQuery({
-      ...projectsQuery(),
+      ...projectsQuery(api),
       select: (data) => data.items.find((item) => item.key === projectKey)?.defaultDoneItems,
     }).data ?? NO_DEFAULTS
   );
@@ -85,28 +96,32 @@ function useProjectDefaults(projectKey: string): readonly string[] {
 const NO_DEFAULTS: readonly string[] = [];
 
 export function TaskPage({ projectKey, taskKey }: TaskPageProps) {
+  const workspace = useWorkspaceSlug();
+  const workspaceId = useWorkspaceId();
+  const api = useApi();
   const router = useRouter();
-  const taskResult = useQuery(taskQuery(taskKey));
+  const taskResult = useQuery(taskQuery(api, taskKey));
   const task = taskResult.data;
   const { projectName } = useBacklogSummary(projectKey);
-  const nav = useTaskNavigation(taskKey);
+  const nav = useTaskNavigation(workspaceId, taskKey);
   const [titleAway, setTitleAway] = useState(false);
   const { copied, copy } = useCopy();
   // Esc: back to the view the task came from; without one, the list with its last filters.
   const back = () => {
-    if (nav.returnTo) return void router.navigate({ href: backHref(projectKey, taskKey, nav.returnTo) });
+    if (nav.returnTo)
+      return void router.navigate({ href: backHref(workspace, projectKey, taskKey, nav.returnTo) });
     void router.navigate({
-      to: '/p/$projectKey',
-      params: { projectKey },
-      search: listSearchFor(projectKey, taskKey) as never,
+      to: '/w/$workspace/p/$projectKey',
+      params: { workspace, projectKey },
+      search: listSearchFor(workspaceId, projectKey, taskKey) as never,
     });
   };
 
   const go = (key: string | null) => {
     if (!key) return;
     void router.navigate({
-      to: '/p/$projectKey/$taskKey',
-      params: { projectKey: projectOfKey(key), taskKey: key },
+      to: '/w/$workspace/p/$projectKey/$taskKey',
+      params: { workspace, projectKey: projectOfKey(key), taskKey: key },
     });
   };
   const mirror = mirrorOf(task);
@@ -117,7 +132,7 @@ export function TaskPage({ projectKey, taskKey }: TaskPageProps) {
         project={{
           key: projectKey,
           name: task?.project.name ?? projectName ?? projectKey,
-          href: backHref(projectKey, taskKey, nav.returnTo),
+          href: backHref(workspace, projectKey, taskKey, nav.returnTo),
         }}
         taskKey={taskKey}
         actions={
@@ -248,11 +263,12 @@ function TaskView({
   onPrev,
   onNext,
 }: TaskViewProps) {
-  const members = useQuery(membersQuery()).data?.items ?? [];
+  const api = useApi();
+  const members = useQuery(membersQuery(api)).data?.items ?? [];
   const planning = useProjectPlanning(projectKey);
   const { summary, projectName } = useBacklogSummary(projectKey);
-  const history = useQuery({ ...backlogHistoryQuery(projectKey), enabled: task.backlog != null }).data;
-  const timeline = useQuery(timelineQuery(task.key)).data;
+  const history = useQuery({ ...backlogHistoryQuery(api, projectKey), enabled: task.backlog != null }).data;
+  const timeline = useQuery(timelineQuery(api, task.key)).data;
   const now = useNow();
   const time = atTime(formatRelative, now);
   const day = atTime(formatDay, now);

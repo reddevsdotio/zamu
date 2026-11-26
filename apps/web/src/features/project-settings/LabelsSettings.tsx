@@ -19,6 +19,7 @@ import { labelsQuery, useCreateLabel, useDeleteLabel, useUpdateLabel } from '~/f
 import { isMirrored, useProjectSummary } from '~/features/project-header';
 import { usePageSearchRef } from '~/features/shell/page-search';
 import { leastUsedHue } from '~/features/task-fields/LabelPicker';
+import { useApi } from '~/lib/workspace';
 import {
   Banner,
   Button,
@@ -47,9 +48,10 @@ import { SettingsPage } from './ProjectSettingsLayout';
 
 /** The Labels page wired to the API. */
 export function LabelsSettings({ projectKey }: { projectKey: string }) {
+  const api = useApi();
   const project = useProjectSummary(projectKey);
   const projectName = project?.name ?? projectKey;
-  const query = labelsQuery(projectKey);
+  const query = labelsQuery(api, projectKey);
   const labels = useQuery(query);
   const queryClient = useQueryClient();
   const create = useCreateLabel();

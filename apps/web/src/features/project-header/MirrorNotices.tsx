@@ -3,6 +3,8 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { Link } from 'react-aria-components';
 import { useNow } from '~/features/tasks/clock';
 import { formatAge } from '~/features/tasks/format';
+import { workspaceStorageKey } from '~/lib/storage-keys';
+import { useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
 import { Banner, buttonStyles, CodeBlock, InlineCode, NoticeStrip, SourceStatusDot, Toast } from '~/ui';
 import { useBacklogStatus } from './MirrorSource';
 import { detachedText, isDetached, isMirrored, plural, repositoryShort } from './mirror';
@@ -45,6 +47,7 @@ export interface MirrorFailedBannerProps {
  * (the Backlog.md settings). Nothing unless the mirror's last refresh failed.
  */
 export function MirrorFailedBanner({ project }: MirrorFailedBannerProps) {
+  const workspace = useWorkspaceSlug();
   const failed = isMirrored(project) && project?.backlog?.state === 'failed';
   const status = useBacklogStatus(project?.key ?? '', failed).data;
   const now = useNow();
@@ -57,7 +60,7 @@ export function MirrorFailedBanner({ project }: MirrorFailedBannerProps) {
       <Banner
         action={
           <Link
-            href={projectViewHref(project.key, 'settings')}
+            href={projectViewHref(workspace, project.key, 'settings')}
             className={buttonStyles({ variant: 'secondary', size: 'sm' })}
           >
             Details
@@ -150,13 +153,16 @@ export function MirrorEmptyState({ project }: { project: ProjectWithCounts }) {
 /** A detach this recent still gets its toast on the project's task views. */
 const DETACH_TOAST_WINDOW_MS = 10 * 60_000;
 const DETACH_TOAST_MS = 8_000;
-const seenKey = (projectKey: string, detachedAt: string) => `zamu.detached-toast:${projectKey}:${detachedAt}`;
+/** zamu:detached-toast:v2:<workspace id>:<project key>:<detached at>, in sessionStorage. */
+export const detachedToastKey = (workspaceId: string, projectKey: string, detachedAt: string) =>
+  workspaceStorageKey('detached-toast', workspaceId, projectKey, detachedAt);
 
 /**
  * "Payments is detached from Backlog.md. Everything is editable here now." once per browser session,
  * on the first task view after a recent detach.
  */
 export function DetachedToast({ project }: { project: ProjectWithCounts | undefined }) {
+  const workspaceId = useWorkspaceId();
   const [show, setShow] = useState(false);
   const detachedAt = isDetached(project) ? (project?.backlog?.detachedAt ?? null) : null;
   const projectKey = project?.key;
@@ -164,14 +170,14 @@ export function DetachedToast({ project }: { project: ProjectWithCounts | undefi
     if (!detachedAt || !projectKey) return;
     if (Date.now() - Date.parse(detachedAt) > DETACH_TOAST_WINDOW_MS) return;
     try {
-      const key = seenKey(projectKey, detachedAt);
+      const key = detachedToastKey(workspaceId, projectKey, detachedAt);
       if (window.sessionStorage.getItem(key)) return;
       window.sessionStorage.setItem(key, '1');
     } catch {
       // Storage off: show it anyway.
     }
     setShow(true);
-  }, [detachedAt, projectKey]);
+  }, [workspaceId, detachedAt, projectKey]);
   if (!show || !project) return null;
   return (
     <Toast floating timeout={DETACH_TOAST_MS} onDismiss={() => setShow(false)}>

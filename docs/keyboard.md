@@ -134,6 +134,14 @@ The dialog that opens when you move a task to In review or Done while criteria o
 
 In quick create (C), I assigns the task to you, Shift+M opens the milestone and Shift+C the cycle.
 
+## Changed in 0.10.0
+
+- No new keys. Every key acts in the workspace you are in: G then H opens that workspace's Home.
+- To change workspace from the keyboard, open the palette (⌘K) and pick "Switch to Globex", one command for
+  each of your other workspaces. "New workspace" opens the New workspace dialog when you may create one, and
+  "Go to workspace settings" opens General.
+- In the New workspace dialog, ⌘Enter creates the workspace, as in New project.
+
 ## Changed in 0.9.0
 
 - New in the task view: Shift+A adds a criterion, Shift+X moves to the first open item, and N opens the

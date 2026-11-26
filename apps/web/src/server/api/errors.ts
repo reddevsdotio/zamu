@@ -22,8 +22,10 @@ function withRequestId(data: unknown, requestId: string | undefined): ProblemDat
  * with the current task, Invalid 422, the M3 Backlog.md codes 409 with field, file, backlogId and
  * hint; the M5 codes LABEL_EXISTS, LABEL_MIRRORED, DEPENDENCY_LOOP and SUBTASK_DEPTH 409, and
  * NOT_SAME_PROJECT 422, with the field problems in issues and `loop` for DEPENDENCY_LOOP; M6
- * OPEN_ITEMS 409 with `openItems`).
- * oRPC errors (input validation 400, our own 401) keep their code and gain the request id.
+ * OPEN_ITEMS 409 with `openItems`; 0.10 WORKSPACE_CREATION_OFF 403, SLUG_TAKEN 409, SLUG_RESERVED 400
+ * and LAST_OWNER 409, which only the web app's workspace server functions raise today).
+ * oRPC errors (input validation 400, our own 401, and the actor's 403 NOT_A_MEMBER and
+ * WORKSPACE_MISMATCH from base.ts) keep their code and status and gain the request id.
  * Anything else is logged and becomes a 500 without internal details.
  */
 export function toApiError(error: unknown, requestId?: string): ORPCError<string, ProblemData> {

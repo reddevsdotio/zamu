@@ -9,15 +9,13 @@ import {
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { FilterButton, FilterChips } from './FilterMenu';
 import { buildFilterFields, useProjectFilterFields } from './filter-fields';
 import type { TaskFilter } from './filters';
 import { requestFilterMenu } from './requests';
-import { LABELS, newQueryClient, renderWithQuery } from './testing';
+import { inWorkspace, LABELS, newQueryClient, renderWithQuery } from './testing';
 import { useUrlTaskFilter } from './useUrlTaskFilter';
-
-vi.mock('~/lib/orpc', async () => (await import('./testing')).orpcMock());
 
 const [FRONTEND, BACKEND, MOBILE] = LABELS.map((label) => label.id) as [string, string, string];
 
@@ -205,14 +203,18 @@ describe('filters in the URL', () => {
   it('reads the filter from the URL and writes changes back, keeping other params', async () => {
     const user = userEvent.setup();
     const root = createRootRoute();
-    const project = createRoute({ getParentRoute: () => root, path: '/p/$projectKey', component: Screen });
+    const project = createRoute({
+      getParentRoute: () => root,
+      path: '/w/$workspace/p/$projectKey',
+      component: Screen,
+    });
     const history = createMemoryHistory({
-      initialEntries: [`/p/HBR?view=board&task=HBR-4&label=${BACKEND}&due=overdue`],
+      initialEntries: [`/w/acme/p/HBR?view=board&task=HBR-4&label=${BACKEND}&due=overdue`],
     });
     const router = createRouter({ routeTree: root.addChildren([project]), history });
     render(
       <QueryClientProvider client={newQueryClient()}>
-        <RouterProvider router={router} />
+        {inWorkspace(<RouterProvider router={router} />)}
       </QueryClientProvider>,
     );
     await waitFor(() => expect(current()).toEqual({ label: [BACKEND], due: 'overdue' }));

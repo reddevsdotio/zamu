@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { rememberTask } from '~/features/palette/recent';
 import { taskQuery } from '~/features/tasks/queries';
+import { useApi } from '~/lib/workspace';
 import { taskKeyFromPath } from './paths';
 
 /**
@@ -9,8 +10,9 @@ import { taskKeyFromPath } from './paths';
  * cache only: the task page fetches the task, this never does.
  */
 export function useRememberOpenedTask(userId: string | undefined, pathname: string): void {
+  const api = useApi();
   const key = taskKeyFromPath(pathname);
-  const task = useQuery({ ...taskQuery(key ?? ''), enabled: false }).data;
+  const task = useQuery({ ...taskQuery(api, key ?? ''), enabled: false }).data;
   useEffect(() => {
     if (!userId || !key || !task || task.key.toUpperCase() !== key) return;
     rememberTask(userId, {

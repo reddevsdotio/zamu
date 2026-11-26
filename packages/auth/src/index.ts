@@ -7,4 +7,12 @@ export * from './config';
 export * from './invitation';
 export * from './options';
 export { authConfigOf } from './settings';
-export { readGroups, SSO_ERRORS, type SsoErrorCode, type SsoIntentData } from './sso';
+export {
+  oidcWorkspaceProblem,
+  readGroups,
+  SSO_ERRORS,
+  type SsoErrorCode,
+  type SsoIntentData,
+  ssoWorkspace,
+} from './sso';
+export * from './workspace';

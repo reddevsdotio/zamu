@@ -16,6 +16,7 @@ import {
   type TaskFilter,
 } from '~/features/views';
 import { useViewRequests } from '~/features/views/requests';
+import { useApi } from '~/lib/workspace';
 import { Button, CloseGlyph, cn, type PickerMenuItem, PlusGlyph, ProjectTile } from '~/ui';
 import type { HomeFilter } from './search';
 
@@ -39,10 +40,11 @@ export function useHomeFilterFields(
   items: readonly HomeItem[],
   wanted: boolean,
 ): FilterFieldConfig[] {
-  const projects = useQuery(projectsQuery()).data?.items;
+  const api = useApi();
+  const projects = useQuery(projectsQuery(api)).data?.items;
   const loadLabels = wanted || Boolean(filter.label?.length);
   const labelLists = useQueries({
-    queries: (projects ?? []).map((project) => ({ ...labelsQuery(project.key), enabled: loadLabels })),
+    queries: (projects ?? []).map((project) => ({ ...labelsQuery(api, project.key), enabled: loadLabels })),
     combine: labelItems,
   });
   const labels = useMemo(

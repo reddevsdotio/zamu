@@ -1,5 +1,7 @@
 import type { HomeGroupKey, HomeItem, HomeTab } from '@zamu/contracts';
 import type { MouseEvent, ReactNode, Ref } from 'react';
+import { useWorkspaceSlug } from '~/lib/workspace';
+import { workspacePath } from '~/lib/workspace-paths';
 import { Avatar, cn, DueChip, Pill, PriorityGlyph, ProjectTile, StatusGlyph } from '~/ui';
 import { criteriaPillText, pillView, rowAvatar, shownPills, showsDueChip, whyText } from './format';
 
@@ -49,6 +51,7 @@ export function HomeRow({
   onClick,
   className,
 }: HomeRowProps) {
+  const workspace = useWorkspaceSlug();
   const { task } = item;
   const why = whyText(item, tab, viewerId, now);
   const avatar = rowAvatar(item, tab, viewerId);
@@ -56,7 +59,7 @@ export function HomeRow({
   return (
     <a
       ref={rowRef}
-      href={`/p/${task.project.key}/${task.key}`}
+      href={workspacePath(workspace, `/p/${task.project.key}/${task.key}`)}
       data-task-key={task.key}
       data-focused={focused || undefined}
       aria-current={focused ? 'true' : undefined}

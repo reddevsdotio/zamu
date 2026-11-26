@@ -50,11 +50,15 @@ export interface World {
   agentActor: Actor;
 }
 
-/** A fresh workspace: an owner, a member, and an agent the member is responsible for. */
-export async function createWorld(db: Db, name = 'Reddevs'): Promise<World> {
+/**
+ * A fresh workspace: an owner, a member, and an agent the member is responsible for. The slug
+ * defaults to the name with a UUID, which is longer than the 0.10 slug rule allows; pass `slug`
+ * (randomWorkspaceSlug) when a test needs a valid one.
+ */
+export async function createWorld(db: Db, name = 'Reddevs', options: { slug?: string } = {}): Promise<World> {
   const [workspace] = await db
     .insert(schema.organization)
-    .values({ name, slug: `${name.toLowerCase()}-${crypto.randomUUID()}` })
+    .values({ name, slug: options.slug ?? `${name.toLowerCase()}-${crypto.randomUUID()}` })
     .returning();
   if (!workspace) throw new Error('organization insert failed');
   const owner = await createUser(db, { name: `Ana Ruiz ${unique()}` });
@@ -87,6 +91,22 @@ export async function createWorld(db: Db, name = 'Reddevs'): Promise<World> {
       apiKeyId: crypto.randomUUID(),
     },
   };
+}
+
+/** A workspace slug that follows the slug rule and is unique enough for a shared database. */
+export function randomWorkspaceSlug(prefix = 'ws'): string {
+  return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+/** Adds an existing user to a workspace with `role`; returns their session actor there. */
+export async function addMember(
+  db: Db,
+  workspaceId: string,
+  person: { id: string; kind: 'person' | 'agent' },
+  role: 'owner' | 'admin' | 'member' = 'member',
+): Promise<Actor> {
+  await db.insert(schema.member).values({ organizationId: workspaceId, userId: person.id, role });
+  return { userId: person.id, kind: person.kind, workspaceId, role, onBehalfOfId: null };
 }
 
 /** A project key that is unique enough for tests sharing a workspace: a letter plus 5 random chars. */

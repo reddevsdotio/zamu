@@ -6,6 +6,8 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { BacklogWebhookInfo } from '@zamu/contracts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { testWorkspace } from '~/lib/testing';
+import { WorkspaceProvider } from '~/lib/workspace';
 import type { SettingsResult } from '../settings/result';
 import { BacklogStatusView } from './BacklogSettings';
 import { sourceStatus } from './fixtures';
@@ -18,16 +20,16 @@ const server = vi.hoisted(() => ({
 
 vi.mock('../backlog/server', () => server);
 
-vi.mock('~/lib/orpc', async () => {
-  const { createTanstackQueryUtils } = await import('@orpc/tanstack-query');
+/** The test workspace (/w/acme) around the fake client. */
+const workspace = (() => {
   const fail = (): unknown =>
     new Proxy(() => {}, {
       get: (_target, key) => (typeof key === 'string' ? fail() : undefined),
       apply: () => Promise.reject(new Error('no API in these tests')),
     });
   const client = fail();
-  return { client, orpc: createTanstackQueryUtils(client as never) };
-});
+  return testWorkspace(client);
+})();
 
 const URL = 'https://zamu.example.com/api/webhooks/backlog/hook-id-0123456789abcdef';
 const OLD = 'old-secret-0123456789abcdefghijklmnopqrstu';
@@ -43,13 +45,15 @@ function renderDialog() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <WebhookDialog
-        projectKey="PAY"
-        isOpen
-        onOpenChange={vi.fn()}
-        repository="gitlab.com/reddevs/payments"
-        defaultBranch="main"
-      />
+      <WorkspaceProvider workspace={workspace}>
+        <WebhookDialog
+          projectKey="PAY"
+          isOpen
+          onOpenChange={vi.fn()}
+          repository="gitlab.com/reddevs/payments"
+          defaultBranch="main"
+        />
+      </WorkspaceProvider>
     </QueryClientProvider>,
   );
 }
@@ -77,7 +81,9 @@ describe('New webhook secret', () => {
     );
     await user.click(within(confirm).getByRole('button', { name: 'Issue new secret' }));
 
-    expect(server.reissueBacklogWebhookSecretFn).toHaveBeenCalledWith({ data: { projectKey: 'PAY' } });
+    expect(server.reissueBacklogWebhookSecretFn).toHaveBeenCalledWith({
+      data: { workspace: 'acme', input: { projectKey: 'PAY' } },
+    });
     expect(await within(webhookDialog()).findByText(NEW)).toBeVisible();
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(
@@ -184,16 +190,18 @@ describe('New webhook secret', () => {
     });
     render(
       <QueryClientProvider client={new QueryClient()}>
-        <BacklogStatusView
-          status={status}
-          projectName="Payments"
-          canManage
-          canRefresh
-          onRefresh={vi.fn()}
-          onOpenWebhook={vi.fn()}
-          onSwitch={vi.fn()}
-          onUseAnotherConnection={vi.fn()}
-        />
+        <WorkspaceProvider workspace={workspace}>
+          <BacklogStatusView
+            status={status}
+            projectName="Payments"
+            canManage
+            canRefresh
+            onRefresh={vi.fn()}
+            onOpenWebhook={vi.fn()}
+            onSwitch={vi.fn()}
+            onUseAnotherConnection={vi.fn()}
+          />
+        </WorkspaceProvider>
       </QueryClientProvider>,
     );
     const history = screen.getByRole('region', { name: 'History' });

@@ -8,6 +8,7 @@ import {
 } from '@zamu/contracts';
 import { formatDateRange } from '~/features/tasks/format';
 import { cyclesQuery, milestonesQuery, projectsQuery } from '~/features/tasks/queries';
+import { useApi } from '~/lib/workspace';
 import { CycleGlyph } from '~/ui';
 
 // Milestone and cycle helpers for the pickers (moved here from features/tasks/PlanningFields.tsx, which
@@ -25,19 +26,20 @@ export interface ProjectPlanning {
 
 /** The project's feature switches plus its milestones and cycles. Features count as off until known. */
 export function useProjectPlanning(projectKey: string | undefined, enabled = true): ProjectPlanning {
+  const api = useApi();
   const project = useQuery({
-    ...projectsQuery(),
+    ...projectsQuery(api),
     select: (data) => data.items.find((item) => item.key === projectKey),
     enabled: enabled && projectKey != null,
   }).data;
   const usesMilestones = project?.usesMilestones ?? false;
   const usesCycles = project?.usesCycles ?? false;
   const milestones = useQuery({
-    ...milestonesQuery(projectKey ?? ''),
+    ...milestonesQuery(api, projectKey ?? ''),
     enabled: enabled && projectKey != null && usesMilestones,
   }).data?.items;
   const cycles = useQuery({
-    ...cyclesQuery(projectKey ?? ''),
+    ...cyclesQuery(api, projectKey ?? ''),
     enabled: enabled && projectKey != null && usesCycles,
   }).data?.items;
   return { usesMilestones, usesCycles, milestones, cycles, isKnown: project != null };

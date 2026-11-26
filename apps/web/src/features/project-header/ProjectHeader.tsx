@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ProjectWithCounts } from '@zamu/contracts';
 import type { ReactNode } from 'react';
 import { projectsQuery } from '~/features/tasks/queries';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
 import { ViewHeader } from '~/ui';
 import { MirrorSourceButton } from './MirrorSource';
 import { isMirrored } from './mirror';
@@ -45,8 +46,9 @@ export interface ProjectHeaderProps {
 
 /** The project as listed in the sidebar (name, flags, open count, current cycle), from the cached list. */
 export function useProjectSummary(projectKey: string): ProjectWithCounts | undefined {
+  const api = useApi();
   return useQuery({
-    ...projectsQuery(),
+    ...projectsQuery(api),
     select: (data) => data.items.find((item) => item.key === projectKey),
   }).data;
 }
@@ -70,6 +72,7 @@ export function ProjectHeader({
   refreshHotkey = true,
   className,
 }: ProjectHeaderProps) {
+  const workspace = useWorkspaceSlug();
   const project = useProjectSummary(projectKey);
   const mirrored = isMirrored(project);
   const name = project?.name ?? projectKey;
@@ -81,7 +84,7 @@ export function ProjectHeader({
         {subtitle != null ? <> · {subtitle}</> : null}
       </h1>
       <ViewHeader
-        project={{ key: projectKey, name, href: projectViewHref(projectKey, 'tasks') }}
+        project={{ key: projectKey, name, href: projectViewHref(workspace, projectKey, 'tasks') }}
         page={PAGE_NAMES[current]}
         viewSwitch={viewSwitch}
         filter={filter}

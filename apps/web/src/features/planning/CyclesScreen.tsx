@@ -5,6 +5,8 @@ import { type MouseEvent, useMemo, useState } from 'react';
 import { Link } from 'react-aria-components';
 import { ProjectHeader, useProjectSummary } from '~/features/project-header';
 import { useOptionalQuickCreate } from '~/features/shell/quick-create';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
+import { type WorkspaceUrlSlug, workspacePath } from '~/lib/workspace-paths';
 import { Button, cn, Pill, Skeleton, useHotkeys } from '~/ui';
 import { cycleDefaults } from './CycleDialog';
 import { NewCycleDialog } from './CycleDialogHost';
@@ -44,8 +46,8 @@ const WEEKDAYS = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', '
 /** Completed cycles whose carry-over note reads the cycle detail ("moved to Cycle 12"). */
 const DETAILED_COMPLETED = 12;
 
-export function cycleHref(projectKey: string, number: number): string {
-  return `/p/${encodeURIComponent(projectKey)}/cycles/${number}`;
+export function cycleHref(workspace: WorkspaceUrlSlug, projectKey: string, number: number): string {
+  return workspacePath(workspace, `/p/${encodeURIComponent(projectKey)}/cycles/${number}`);
 }
 
 export function cycleTitle(cycle: Pick<Cycle, 'number' | 'name'>): string {
@@ -123,10 +125,12 @@ function isControl(target: EventTarget | null): boolean {
 }
 
 export function CyclesScreen({ projectKey }: { projectKey: string }) {
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
   const navigate = useNavigate();
   const quickCreate = useOptionalQuickCreate();
   const project = useProjectSummary(projectKey);
-  const cycles = useQuery(cyclesQuery(projectKey));
+  const cycles = useQuery(cyclesQuery(api, projectKey));
   const today = useServerToday(projectKey);
   const [creating, setCreating] = useState(false);
   const [focused, setFocused] = useState<number | null>(null);
@@ -140,7 +144,10 @@ export function CyclesScreen({ projectKey }: { projectKey: string }) {
   const detailed =
     split?.completed.filter((cycle) => cycle.summary?.rolledOver).slice(0, DETAILED_COMPLETED) ?? [];
   const details = useQueries({
-    queries: detailed.map((cycle) => ({ ...cycleQuery(projectKey, cycle.number), staleTime: 10 * 60_000 })),
+    queries: detailed.map((cycle) => ({
+      ...cycleQuery(api, projectKey, cycle.number),
+      staleTime: 10 * 60_000,
+    })),
   });
   const movedTo = new Map<number, (number | null)[]>();
   detailed.forEach((cycle, index) => {
@@ -173,7 +180,7 @@ export function CyclesScreen({ projectKey }: { projectKey: string }) {
         handler: (event) => {
           if (focused == null || isControl(event.target)) return;
           event.preventDefault();
-          void navigate({ href: cycleHref(projectKey, focused) });
+          void navigate({ href: cycleHref(workspace, projectKey, focused) });
         },
       },
       Escape: { preventDefault: false, handler: () => setFocused(null) },
@@ -307,8 +314,9 @@ export interface CurrentCycleCardProps {
 }
 
 export function CurrentCycleCard({ projectKey, cycle, isFocused, onFocus }: CurrentCycleCardProps) {
+  const workspace = useWorkspaceSlug();
   const navigate = useNavigate();
-  const href = cycleHref(projectKey, cycle.number);
+  const href = cycleHref(workspace, projectKey, cycle.number);
   const { counts } = cycle;
   const split = splitOf(counts);
   const scope = splitTotal(split);
@@ -394,8 +402,9 @@ interface CycleRowProps {
 }
 
 function CycleRow({ projectKey, cycle, note, isFocused, onFocus }: CycleRowProps) {
+  const workspace = useWorkspaceSlug();
   const navigate = useNavigate();
-  const href = cycleHref(projectKey, cycle.number);
+  const href = cycleHref(workspace, projectKey, cycle.number);
   const completed = cycle.state === 'completed';
   const scope = completed && cycle.summary ? cycle.summary.scope : cycle.counts.total - cycle.counts.canceled;
   const done = completed && cycle.summary ? cycle.summary.completed : cycle.counts.done;

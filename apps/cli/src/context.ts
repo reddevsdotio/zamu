@@ -2,12 +2,20 @@
 import { createHash } from 'node:crypto';
 import { type CliData, type CliResultName, type cliDataSchemas, cliOutput } from '@zamu/contracts';
 import type { z } from 'zod';
-import { type ApiClient, createApiClient } from './client';
-import { resolveCredentials } from './config';
+import { type ApiClient, callProcedure, createApiClient, proxyClient } from './client';
+import { isKnown, readLogins } from './config';
 import type { CliError } from './errors';
 import { createStyle, type Style } from './format';
 import { type CliIo, useColor } from './io';
 import { type RequestSource, requestSource, withSourceHeaders } from './source';
+import {
+  type ClientFactory,
+  forgetClone,
+  type PickedLogin,
+  pickLogin,
+  refusedForClone,
+  sameLogin,
+} from './workspace';
 
 export interface CommandContext {
   io: CliIo;
@@ -18,13 +26,34 @@ export interface CommandContext {
   url?: string;
   /** A fingerprint of the key in use, once known. The offline queue ties each queued write to it. */
   keyId?: string;
-  /** Client with the resolved credentials (ZAMU_URL / ZAMU_KEY, else the config file). */
+  /** The workspace of the login in use, once known (null when the key's workspace is not known). */
+  workspaceId?: string | null;
+  /** --workspace, set before the command runs. */
+  workspaceFlag?: string;
+  /** The login in use and how it was picked, once the first client was made. */
+  login?: PickedLogin;
+  /** Set when a request got no answer before the command's own calls (picking the login). */
+  offline?: unknown;
+  /** Client with the login picked for this command (workspace.ts: --workspace, ZAMU_KEY, clone, default). */
   client: () => Promise<ApiClient>;
+  /** A client without the offline queue for a login, for any server and key. */
+  makeClient: ClientFactory;
+  /**
+   * The stored login a queued write was made with, matched on server, workspace and key
+   * fingerprint, with a client for it (no offline queue). Null when no stored login fits.
+   */
+  loginFor: (target: LoginTarget) => Promise<{ client: ApiClient; keyId: string } | null>;
   /**
    * What the command works on, set by commands before they call the API. A Backlog.md mirror error
    * uses it to name the task's file branch and what is still allowed (see describeFailure).
    */
   target?: CommandTarget;
+}
+
+export interface LoginTarget {
+  url: string;
+  workspaceId?: string | undefined;
+  keyId?: string | undefined;
 }
 
 export interface CommandTarget {
@@ -42,12 +71,13 @@ export interface CommandTarget {
  */
 export async function apiClient(
   io: CliIo,
-  credentials: { url: string; key: string },
+  credentials: { url: string; key: string; workspace?: string | null },
   source: Promise<RequestSource> = requestSource(io),
 ): Promise<ApiClient> {
   return createApiClient({
     url: credentials.url,
     key: credentials.key,
+    workspace: credentials.workspace ?? null,
     fetch: withSourceHeaders(await source, io.fetch),
   });
 }
@@ -59,16 +89,72 @@ export function keyFingerprint(key: string): string {
 
 export function createContext(io: CliIo, json: boolean): CommandContext {
   let source: Promise<RequestSource> | undefined;
+  let picking: Promise<PickedLogin> | undefined;
+  const makeClient: ClientFactory = (login) => {
+    source ??= requestSource(io);
+    const header = login.header === undefined ? (login.workspace?.slug ?? null) : login.header;
+    return apiClient(io, { url: login.url, key: login.key, workspace: header }, source);
+  };
+  const use = (login: PickedLogin) => {
+    context.login = login;
+    context.url = login.url;
+    context.keyId = keyFingerprint(login.key);
+    context.workspaceId = login.workspace?.id ?? null;
+    if (login.offline) context.offline ??= login.offline;
+  };
+  const pick = async (cache = true): Promise<PickedLogin> => {
+    const result = await pickLogin(io, { flag: context.workspaceFlag, makeClient, cache });
+    if ('ambiguous' in result) throw new Error('unreachable: an ambiguous pick throws');
+    return result;
+  };
+
+  /**
+   * A login taken from the clone cache may be stale (the project moved, the key lost access): on
+   * a 403 or 404 the cache entry goes, the clone is matched again, and when that picks another
+   * login the call is made once more with it. 403 and 404 mean nothing was changed, so the second
+   * call is safe for writes too.
+   */
+  const rematching = (first: ApiClient, login: PickedLogin): ApiClient => {
+    let current = first;
+    let retried = false;
+    return proxyClient(async (path, args) => {
+      try {
+        return await callProcedure(current, path, args);
+      } catch (error) {
+        if (retried || !login.cachedFor || !refusedForClone(error)) throw error;
+        retried = true;
+        await forgetClone(io, login.cachedFor);
+        const next = await pick(false);
+        if (sameLogin(next, login)) throw error;
+        use(next);
+        picking = Promise.resolve(next);
+        current = await makeClient(next);
+        return callProcedure(current, path, args);
+      }
+    });
+  };
+
   const context: CommandContext = {
     io,
     json,
     style: createStyle(useColor(io)),
+    makeClient,
     client: async () => {
-      const credentials = await resolveCredentials(io);
-      context.url = credentials.url;
-      context.keyId = keyFingerprint(credentials.key);
-      source ??= requestSource(io);
-      return apiClient(io, credentials, source);
+      picking ??= pick();
+      const login = await picking;
+      use(login);
+      const client = await makeClient(login);
+      return login.cachedFor ? rematching(client, login) : client;
+    },
+    loginFor: async (target) => {
+      const logins = await readLogins(io).catch(() => []);
+      const found = logins.find(
+        (login) =>
+          login.url === target.url &&
+          (target.workspaceId ? isKnown(login) && login.workspace.id === target.workspaceId : true) &&
+          (target.keyId ? keyFingerprint(login.key) === target.keyId : true),
+      );
+      return found ? { client: await makeClient(found), keyId: keyFingerprint(found.key) } : null;
     },
   };
   return context;

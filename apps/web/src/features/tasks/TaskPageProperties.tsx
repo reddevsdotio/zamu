@@ -8,6 +8,7 @@ import {
 } from 'react-aria-components';
 import { cycleLabel, type ProjectPlanning, type TaskFieldKey } from '~/features/task-fields';
 import { isFromDefaults, progressNote, progressOf } from '~/features/work-record/ops';
+import { useWorkspaceSlug } from '~/lib/workspace';
 import {
   Avatar,
   BlockedNotice,
@@ -235,6 +236,7 @@ function ParentRow({
   locked: boolean;
   onOpen: (field: TaskFieldKey) => void;
 }) {
+  const workspace = useWorkspaceSlug();
   return (
     <div className={cn(rowClass, 'hover:bg-bg-grp', isOpen && 'bg-bg-grp')}>
       <AriaButton
@@ -250,8 +252,8 @@ function ParentRow({
       <span className="flex min-h-5 min-w-0 flex-wrap items-center gap-1.75 pr-5 text-md font-medium text-fg">
         {parent ? (
           <Link
-            to="/p/$projectKey/$taskKey"
-            params={{ projectKey: projectOfKey(parent.key), taskKey: parent.key }}
+            to="/w/$workspace/p/$projectKey/$taskKey"
+            params={{ workspace, projectKey: projectOfKey(parent.key), taskKey: parent.key }}
             className="relative z-1 flex min-w-0 items-center gap-1.75 rounded-sm outline-none hover:underline focus-visible:focus-ring"
           >
             <span className="shrink-0 text-sm text-fg-3 tabular-nums">{parent.key}</span>

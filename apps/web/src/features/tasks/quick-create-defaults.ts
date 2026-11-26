@@ -1,4 +1,5 @@
 import { CYCLE_CURRENT, CYCLE_NEXT, type Cycle, type MilestoneWithProgress } from '@zamu/contracts';
+import { pathInWorkspace } from '~/lib/workspace-paths';
 
 // Quick create prefills milestone and cycle from the page it opened on:
 //   /p/PAY/milestones/<id>          the milestone
@@ -34,7 +35,7 @@ function parseMilestone(value: string | undefined): string | undefined {
 }
 
 export function planningDefaultsFrom(pathname: string, search: Record<string, unknown>): PlanningDefaults {
-  const match = /^\/p\/([^/]+)(?:\/(milestones|cycles)\/([^/]+))?/.exec(pathname);
+  const match = /^\/p\/([^/]+)(?:\/(milestones|cycles)\/([^/]+))?/.exec(pathInWorkspace(pathname));
   if (!match) return {};
   const projectKey = decodeURIComponent(match[1] ?? '').toUpperCase();
   const section = match[2];

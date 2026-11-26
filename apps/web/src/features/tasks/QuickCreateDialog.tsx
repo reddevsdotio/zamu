@@ -29,6 +29,7 @@ import {
   useProjectPlanning,
   useTaskSearch,
 } from '~/features/task-fields';
+import { useApi, useWorkspaceSlug } from '~/lib/workspace';
 import {
   Avatar,
   Banner,
@@ -114,6 +115,8 @@ function PropButton({
 }
 
 function QuickCreateForm({ onClose }: { onClose: () => void }) {
+  const workspace = useWorkspaceSlug();
+  const api = useApi();
   const {
     projectKey: requestedProject,
     status: requestedStatus,
@@ -126,9 +129,9 @@ function QuickCreateForm({ onClose }: { onClose: () => void }) {
   const [pageDefaults] = useState(() =>
     planningDefaultsFrom(location.pathname, (location.search ?? {}) as Record<string, unknown>),
   );
-  const projects = useQuery(projectsQuery()).data?.items;
-  const members = useQuery(membersQuery()).data?.items;
-  const me = useQuery(meQuery()).data;
+  const projects = useQuery(projectsQuery(api)).data?.items;
+  const members = useQuery(membersQuery(api)).data?.items;
+  const me = useQuery(meQuery(api)).data;
   const create = useCreateTask();
   const createLabel = useCreateLabel();
 
@@ -156,7 +159,7 @@ function QuickCreateForm({ onClose }: { onClose: () => void }) {
 
   // Milestone and cycle: undefined follows the page default, null is "none", a string is the picked id.
   const planning = useProjectPlanning(projectKey);
-  const projectLabels = useQuery({ ...labelsQuery(projectKey ?? ''), enabled: projectKey != null }).data
+  const projectLabels = useQuery({ ...labelsQuery(api, projectKey ?? ''), enabled: projectKey != null }).data
     ?.items;
   const [milestoneId, setMilestoneId] = useState<string | null | undefined>(undefined);
   const [cycleId, setCycleId] = useState<string | null | undefined>(undefined);
@@ -228,8 +231,8 @@ function QuickCreateForm({ onClose }: { onClose: () => void }) {
     if (!task) return;
     // Show the new task focused in its list (or board, when that's the project's remembered view).
     void navigate({
-      to: '/p/$projectKey',
-      params: { projectKey: task.project.key },
+      to: '/w/$workspace/p/$projectKey',
+      params: { workspace, projectKey: task.project.key },
       search: { focus: task.key } as never,
     });
     if (createMore) {
