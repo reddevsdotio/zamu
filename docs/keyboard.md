@@ -139,7 +139,7 @@ The dialog that opens when you move a task to In review or Done while criteria o
 
 In quick create (C), I assigns the task to you, Shift+M opens the milestone and Shift+C the cycle.
 
-## Changed since 0.10.0
+## Changed in 0.11.0
 
 - Shift+P links a pull request in the task view and the peek: paste its address, then Enter.
 - Shift+E archives the selected tasks or the open task, from lists, boards and the task view. On an
