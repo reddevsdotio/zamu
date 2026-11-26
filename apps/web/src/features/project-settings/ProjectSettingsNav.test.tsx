@@ -13,7 +13,7 @@ import { createFakeApi } from '~/features/tasks/fake-api';
 import { testWorkspace } from '~/lib/testing';
 import { WorkspaceProvider } from '~/lib/workspace';
 import { UIProvider } from '~/ui';
-import { ProjectSettingsLayout, projectSettingsHref } from './ProjectSettingsLayout';
+import { ProjectSettingsLayout, projectSettingsHref, settingsSection } from './ProjectSettingsLayout';
 
 // The project settings nav links each section under the workspace: /w/acme/p/PAY/settings/labels,
 // never a URL built with the project key where the workspace goes.
@@ -58,6 +58,19 @@ describe('project settings nav', () => {
     expect(href('Labels')).toHaveAttribute('href', '/w/acme/p/PAY/settings/labels');
     expect(href('Labels')).toHaveAttribute('aria-current', 'page');
     expect(href('Task defaults')).toHaveAttribute('href', '/w/acme/p/PAY/settings/defaults');
+    expect(href('Repository')).toHaveAttribute('href', '/w/acme/p/PAY/settings/repository');
+    expect(href('Archive')).toHaveAttribute('href', '/w/acme/p/PAY/settings/archive');
+  });
+
+  it('lists the sections in the design order and marks Repository and Archive', async () => {
+    renderSettings('/w/acme/p/PAY/settings/repository');
+    const nav = await screen.findByRole('navigation', { name: 'Settings sections' });
+    const names = within(nav)
+      .getAllByRole('link')
+      .map((link) => link.textContent);
+    expect(names.slice(0, 5)).toEqual(['General', 'Labels', 'Task defaults', 'Repository', 'Archive']);
+    expect(within(nav).getByRole('link', { name: 'Repository' })).toHaveAttribute('aria-current', 'page');
+    expect(settingsSection('/w/acme/p/PAY/settings/archive/')).toBe('archive');
   });
 
   it('refuses a project key where the workspace slug goes', () => {

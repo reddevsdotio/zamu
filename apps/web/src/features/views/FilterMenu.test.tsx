@@ -76,6 +76,17 @@ function Screen() {
   );
 }
 
+/** The chips row with the archived tasks shown (frame 083). */
+function ArchivedChips() {
+  const [filter, setFilter] = useState<TaskFilter>({ archived: 'only' });
+  return (
+    <>
+      <FilterChips fields={fields} filter={filter} onChange={setFilter} matchCount={60} total={123} />
+      <output data-testid="filter">{JSON.stringify(filter)}</output>
+    </>
+  );
+}
+
 const current = () => JSON.parse(screen.getByTestId('filter').textContent ?? '{}') as TaskFilter;
 
 describe('filter menu', () => {
@@ -88,7 +99,18 @@ describe('filter menu', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((item) => item.textContent?.replace('›', '')),
-    ).toEqual(['Status', 'Priority', 'Assignee', 'Labels', 'Due date', 'Blocked', 'Milestone', 'Cycle']);
+    ).toEqual([
+      'Status',
+      'Priority',
+      'Assignee',
+      'Labels',
+      'Due date',
+      'Blocked',
+      'Milestone',
+      'Cycle',
+      'Check again',
+      'Archived',
+    ]);
     expect(screen.getByRole('searchbox', { name: 'Filter by' })).toHaveFocus();
     await user.keyboard('lab');
     expect(
@@ -189,13 +211,82 @@ describe('project filter fields', () => {
     await renderWithQuery(<Fields />);
     await waitFor(() =>
       expect(JSON.parse(screen.getByTestId('fields').textContent ?? '{}')).toEqual({
-        fields: ['status', 'priority', 'assignee', 'label', 'due', 'blocked', 'milestone', 'cycle'],
+        fields: [
+          'status',
+          'priority',
+          'assignee',
+          'label',
+          'due',
+          'blocked',
+          'milestone',
+          'cycle',
+          'checkAgain',
+          'archived',
+        ],
         title: 'Labels in Harbor',
         labels: ['backend', 'frontend', 'i18n', 'mobile', 'security'],
         // The viewer is "Me"; other people, then agents.
         assignees: ['Me', 'No assignee', 'Any agent', 'Tomás Ferreira', 'claude-dev'],
       }),
     );
+  });
+});
+
+describe('M7 filters', () => {
+  it('filters by check-again day: waiting or ready to check, one at a time', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.click(screen.getByRole('button', { name: 'Filter' }));
+    await user.keyboard('check{ArrowDown}{Enter}');
+    const menu = await screen.findByRole('menu', { name: 'Check again' });
+    expect(
+      within(menu)
+        .getAllByRole('menuitemradio')
+        .map((item) => item.textContent),
+    ).toEqual([expect.stringContaining('Waiting'), expect.stringContaining('Ready to check')]);
+    await user.click(within(menu).getByRole('menuitemradio', { name: /Ready to check/ }));
+    await waitFor(() => expect(current()).toEqual({ checkAgain: 'ready' }));
+    // Frame 101's chip words.
+    expect(screen.getByRole('button', { name: 'Check again is ready to check. Change' })).toBeInTheDocument();
+  });
+
+  it('shows archived tasks with their own count, and clears like any chip', async () => {
+    const user = userEvent.setup();
+    render(<ArchivedChips />);
+    const chips = screen.getByRole('toolbar', { name: 'Filters' });
+    expect(within(chips).getByRole('button', { name: 'Archived is shown. Change' })).toBeInTheDocument();
+    // Frame 083: the archived view counts what it shows.
+    expect(chips).toHaveTextContent('60 archived tasks');
+    await user.click(within(chips).getByRole('button', { name: 'Remove the archived filter' }));
+    expect(current()).toEqual({});
+  });
+
+  it('reads and writes the M7 params in the URL', async () => {
+    const user = userEvent.setup();
+    const root = createRootRoute();
+    const project = createRoute({
+      getParentRoute: () => root,
+      path: '/w/$workspace/p/$projectKey',
+      component: Screen,
+    });
+    const history = createMemoryHistory({
+      initialEntries: ['/w/acme/p/HBR?checkAgain=waiting&archived=include&bogus=1'],
+    });
+    const router = createRouter({ routeTree: root.addChildren([project]), history });
+    render(
+      <QueryClientProvider client={newQueryClient()}>
+        {inWorkspace(<RouterProvider router={router} />)}
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(current()).toEqual({ checkAgain: 'waiting', archived: 'include' }));
+    expect(
+      screen.getByRole('button', { name: 'Archived is shown with the rest. Change' }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Remove the check again filter' }));
+    await waitFor(() => expect(current()).toEqual({ archived: 'include' }));
+    const url = new URL(router.state.location.href, 'http://localhost');
+    expect(url.searchParams.get('archived')).toBe('include');
+    expect(url.searchParams.has('checkAgain')).toBe(false);
   });
 });
 

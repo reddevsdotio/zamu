@@ -3,7 +3,7 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { TaskListItem, TaskStatus } from '@zamu/contracts';
 import { type MouseEvent, type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-aria-components';
-import { togglePeek } from '~/features/peek/store';
+import { togglePeek, usePeek } from '~/features/peek/store';
 import { useTaskFieldKeys } from '~/features/task-fields';
 import { useNow } from '~/features/tasks/clock';
 import { atTime, formatAge } from '~/features/tasks/format';
@@ -143,7 +143,10 @@ export function PlanningTaskTable({
       selection.targetKeys.map((key) => byKey.get(key)).filter((task): task is TaskListItem => task != null),
     [selection.targetKeys, byKey],
   );
-  const fieldKeys = useTaskFieldKeys({ targets, anchors: focusedRow });
+  // The peek binds the field keys itself while it is open over this table (one ⇧W, one picker).
+  const peek = usePeek();
+  const peekHere = peek != null && peek.from === from;
+  const fieldKeys = useTaskFieldKeys({ targets, enabled: !peekHere, anchors: focusedRow });
 
   const remember = useCallback(
     (key: string) => rememberTaskNavigation(workspaceId, { keys, from, returnTo: location }, key),

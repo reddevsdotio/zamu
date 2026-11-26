@@ -97,6 +97,14 @@ export const FIELD_COMMANDS: Record<
     placeholder: 'Pick the parent task…',
     keywords: ['parent', 'subtask', 'nest', 'move under'],
   },
+  // M7: set in its picker (the reason is typed there); the palette only clears it.
+  checkAgain: {
+    title: 'Set check-again day',
+    step: 'Check again',
+    placeholder: 'Pick an action…',
+    shortcut: 'Shift+w',
+    keywords: ['check again', 'wait', 'snooze', 'remind'],
+  },
 };
 
 export interface StepContext {
@@ -312,5 +320,11 @@ export async function fieldStep(
           ),
       ]);
     }
+    case 'checkAgain':
+      return step(
+        targets.some((target) => target.checkAgain)
+          ? [command('clear', 'Clear the check-again day', () => void apply(targets, { checkAgain: null }))]
+          : [],
+      );
   }
 }

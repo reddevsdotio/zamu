@@ -14,6 +14,7 @@ import { Dialog as AriaDialog } from 'react-aria-components';
 import { taskHref } from '~/features/shell/paths';
 import { useApi, useWorkspaceSlug } from '~/lib/workspace';
 import {
+  ArchivedTag,
   CheckGlyph,
   cn,
   highlightMatch,
@@ -45,7 +46,9 @@ import {
  *
  * Commands come from the registry (registry.ts): the shell's built-ins (pages, projects, create, theme,
  * sidebar, shortcuts) and whatever the current screen registers for its selection. Tasks are searched
- * by key or title through tasks.list with q. A command may answer with a step (Set status → the six
+ * by key or title through tasks.list with q; archived tasks (M7, frame 086) are asked for separately
+ * (archived: only), come after the others with the Archived tag, and bring "Show archived tasks in
+ * <project>" under Actions when the shell registered it for the project on screen. A command may answer with a step (Set status → the six
  * statuses); Backspace in the empty input backs out of it. G then P opens it filtered to projects.
  *
  * The list is a listbox driven from the input (aria-activedescendant), so focus never leaves the input.
@@ -53,6 +56,9 @@ import {
 
 /** Ids of project commands ("Go to Payments"), registered by the shell; G then P shows only these. */
 export const PROJECT_COMMAND_PREFIX = 'navigate.project.';
+
+/** Id prefix of "Show archived tasks in <project>" (the shell's); offered under Actions next to archived results. */
+export const ARCHIVED_COMMAND_PREFIX = 'navigate.archived.';
 
 const ROOT_PLACEHOLDER = 'Type a command, or search tasks and projects…';
 const SEARCH_DEBOUNCE_MS = 150;
@@ -65,6 +71,8 @@ interface PaletteItem {
   title: ReactNode;
   icon?: ReactNode;
   taskKey?: string;
+  /** M7: an archived task: a quieter title and the Archived tag. */
+  archived?: boolean;
   hint?: string;
   chips?: readonly string[];
   checked?: boolean;
@@ -117,20 +125,38 @@ function commandItem(command: Command, query = ''): PaletteItem {
 }
 
 function taskItem(
-  task: { key: string; title: string; status: TaskStatus; projectName: string },
+  task: { key: string; title: string; status: TaskStatus; projectName: string; archived?: boolean },
   open: () => void,
   query = '',
   prefix = 'task',
 ): PaletteItem {
   return {
     id: `${prefix}:${task.key}`,
-    label: `${task.key} ${task.title}`,
+    label: task.archived ? `${task.key} ${task.title}, archived` : `${task.key} ${task.title}`,
     title: highlightMatch(task.title, query),
     icon: <StatusGlyph status={task.status} decorative />,
     taskKey: task.key,
     hint: task.projectName,
+    ...(task.archived ? { archived: true } : {}),
     open,
   };
+}
+
+/**
+ * Search results in the palette's order: live tasks first, then archived ones (core doesn't sort them,
+ * so they come from their own request). A task in both answers (archived meanwhile) shows once, archived.
+ */
+export function orderSearchResults(
+  live: readonly TaskListItem[],
+  archived: readonly TaskListItem[],
+): { task: TaskListItem; archived: boolean }[] {
+  const archivedKeys = new Set(archived.map((task) => task.key));
+  return [
+    ...live
+      .filter((task) => !archivedKeys.has(task.key) && task.archivedAt == null)
+      .map((task) => ({ task, archived: false })),
+    ...archived.map((task) => ({ task, archived: true })),
+  ];
 }
 
 /** Commands grouped by section in display order, best matches first within a section. */
@@ -197,17 +223,27 @@ function PalettePanel({ mode, userId, suggested = [] }: CommandPaletteProps & { 
     placeholderData: keepPreviousData,
     staleTime: 10_000,
   });
+  const archivedTasks = useQuery({
+    ...api.orpc.tasks.list.queryOptions({ input: { q: debounced, archived: 'only', limit: TASK_RESULTS } }),
+    enabled: searching && debounced.length > 0,
+    placeholderData: keepPreviousData,
+    staleTime: 10_000,
+  });
   // While a newer search is on its way the last answer stays, narrowed to what still matches the text,
   // so Enter right after typing never opens a task from an older search.
-  const taskResults: readonly TaskListItem[] =
+  const stillMatches = (task: TaskListItem) =>
+    commandMatches(
+      { title: `${task.key} ${task.title}`, keywords: task.backlogId ? [task.backlogId] : [] },
+      trimmed,
+    );
+  const taskResults =
     searching && debounced
-      ? (tasks.data?.items ?? []).filter((task) =>
-          commandMatches(
-            { title: `${task.key} ${task.title}`, keywords: task.backlogId ? [task.backlogId] : [] },
-            trimmed,
-          ),
+      ? orderSearchResults(
+          (tasks.data?.items ?? []).filter(stillMatches),
+          (archivedTasks.data?.items ?? []).filter(stillMatches),
         )
       : [];
+  const hasArchivedResults = taskResults.some((result) => result.archived);
 
   const openTask = (key: string) => () => {
     closePalette();
@@ -257,9 +293,15 @@ function PalettePanel({ mode, userId, suggested = [] }: CommandPaletteProps & { 
       list.push({
         id: 'tasks',
         title: 'Tasks',
-        items: taskResults.map((task) =>
+        items: taskResults.map(({ task, archived }) =>
           taskItem(
-            { key: task.key, title: task.title, status: task.status, projectName: task.project.name },
+            {
+              key: task.key,
+              title: task.title,
+              status: task.status,
+              projectName: task.project.name,
+              archived,
+            },
             openTask(task.key),
             trimmed,
           ),
@@ -270,32 +312,45 @@ function PalettePanel({ mode, userId, suggested = [] }: CommandPaletteProps & { 
       .filter((command) => commandMatches(command, trimmed))
       .map((command) => commandItem(command, trimmed));
     if (projects.length) list.push({ id: 'projects', title: 'Projects', items: projects });
-    list.push(
-      ...groupCommands(
-        registered.filter((command) => !command.id.startsWith(PROJECT_COMMAND_PREFIX)),
-        trimmed,
-      ),
+    const grouped = groupCommands(
+      registered.filter((command) => !command.id.startsWith(PROJECT_COMMAND_PREFIX)),
+      trimmed,
+    );
+    list.push(...grouped);
+    // Archived results bring "Show archived tasks in Payments" under Actions (frame 086), unless the
+    // typed text already lists it.
+    const archivedCommand = hasArchivedResults
+      ? registered.find((command) => command.id.startsWith(ARCHIVED_COMMAND_PREFIX))
+      : undefined;
+    const listed = grouped.some((section) =>
+      section.items.some((item) => item.command?.id === archivedCommand?.id),
     );
     // Last, so Enter on a typed command name still runs that command (frame 090).
-    const actions = registered.flatMap((command): PaletteItem[] => {
-      const withText = command.withText;
-      if (!withText) return [];
-      const label = withText.title(trimmed);
-      return [
-        {
-          id: `text:${command.id}`,
-          label,
-          title: label,
-          icon: command.icon,
-          chips: shortcutChips(command.shortcut),
-          disabledReason: command.disabledReason,
-          open: () => {
-            closePalette();
-            withText.run(trimmed);
+    const actions: PaletteItem[] =
+      archivedCommand && !listed
+        ? [{ ...commandItem(archivedCommand), id: `action:${archivedCommand.id}` }]
+        : [];
+    actions.push(
+      ...registered.flatMap((command): PaletteItem[] => {
+        const withText = command.withText;
+        if (!withText) return [];
+        const label = withText.title(trimmed);
+        return [
+          {
+            id: `text:${command.id}`,
+            label,
+            title: label,
+            icon: command.icon,
+            chips: shortcutChips(command.shortcut),
+            disabledReason: command.disabledReason,
+            open: () => {
+              closePalette();
+              withText.run(trimmed);
+            },
           },
-        },
-      ];
-    });
+        ];
+      }),
+    );
     if (actions.length) list.push({ id: 'actions', title: 'Actions', items: actions });
     return list;
   })();
@@ -412,7 +467,9 @@ function PalettePanel({ mode, userId, suggested = [] }: CommandPaletteProps & { 
   const enterText = top ? 'set' : items.length && activeItem?.open ? 'open' : 'run';
 
   let footerEnd: ReactNode = null;
-  if (searching && debounced) {
+  if (searching && debounced && hasArchivedResults) {
+    footerEnd = 'Archived tasks come last and carry the tag';
+  } else if (searching && debounced) {
     const projectCount = sections.find((section) => section.id === 'projects')?.items.length ?? 0;
     footerEnd = `${taskResults.length} ${taskResults.length === 1 ? 'task' : 'tasks'} · ${projectCount} ${projectCount === 1 ? 'project' : 'projects'}`;
   } else if (!top && !projectsOnly && rootContext) {
@@ -512,8 +569,11 @@ function PalettePanel({ mode, userId, suggested = [] }: CommandPaletteProps & { 
                         {item.taskKey}
                       </span>
                     ) : null}
-                    <span className="min-w-0 truncate font-medium">{item.title}</span>
+                    <span className={cn('min-w-0 truncate font-medium', item.archived && 'text-fg-3')}>
+                      {item.title}
+                    </span>
                     <span className="flex-1" />
+                    {item.archived ? <ArchivedTag /> : null}
                     {item.disabledReason ? (
                       <span className="shrink-0 truncate text-xs text-fg-3">{item.disabledReason}</span>
                     ) : null}

@@ -2,8 +2,26 @@ import type { HomeGroupKey, HomeItem, HomeTab } from '@zamu/contracts';
 import type { MouseEvent, ReactNode, Ref } from 'react';
 import { useWorkspaceSlug } from '~/lib/workspace';
 import { workspacePath } from '~/lib/workspace-paths';
-import { Avatar, cn, DueChip, Pill, PriorityGlyph, ProjectTile, StatusGlyph } from '~/ui';
-import { criteriaPillText, pillView, rowAvatar, shownPills, showsDueChip, whyText } from './format';
+import {
+  Avatar,
+  CheckAgainChip,
+  cn,
+  DueChip,
+  localToday,
+  Pill,
+  PriorityGlyph,
+  ProjectTile,
+  StatusGlyph,
+} from '~/ui';
+import {
+  criteriaPillText,
+  mergedPillText,
+  pillView,
+  rowAvatar,
+  shownPills,
+  showsDueChip,
+  whyText,
+} from './format';
 
 // A Home row (components.md "Home row", frame 099; screens.css .row .proj, .why):
 //
@@ -11,7 +29,9 @@ import { criteriaPillText, pillView, rowAvatar, shownPills, showsDueChip, whyTex
 //
 // Priority (urgent and high only), the project tile and name, key, status, title, then pills (on Needs
 // review rows first the criteria pill, "4 of 6 criteria"), the due
-// chip, the "why" line and the assignee. The row is a link to the task: a click opens it, Shift and
+// chip, the "why" line and the assignee. M7 (frames 064, 065): "Merged with 2 open criteria" rows carry
+// that pill and "#479 merged yesterday"; "Check again" rows the check-again chip and the reason the
+// person wrote. The row is a link to the task: a click opens it, Shift and
 // ⌘/Ctrl clicks select. Home rows are their own component: their columns differ from a project's list.
 
 export interface HomeRowProps {
@@ -56,6 +76,13 @@ export function HomeRow({
   const why = whyText(item, tab, viewerId, now);
   const avatar = rowAvatar(item, tab, viewerId);
   const criteria = criteriaPillText(item, group);
+  const merged = mergedPillText(item);
+  // The check-again day of the row's own group, or of a "check again" pill elsewhere.
+  const checkAgainOn =
+    item.reason.kind === 'checkAgain'
+      ? item.reason.on
+      : item.pills.find((pill) => pill.kind === 'checkAgain')?.on;
+  const today = now == null ? null : localToday(new Date(now));
   return (
     <a
       ref={rowRef}
@@ -89,16 +116,25 @@ export function HomeRow({
             {criteria}
           </Pill>
         ) : null}
-        {shownPills(item).map((pill) => {
-          const view = pillView(pill);
-          return (
-            <Pill key={pill.kind} tone={view.tone} className="h-4.75">
-              {view.text}
-            </Pill>
-          );
-        })}
+        {merged ? (
+          <Pill tone="accent" className="h-4.75" data-merged-pill="">
+            {merged}
+          </Pill>
+        ) : null}
+        {checkAgainOn ? <CheckAgainChip on={checkAgainOn} today={today} /> : null}
+        {shownPills(item)
+          .filter((pill) => pill.kind !== 'checkAgain')
+          .map((pill) => {
+            const view = pillView(pill);
+            return (
+              <Pill key={pill.kind} tone={view.tone} className="h-4.75">
+                {view.text}
+              </Pill>
+            );
+          })}
         {showsDueChip(item) ? <DueChip dueDate={task.dueDate ?? null} status={task.status} /> : null}
-        <Why>{why}</Why>
+        {/* A check-again reason is the person's own words: more room, and the whole of it on hover. */}
+        <Why wide={item.reason.kind === 'checkAgain'}>{why}</Why>
         {avatar ? (
           <Avatar name={avatar.name} kind={avatar.kind === 'agent' ? 'agent' : 'person'} />
         ) : (
@@ -109,9 +145,13 @@ export function HomeRow({
   );
 }
 
-function Why({ children }: { children: ReactNode }) {
+function Why({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
-    <span className="w-37.5 shrink-0 truncate text-right text-xs text-fg-3" data-why>
+    <span
+      className={cn('shrink-0 truncate text-right text-xs text-fg-3', wide ? 'w-57.5' : 'w-37.5')}
+      title={wide && typeof children === 'string' ? children : undefined}
+      data-why
+    >
       {children}
     </span>
   );

@@ -1,3 +1,4 @@
+import { useRouter } from '@tanstack/react-router';
 import { type ReactNode, useState } from 'react';
 import {
   Button as AriaButton,
@@ -37,13 +38,19 @@ import {
   type TaskProperty,
   type TaskViewName,
   type ViewLayout,
+  WAITING_TASK_LABELS,
+  WAITING_TASKS,
+  type WaitingTasks,
 } from './display-options';
 import { useViewRequests } from './requests';
 import { useDisplayOptions } from './useDisplayOptions';
+import { useUrlTaskFilter } from './useUrlTaskFilter';
 
 // Display options popover (frame 045; components.md "Display options"; margin.css .pop-sec,
 // .pop-row, .selb, .tgl, .tg, .pop-foot). Changes apply at once and are saved for the person on
-// this view ("Saved for you on this board").
+// this view ("Saved for you on this board"). M7 (frame 101): the "Pull request" and "Check again"
+// chips, and "Waiting tasks" and "Archived tasks" under them. "Archived tasks" is the Archived filter
+// (archived=only in the URL), not a stored option: Shown here and the filter chip are one switch.
 //
 //   <DisplayButton projectKey view …>   the header's Display slot: button + popover, wired to storage
 //   <DisplayOptionsPanel …>             the panel alone, controlled (tests, other hosts)
@@ -60,7 +67,15 @@ export interface DisplayOptionsPanelProps {
   onLayoutChange?: (layout: ViewLayout) => void;
   /** Grouping choices; leave out milestone and cycle when the project doesn't use them. */
   groupChoices?: readonly GroupBy[];
+  /** M7 "Archived tasks": Hidden or Shown (the Archived filter). Omit to leave the row out (Home). */
+  archived?: { shown: boolean; onChange: (shown: boolean) => void };
 }
+
+export type ArchivedChoice = 'hidden' | 'shown';
+const ARCHIVED_ITEMS: OptionItem[] = [
+  { id: 'hidden', label: 'Hidden' },
+  { id: 'shown', label: 'Shown' },
+];
 
 /** Compact select (.selb): 28px, at least 132px wide, value then ▾. */
 function DisplaySelect<K extends string>({
@@ -125,6 +140,7 @@ export function DisplayOptionsPanel({
   onReset,
   onLayoutChange,
   groupChoices = ['status', 'priority', 'assignee', 'milestone', 'cycle', 'label', 'none'],
+  archived,
 }: DisplayOptionsPanelProps) {
   const board = view === 'board';
   const groupItems = options(groupChoices, GROUP_BY_LABELS);
@@ -253,6 +269,30 @@ export function DisplayOptionsPanel({
           ))}
         </ToggleButtonGroup>
       </Section>
+      {view !== 'home' || archived ? (
+        <Section>
+          {view !== 'home' ? (
+            <Row label="Waiting tasks">
+              <DisplaySelect<WaitingTasks>
+                label="Waiting tasks"
+                value={value.waiting}
+                items={options(WAITING_TASKS, WAITING_TASK_LABELS)}
+                onChange={(waiting) => onChange({ waiting })}
+              />
+            </Row>
+          ) : null}
+          {archived ? (
+            <Row label="Archived tasks">
+              <DisplaySelect<ArchivedChoice>
+                label="Archived tasks"
+                value={archived.shown ? 'shown' : 'hidden'}
+                items={ARCHIVED_ITEMS}
+                onChange={(choice) => archived.onChange(choice === 'shown')}
+              />
+            </Row>
+          ) : null}
+        </Section>
+      ) : null}
       <div className="flex items-center justify-between gap-2.5 px-3 py-2 text-xs text-fg-3">
         <span>Saved for you {place}</span>
         <Button variant="ghost" size="sm" onPress={onReset} className="h-6 px-0 text-xs text-accent-text">
@@ -284,6 +324,8 @@ export function DisplayButton({
   className,
 }: DisplayButtonProps) {
   const [displayOptions, set, reset] = useDisplayOptions(projectKey, view);
+  // "Archived tasks" is the URL's Archived filter: offered on a project's views inside the router.
+  const hasRouter = useRouter({ warn: false }) != null;
   const [open, setOpen] = useState(false);
   useViewRequests((request) => {
     if (request.kind === 'display') setOpen(true);
@@ -295,23 +337,47 @@ export function DisplayButton({
       </Button>
       <Popover placement="bottom start" offset={8} className="min-w-0 overflow-visible">
         <AriaDialog aria-label="Display options" className="outline-none">
-          <DisplayOptionsPanel
-            view={view}
-            options={displayOptions}
-            onChange={(change) => set(change)}
-            onReset={reset}
-            {...(onLayoutChange
-              ? {
-                  onLayoutChange: (layout: ViewLayout) => {
-                    setOpen(false);
-                    onLayoutChange(layout);
-                  },
-                }
-              : {})}
-            {...(groupChoices ? { groupChoices } : {})}
-          />
+          {(() => {
+            const panel: DisplayOptionsPanelProps = {
+              view,
+              options: displayOptions,
+              onChange: (change) => set(change),
+              onReset: reset,
+              ...(onLayoutChange
+                ? {
+                    onLayoutChange: (layout: ViewLayout) => {
+                      setOpen(false);
+                      onLayoutChange(layout);
+                    },
+                  }
+                : {}),
+              ...(groupChoices ? { groupChoices } : {}),
+            };
+            return projectKey && hasRouter ? (
+              <PanelWithArchived {...panel} />
+            ) : (
+              <DisplayOptionsPanel {...panel} />
+            );
+          })()}
         </AriaDialog>
       </Popover>
     </DialogTrigger>
+  );
+}
+
+/** The panel with "Archived tasks" read from and written to the URL's Archived filter. */
+function PanelWithArchived(props: DisplayOptionsPanelProps) {
+  const [filter, setFilter] = useUrlTaskFilter();
+  return (
+    <DisplayOptionsPanel
+      {...props}
+      archived={{
+        shown: filter.archived != null,
+        onChange: (shown) => {
+          const { archived: _archived, ...rest } = filter;
+          setFilter(shown ? { ...rest, archived: 'only' } : rest);
+        },
+      }}
+    />
   );
 }

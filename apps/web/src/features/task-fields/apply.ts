@@ -17,7 +17,7 @@ import { useApi } from '~/lib/workspace';
 import { localToday } from '~/ui';
 import { describeChange } from './describe';
 import { confirmFinishing } from './finishing';
-import { type FieldTarget, READ_ONLY_TEXT, subjectOf } from './targets';
+import { ARCHIVED_TEXT, type FieldTarget, READ_ONLY_TEXT, subjectOf } from './targets';
 import { showFieldToast } from './toast';
 
 // Applies a picker's change to its targets: one task through tasks.update, a selection through
@@ -36,6 +36,7 @@ export interface ApplyOptions {
 export function failureText(subject: string, error: unknown): string {
   if (error instanceof BulkRefusedError) return error.message;
   if (error instanceof ORPCError && error.code === 'TASK_MIRRORED') return READ_ONLY_TEXT;
+  if (error instanceof ORPCError && error.code === 'TASK_ARCHIVED') return ARCHIVED_TEXT;
   return `Couldn't change ${subject}. ${describeError(error).message}`;
 }
 

@@ -12,6 +12,7 @@ import type {
   ProjectActivity,
   ProjectBacklogSummary,
   ProjectWithCounts,
+  PullRequestLink,
   RelatedTask,
   StatusCounts,
   Task,
@@ -33,8 +34,10 @@ import { applyItemOps, type ItemOps, progressOf as workProgressOf } from '~/feat
 // cursor pagination, and from M5 labels, due dates, blockers with loop refusal, one level of
 // subtasks, bulk changes for native tasks only; from M6 the work record: criteria and done items with
 // their operations and history, the plan and summary with who wrote them, progress on list items, the
-// project's default done items, notes, and the timeline filter with its counts). Tests replace `client`
-// in ~/lib/orpc with `createFakeApi().client`.
+// project's default done items, notes, and the timeline filter with its counts; from M7 the check-again
+// day, archiving and restoring with the read-only rule, and requests linked by hand from the project's
+// repository with the host's known requests in `requests`). Tests replace `client` in ~/lib/orpc with
+// `createFakeApi().client`.
 
 const ANA = '00000000-0000-4000-8000-000000000001';
 const TOMAS = '00000000-0000-4000-8000-000000000002';
@@ -84,7 +87,15 @@ interface Options {
    * open), one of two done items checked, a plan, a final summary and two work notes.
    */
   workRecord?: boolean;
+  /**
+   * M7: the project links github.com/northwind/payments (default off: no repository). `requests` holds
+   * the host's requests a hand link can find.
+   */
+  repository?: boolean;
 }
+
+/** M7: the repository the fake project links with `repository: true`. */
+export const FAKE_REPOSITORY = 'github.com/northwind/payments';
 
 /** The project's default done items with `workRecord`. */
 export const FAKE_DEFAULT_DONE_ITEMS = ['Tests and lint pass', 'Changelog has a line'] as const;
@@ -97,6 +108,7 @@ export function createFakeApi({
   usesCycles = true,
   fields = false,
   workRecord = false,
+  repository = false,
 }: Options = {}) {
   const now = Date.now();
   const project = { id: '10000000-0000-4000-8000-000000000001', key: 'PAY', name: 'Payments' };
@@ -372,6 +384,10 @@ export function createFakeApi({
     });
   }
 
+  /** M7: the requests on the host, by number; hand links read them (dry run and link). */
+  const requests = new Map<number, Omit<PullRequestLink, 'how' | 'linkedBy' | 'linkedAt'>>();
+  const repo = { repository: repository ? FAKE_REPOSITORY : (null as string | null) };
+
   /** M3: the project's Backlog.md summary and project-level history (see `mirrorTask`). */
   const mirror = {
     summary: null as ProjectBacklogSummary | null,
@@ -385,6 +401,11 @@ export function createFakeApi({
     comments: [] as Input[],
     bulk: [] as Input[],
     labels: [] as Input[],
+    /** M7 */
+    archive: [] as Input[],
+    restore: [] as Input[],
+    link: [] as Input[],
+    unlink: [] as Input[],
   };
   /** Set to make the next tasks.update wait for `release` and then fail (or succeed). */
   const control = {
@@ -474,8 +495,20 @@ export function createFakeApi({
       finalSummaryMeta: _summaryMeta,
       ...row
     } = full(task);
+    // M7: the newest request and how many, as rows carry them.
+    const newest = [...(task.pullRequests ?? [])].sort((a, b) => b.openedAt.localeCompare(a.openedAt))[0];
     return {
       ...row,
+      pullRequest: newest
+        ? {
+            provider: newest.provider,
+            number: newest.number,
+            title: newest.title,
+            url: newest.url,
+            state: newest.state,
+          }
+        : null,
+      pullRequestCount: task.pullRequests?.length ?? 0,
       parentKey: parents.get(task.key) ?? null,
       criteriaProgress: workProgressOf(criteria),
       doneProgress: workProgressOf(doneItems),
@@ -532,6 +565,15 @@ export function createFakeApi({
     if (date === null || !isOpenStatus(task.status)) return false;
     if (due === 'overdue') return date < today;
     return date >= today && date <= soon;
+  };
+  /** M7: waiting (the day is ahead), ready (today or past), set or none. */
+  const checkAgainMatches = (task: Task, value: unknown, today: string) => {
+    const on = task.checkAgain?.on ?? null;
+    if (value === 'none') return on === null;
+    if (value === 'set') return on !== null;
+    if (value === 'waiting') return on !== null && on > today;
+    if (value === 'ready') return on !== null && on <= today;
+    return true;
   };
   const find = (key: unknown) => {
     const task = tasks.find((candidate) => candidate.key === String(key).toUpperCase());
@@ -593,6 +635,27 @@ export function createFakeApi({
         data: { field },
       });
     }
+  };
+  /** M7: every write but restore is refused on an archived task. */
+  const refuseArchived = (task: Task) => {
+    if (task.archivedAt) {
+      throw new ORPCError('TASK_ARCHIVED', {
+        status: 409,
+        message: `${task.key} is archived. Restore it to change it.`,
+      });
+    }
+  };
+  const pushActivity = (task: Task, entry: Partial<Activity>) => {
+    activity.push({
+      id: `40000000-0000-4000-8000-${String(2000 + activity.length).padStart(12, '0')}`,
+      type: 'task.updated',
+      taskKey: task.key,
+      actor: people.ana,
+      onBehalfOf: null,
+      changes: [],
+      createdAt: new Date().toISOString(),
+      ...entry,
+    });
   };
   const depthError = (key: string) =>
     new ORPCError('SUBTASK_DEPTH', {
@@ -760,6 +823,14 @@ export function createFakeApi({
       task.cycleAddedAt = task.cycle ? new Date().toISOString() : null;
     }
     if (input.dueDate !== undefined) task.dueDate = input.dueDate as string | null;
+    if (input.checkAgain !== undefined) {
+      const next = input.checkAgain as Task['checkAgain'];
+      if (next && !next.reason?.trim()) throw invalid('Say why to check again');
+      pushActivity(task, {
+        changes: [{ field: 'checkAgain', from: task.checkAgain ?? null, to: next ?? null }],
+      });
+      task.checkAgain = next ?? null;
+    }
     if (Array.isArray(input.labels)) task.labels = resolveLabels(input.labels as string[]);
     if (Array.isArray(input.removeLabels)) {
       const removed = new Set((input.removeLabels as string[]).map((name) => name.toLowerCase()));
@@ -797,7 +868,7 @@ export function createFakeApi({
               usesMilestones,
               usesCycles,
               currentCycle: null,
-              repository: null,
+              repository: repo.repository,
               createdAt: new Date(now - 86_400_000).toISOString(),
               updatedAt: new Date(now).toISOString(),
               openCounts: {
@@ -846,6 +917,11 @@ export function createFakeApi({
         const matching = sortedFor(input).filter(
           (task) =>
             (input.hidden === 'only' ? task.hidden === true : !task.hidden) &&
+            // M7: archived tasks are left out unless asked for.
+            (input.archived === 'only'
+              ? task.archivedAt != null
+              : input.archived === 'include' || task.archivedAt == null) &&
+            checkAgainMatches(task, input.checkAgain, today) &&
             (!q || task.title.toLowerCase().includes(q) || task.key.toLowerCase().includes(q)) &&
             (!priorities || priorities.includes(task.priority)) &&
             (!assignees || assignees.some((value) => assigneeMatches(task, value))) &&
@@ -898,6 +974,7 @@ export function createFakeApi({
           });
         }
         const task = find(input.key);
+        refuseArchived(task);
         refuseMirrored(task, input);
         if (typeof input.ifUpdatedAt === 'string' && input.ifUpdatedAt < task.updatedAt) {
           throw new ORPCError('TASK_CHANGED', {
@@ -940,6 +1017,37 @@ export function createFakeApi({
         for (const task of targets) {
           applyFields(task, input);
           task.updatedAt = now;
+        }
+        return structuredClone({ items: targets.map(listItem) });
+      },
+      archive: async (input: Input): Promise<TaskBulkResult> => {
+        calls.archive.push(input);
+        failIfAsked();
+        const targets = (input.keys as string[]).map(find);
+        const mirrored = targets.find((task) => (task.locked?.length ?? 0) > 0);
+        if (mirrored) {
+          throw new ORPCError('TASK_MIRRORED', {
+            status: 409,
+            message: `${mirrored.key} comes from Backlog.md`,
+          });
+        }
+        for (const task of targets) {
+          if (task.archivedAt) continue;
+          task.archivedAt = new Date().toISOString();
+          task.archivedBy = people.ana;
+          pushActivity(task, { type: 'task.archived' });
+        }
+        return structuredClone({ items: targets.map(listItem) });
+      },
+      restore: async (input: Input): Promise<TaskBulkResult> => {
+        calls.restore.push(input);
+        failIfAsked();
+        const targets = (input.keys as string[]).map(find);
+        for (const task of targets) {
+          if (!task.archivedAt) continue;
+          task.archivedAt = null;
+          task.archivedBy = null;
+          pushActivity(task, { type: 'task.unarchived' });
         }
         return structuredClone({ items: targets.map(listItem) });
       },
@@ -1052,6 +1160,99 @@ export function createFakeApi({
         return structuredClone(full(task));
       },
     },
+    pullRequests: {
+      link: async (input: Input): Promise<PullRequestLink> => {
+        calls.link.push(input);
+        failIfAsked();
+        const task = find(input.key);
+        refuseArchived(task);
+        if (!repo.repository) {
+          throw new ORPCError('CONFLICT', {
+            status: 409,
+            message: 'PAY has no repository. Set one in the project settings first.',
+          });
+        }
+        const url = String(input.url);
+        const match = /^https?:\/\/([^/]+)\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url);
+        if (!match) {
+          throw new ORPCError('NOT_A_REQUEST', {
+            status: 422,
+            message: 'That address is not a pull or merge request.',
+          });
+        }
+        if (`${match[1]}/${match[2]}`.toLowerCase() !== repo.repository) {
+          throw new ORPCError('REQUEST_OTHER_REPOSITORY', {
+            status: 422,
+            message: `That request is in another repository. PAY links ${repo.repository}.`,
+            data: { repository: repo.repository },
+          });
+        }
+        const found = requests.get(Number(match[3]));
+        if (!found) {
+          throw new ORPCError('REQUEST_NOT_FOUND', {
+            status: 404,
+            message: `${repo.repository} has no pull or merge request #${match[3]}.`,
+          });
+        }
+        const link: PullRequestLink = {
+          ...found,
+          how: 'hand',
+          linkedBy: people.ana,
+          linkedAt: new Date().toISOString(),
+        };
+        if (input.dryRun === true) return structuredClone(link);
+        const others = (task.pullRequests ?? []).filter((item) => item.number !== link.number);
+        task.pullRequests = [link, ...others];
+        pushActivity(task, {
+          type: 'task.pull_request_linked',
+          changes: [
+            {
+              field: 'pullRequest',
+              from: null,
+              to: {
+                provider: link.provider,
+                number: link.number,
+                title: link.title,
+                url: link.url,
+                how: 'hand',
+              },
+            },
+          ],
+        });
+        return structuredClone(link);
+      },
+      unlink: async (input: Input): Promise<void> => {
+        calls.unlink.push(input);
+        failIfAsked();
+        const task = find(input.key);
+        refuseArchived(task);
+        const number = Number(input.number);
+        const linked = (task.pullRequests ?? []).find((item) => item.number === number);
+        if (!linked) {
+          throw new ORPCError('REQUEST_NOT_FOUND', {
+            status: 404,
+            message: `${task.key} does not link #${number}.`,
+          });
+        }
+        task.pullRequests = (task.pullRequests ?? []).filter((item) => item.number !== number);
+        pushActivity(task, {
+          type: 'task.pull_request_unlinked',
+          changes: [
+            {
+              field: 'pullRequest',
+              from: {
+                provider: linked.provider,
+                number: linked.number,
+                title: linked.title,
+                url: linked.url,
+                how: linked.how,
+              },
+              to: null,
+            },
+          ],
+        });
+      },
+    },
     labels: {
       list: async (): Promise<{ items: LabelWithUsage[] }> => ({
         items: sortLabels(labels).map((label) => ({
@@ -1113,6 +1314,7 @@ export function createFakeApi({
           throw new ORPCError('INTERNAL_SERVER_ERROR', { status: 500, message: 'boom' });
         }
         const task = find(input.key);
+        refuseArchived(task);
         const kind = input.kind === 'note' ? 'note' : 'comment';
         if (kind === 'note' && (task.locked?.length ?? 0) > 0) {
           throw new ORPCError('TASK_MIRRORED', {
@@ -1187,6 +1389,9 @@ export function createFakeApi({
     /** M5 relations by task key: the keys each task waits on, and the parent of each subtask. */
     blockers,
     parents,
+    /** M7: the host's requests by number, and the project's repository (null for none). */
+    requests,
+    repo,
   };
 }
 

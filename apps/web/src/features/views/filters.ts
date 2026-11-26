@@ -15,6 +15,7 @@ import {
   type TaskListItem,
   type TaskStatus,
 } from '@zamu/contracts';
+import { checkAgainState } from '~/ui';
 
 // The filter model shared by the list, the board and Home (frames 013, 046, 047), its URL form and
 // its tasks.list / home.get input.
@@ -24,6 +25,7 @@ import {
 //   status=todo,in_progress   priority=urgent,high   assignee=me,agents,none,<user id>
 //   label=<label id>,…        (Home: label names)    due=overdue|soon|none|set
 //   blocked=true|false        milestone=<id>,none     cycle=12,current,next,none   q=<search text>
+//   checkAgain=waiting|ready  archived=only|include   (M7)
 // Other params (task, view, lanes, hidden) are left alone.
 
 /** Assignee filter value for tasks with nobody assigned. */
@@ -45,11 +47,26 @@ export interface TaskFilter {
   /** Milestone ids or 'none'. */
   milestone?: string[];
   cycle?: CycleFilterValue[];
+  /** M7: waiting (the check-again day is ahead) or ready to check (the day has come). */
+  checkAgain?: TaskCheckAgainFilter;
+  /**
+   * M7: archived tasks, left out when unset. only: just the archived ones ("Archived is shown", what
+   * Display's "Archived tasks: Shown" and the palette's "Show archived tasks" set); include: with the rest.
+   */
+  archived?: TaskArchivedFilter;
   /** The view's search text (the header's search, `/`). Never a chip. */
   q?: string;
 }
 
-/** Fields the filter menu offers, in its order (frame 046). */
+/** M7: the check-again values the filter offers (the API also takes set and none). */
+export type TaskCheckAgainFilter = 'waiting' | 'ready';
+export const TASK_CHECK_AGAIN_FILTERS: readonly TaskCheckAgainFilter[] = ['waiting', 'ready'];
+
+/** M7: archived tasks in the view (exclude, the API's default, is "unset"). */
+export type TaskArchivedFilter = 'only' | 'include';
+export const TASK_ARCHIVED_FILTERS: readonly TaskArchivedFilter[] = ['only', 'include'];
+
+/** Fields the filter menu offers, in its order (frame 046; M7 adds check again and archived). */
 export type FilterField =
   | 'status'
   | 'priority'
@@ -58,7 +75,9 @@ export type FilterField =
   | 'due'
   | 'blocked'
   | 'milestone'
-  | 'cycle';
+  | 'cycle'
+  | 'checkAgain'
+  | 'archived';
 export const FILTER_FIELDS: readonly FilterField[] = [
   'status',
   'priority',
@@ -68,6 +87,8 @@ export const FILTER_FIELDS: readonly FilterField[] = [
   'blocked',
   'milestone',
   'cycle',
+  'checkAgain',
+  'archived',
 ];
 
 /** The URL params the filter owns. */
@@ -157,6 +178,18 @@ export function parseTaskFilter(
     }),
   );
   if (cycle) filter.cycle = cycle;
+  if (
+    typeof search.checkAgain === 'string' &&
+    (TASK_CHECK_AGAIN_FILTERS as readonly string[]).includes(search.checkAgain)
+  ) {
+    filter.checkAgain = search.checkAgain as TaskCheckAgainFilter;
+  }
+  if (
+    typeof search.archived === 'string' &&
+    (TASK_ARCHIVED_FILTERS as readonly string[]).includes(search.archived)
+  ) {
+    filter.archived = search.archived as TaskArchivedFilter;
+  }
   if (typeof search.q === 'string' && search.q.trim()) filter.q = search.q.slice(0, 200);
   return filter;
 }
@@ -182,6 +215,8 @@ export function taskFilterSearch(filter: TaskFilter): TaskFilterSearch {
     blocked: filter.blocked,
     milestone: list(filter.milestone),
     cycle,
+    checkAgain: filter.checkAgain,
+    archived: filter.archived,
     q: filter.q?.trim() ? filter.q : undefined,
   };
 }
@@ -251,7 +286,17 @@ function normalizeOrder(filter: TaskFilter): TaskFilter {
 /** The tasks.list fields a filter sets (everything but project, order, sort, cursor and limit). */
 export type TaskFilterInput = Pick<
   ListTasksInput,
-  'status' | 'priority' | 'assignee' | 'label' | 'due' | 'blocked' | 'milestone' | 'cycle' | 'q'
+  | 'status'
+  | 'priority'
+  | 'assignee'
+  | 'label'
+  | 'due'
+  | 'blocked'
+  | 'milestone'
+  | 'cycle'
+  | 'checkAgain'
+  | 'archived'
+  | 'q'
 >;
 
 /** The part of the filter tasks.list applies: all of it (assignee, milestone and cycle take several values and 'none'). */
@@ -265,6 +310,8 @@ export function toListTasksInput(filter: TaskFilter): Partial<TaskFilterInput> {
     ...(filter.blocked !== undefined ? { blocked: filter.blocked } : {}),
     ...(filter.milestone?.length ? { milestone: [...filter.milestone] } : {}),
     ...(filter.cycle?.length ? { cycle: [...filter.cycle] } : {}),
+    ...(filter.checkAgain ? { checkAgain: filter.checkAgain } : {}),
+    ...(filter.archived ? { archived: filter.archived } : {}),
     ...(filter.q?.trim() ? { q: filter.q.trim() } : {}),
   };
 }
@@ -294,7 +341,9 @@ export interface ClientFilterContext {
 }
 
 type FilterableTask = Pick<TaskListItem, 'status' | 'priority' | 'assignee'> &
-  Partial<Pick<TaskListItem, 'labels' | 'dueDate' | 'blocked' | 'milestone' | 'cycle'>>;
+  Partial<
+    Pick<TaskListItem, 'labels' | 'dueDate' | 'blocked' | 'milestone' | 'cycle' | 'checkAgain' | 'archivedAt'>
+  >;
 
 function assigneeMatches(task: FilterableTask, value: string, viewerId: string | null | undefined): boolean {
   if (value === ASSIGNEE_NONE) return !task.assignee;
@@ -377,6 +426,18 @@ export function matchesTaskFilter(
       case 'cycle':
         if (filter.cycle && !filter.cycle.some((value) => cycleMatches(task, value))) return false;
         break;
+      case 'checkAgain': {
+        if (!filter.checkAgain) break;
+        const on = task.checkAgain?.on;
+        if (!on) return false;
+        if (context.today && checkAgainState(on, context.today) !== filter.checkAgain) return false;
+        break;
+      }
+      case 'archived': {
+        const archived = task.archivedAt != null;
+        if (filter.archived === 'only' ? !archived : filter.archived === undefined && archived) return false;
+        break;
+      }
     }
   }
   return true;

@@ -11,6 +11,8 @@ import {
 import { type DisplayOptions, displayListInput } from '~/features/views/display-options';
 import {
   parseTaskFilter,
+  type TaskArchivedFilter,
+  type TaskCheckAgainFilter,
   type TaskFilter,
   taskFilterSearch,
   toListTasksInput,
@@ -20,6 +22,7 @@ import type { WorkspaceUrlSlug } from '~/lib/workspace-paths';
 // URL state of a project's tasks, list and board:
 //   /p/PAY?q=webhook&status=todo,in_progress&priority=high&assignee=me,agents&label=<id>,<id>
 //          &due=overdue&blocked=true&milestone=<id>,none&cycle=12|current,next&view=board&lanes=assignee
+//          &checkAgain=waiting|ready&archived=only|include   (M7)
 //          &hidden=only   (mirrored projects: tasks whose Backlog.md file is gone; list only)
 //          &focus=PAY-142 (the list focuses this row once, then drops the param: "back to the list")
 // The filter params are the M5 filter model's (features/views/filters.ts); a single value reads as in
@@ -61,6 +64,10 @@ export interface TaskListSearch {
   due?: DueFilter;
   /** M5: only blocked tasks (true) or only tasks that aren't (false). */
   blocked?: boolean;
+  /** M7: tasks waiting for their check-again day, or whose day has come. */
+  checkAgain?: TaskCheckAgainFilter;
+  /** M7: only archived tasks, or archived ones with the rest (left out when unset). */
+  archived?: TaskArchivedFilter;
   /** 'board' shows the board; absent means the list. */
   view?: 'board';
   /** Board only: swimlanes by assignee or by milestone. */
@@ -93,7 +100,8 @@ function taskKeyParam(value: unknown): string | undefined {
 
 /**
  * validateSearch for the task list route. Keeps the M5 filter params (several values, label, due,
- * blocked) and the M1–M4 ones, and drops anything it does not understand.
+ * blocked), M7's check-again and archived ones and the M1–M4 ones, and drops anything it does not
+ * understand.
  */
 export function parseTaskListSearch(search: Record<string, unknown>): TaskListSearch {
   const result: TaskListSearch = {};
@@ -113,6 +121,8 @@ export function parseTaskListSearch(search: Record<string, unknown>): TaskListSe
   if (typeof url.label === 'string') result.label = url.label;
   if (filter.due) result.due = filter.due;
   if (filter.blocked !== undefined) result.blocked = filter.blocked;
+  if (filter.checkAgain) result.checkAgain = filter.checkAgain;
+  if (filter.archived) result.archived = filter.archived;
   if (search.view === 'board') result.view = 'board';
   if (typeof search.lanes === 'string' && (BOARD_LANES as readonly string[]).includes(search.lanes)) {
     result.lanes = search.lanes as BoardLanes;
@@ -137,6 +147,8 @@ export function hasFilters(search: TaskListSearch): boolean {
       search.label ||
       search.due ||
       search.blocked !== undefined ||
+      search.checkAgain ||
+      search.archived ||
       search.hidden,
   );
 }

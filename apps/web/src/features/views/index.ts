@@ -1,6 +1,8 @@
 // Views foundation (M5-08): display options, filters, selection and navigation memory shared by
 // the list (M5-11), the board (M5-12), the task view (M5-13) and Home (M5-14); M6 adds the
-// criteria and done-item counts those views show.
+// criteria and done-item counts those views show. M7 adds the waiting and archived options, the
+// check-again and archived filters and the row markers; archive.tsx (Shift+E, the action bar's
+// Archive) is imported from its own path, as it pulls in the task mutations.
 
 export { type UseViewCommandsOptions, useViewCommands } from './commands';
 export {
@@ -22,7 +24,9 @@ export {
   type GroupBy,
   type GroupContext,
   groupTasks,
+  hiddenWaitingText,
   hideOldDone,
+  isWaiting,
   LIST_STATUS_ORDER,
   type ListSubtasks,
   NO_VALUE_GROUP,
@@ -37,6 +41,11 @@ export {
   type TaskProperty,
   type TaskViewName,
   type ViewLayout,
+  WAITING_TASK_LABELS,
+  WAITING_TASKS,
+  type WaitingTasks,
+  waitingLook,
+  withoutHiddenWaiting,
 } from './display-options';
 export {
   FieldFilterPopover,
@@ -79,6 +88,8 @@ export {
   matchesTaskFilter,
   parseTaskFilter,
   sameTaskFilter,
+  type TaskArchivedFilter,
+  type TaskCheckAgainFilter,
   type TaskFilter,
   type TaskFilterInput,
   type TaskFilterSearch,
@@ -88,6 +99,13 @@ export {
   withoutField,
   withTaskFilter,
 } from './filters';
+export {
+  ArchivedNote,
+  ArchivedRowEnd,
+  archivedDayText,
+  TaskCheckAgainChip,
+  TaskRequestMarker,
+} from './markers';
 export {
   forgetTaskNavigation,
   readTaskNavigation,

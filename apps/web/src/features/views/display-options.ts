@@ -10,11 +10,13 @@ import {
   type TaskSort,
   type TaskStatus,
 } from '@zamu/contracts';
-import { PRIORITY_LABELS, STATUS_LABELS, showsPriorityOnCards } from '~/ui';
+import { checkAgainState, PRIORITY_LABELS, STATUS_LABELS, showsPriorityOnCards } from '~/ui';
 
 // Display options of a task view (brief "Display options", frame 045): how the list, the board and
 // Home lay out, group, order and decorate tasks. Remembered per person, project and view in
-// localStorage (plan call 4; see useDisplayOptions). Named, shared views come with PM-15.
+// localStorage (plan call 4; see useDisplayOptions). Named, shared views come with PM-15. M7 adds the
+// pull-request and check-again chips and "Waiting tasks" (Shown, Shown dimmed, Hidden). "Archived tasks"
+// is not stored here: it is the Archived filter in the URL (see DisplayOptions.tsx).
 
 /** The views that keep their own display options. Home has only the list layout. */
 export type TaskViewName = 'list' | 'board' | 'home';
@@ -54,6 +56,8 @@ export type TaskProperty =
   | 'labels'
   | 'subtasks'
   | 'criteria'
+  | 'pullRequest'
+  | 'checkAgain'
   | 'due'
   | 'blocked'
   | 'assignee'
@@ -67,6 +71,8 @@ export const TASK_PROPERTIES: readonly TaskProperty[] = [
   'labels',
   'subtasks',
   'criteria',
+  'pullRequest',
+  'checkAgain',
   'due',
   'blocked',
   'assignee',
@@ -75,6 +81,14 @@ export const TASK_PROPERTIES: readonly TaskProperty[] = [
   'created',
   'updated',
 ];
+
+/**
+ * M7 "Waiting tasks": tasks whose check-again day is still ahead. Shown as any other task, shown
+ * dimmed (the default), or left out ("2 waiting, hidden" at the end of a board column). A task whose
+ * day has come is never dimmed or hidden.
+ */
+export type WaitingTasks = 'shown' | 'dimmed' | 'hidden';
+export const WAITING_TASKS: readonly WaitingTasks[] = ['shown', 'dimmed', 'hidden'];
 
 /** "Hide done tasks after": days, 0 for never. */
 export const HIDE_DONE_CHOICES: readonly number[] = [0, 1, 3, 7, 14, 30];
@@ -93,6 +107,8 @@ export interface DisplayOptions {
   showEmptyGroups: boolean;
   /** Hide Done and Canceled tasks last updated more than this many days ago; 0 never hides them. */
   hideDoneAfterDays: number;
+  /** M7: how tasks waiting for their check-again day show. */
+  waiting: WaitingTasks;
   /**
    * Which properties rows and cards show. Two rules hold whatever is on: priority shows only for
    * Urgent and High, and the assignee avatar only when the task is someone else's (see showsProperty).
@@ -111,6 +127,9 @@ const DEFAULT_PROPERTIES: Record<TaskProperty, boolean> = {
   subtasks: true,
   // M6 design call 7: the criteria marker is off by default on rows and cards.
   criteria: false,
+  // M7 design call 13: the request marker is off by default, the check-again chip on.
+  pullRequest: false,
+  checkAgain: true,
   due: true,
   blocked: true,
   assignee: true,
@@ -129,6 +148,7 @@ const BASE: DisplayOptions = {
   boardSubtasks: 'expandable',
   showEmptyGroups: false,
   hideDoneAfterDays: 14,
+  waiting: 'dimmed',
   properties: DEFAULT_PROPERTIES,
 };
 
@@ -184,6 +204,7 @@ export function normalizeDisplayOptions(view: TaskViewName, raw: unknown): Displ
       value.hideDoneAfterDays <= 365
         ? value.hideDoneAfterDays
         : base.hideDoneAfterDays,
+    waiting: pick(value.waiting, WAITING_TASKS, base.waiting),
     properties,
   };
 }
@@ -198,6 +219,7 @@ export function sameDisplayOptions(a: DisplayOptions, b: DisplayOptions): boolea
     a.boardSubtasks === b.boardSubtasks &&
     a.showEmptyGroups === b.showEmptyGroups &&
     a.hideDoneAfterDays === b.hideDoneAfterDays &&
+    a.waiting === b.waiting &&
     TASK_PROPERTIES.every((property) => a.properties[property] === b.properties[property])
   );
 }
@@ -236,6 +258,8 @@ export const PROPERTY_LABELS: Record<TaskProperty, string> = {
   labels: 'Labels',
   subtasks: 'Subtasks',
   criteria: 'Criteria',
+  pullRequest: 'Pull request',
+  checkAgain: 'Check again',
   due: 'Due date',
   blocked: 'Blocked',
   assignee: 'Assignee',
@@ -243,6 +267,12 @@ export const PROPERTY_LABELS: Record<TaskProperty, string> = {
   cycle: 'Cycle',
   created: 'Created',
   updated: 'Updated',
+};
+
+export const WAITING_TASK_LABELS: Record<WaitingTasks, string> = {
+  shown: 'Shown',
+  dimmed: 'Shown, dimmed',
+  hidden: 'Hidden',
 };
 
 export function hideDoneLabel(days: number): string {
@@ -301,6 +331,49 @@ export function hideOldDone<T extends Pick<DisplayTask, 'status' | 'updatedAt'>>
   if (days <= 0) return [...tasks];
   const cutoff = now.getTime() - days * DAY_MS;
   return tasks.filter((task) => !CLOSED.has(task.status) || Date.parse(task.updatedAt) >= cutoff);
+}
+
+// ---------------------------------------------------------------------------
+// Waiting tasks (M7)
+// ---------------------------------------------------------------------------
+
+/**
+ * True while the task waits: its check-again day is after `today` (YYYY-MM-DD). False without a day,
+ * from the day on, and while today is unknown (null, before useNow() has a value), so nothing is
+ * dimmed or hidden by a guess.
+ */
+export function isWaiting(task: Partial<Pick<TaskListItem, 'checkAgain'>>, today: string | null): boolean {
+  const on = task.checkAgain?.on;
+  return Boolean(on && today && checkAgainState(on, today) === 'waiting');
+}
+
+/** How a row or card draws under "Waiting tasks": 'dimmed', 'hidden', or null (as any other task). */
+export function waitingLook(
+  options: Pick<DisplayOptions, 'waiting'>,
+  task: Partial<Pick<TaskListItem, 'checkAgain'>>,
+  today: string | null,
+): 'dimmed' | 'hidden' | null {
+  if (options.waiting === 'shown' || !isWaiting(task, today)) return null;
+  return options.waiting;
+}
+
+/**
+ * Splits tasks under "Waiting tasks: Hidden": the ones shown and how many waiting ones were left out.
+ * Other settings keep every task (the same array).
+ */
+export function withoutHiddenWaiting<T extends Partial<Pick<TaskListItem, 'checkAgain'>>>(
+  tasks: readonly T[],
+  options: Pick<DisplayOptions, 'waiting'>,
+  today: string | null,
+): { tasks: readonly T[]; hidden: number } {
+  if (options.waiting !== 'hidden' || !today) return { tasks, hidden: 0 };
+  const shown = tasks.filter((task) => !isWaiting(task, today));
+  return { tasks: shown, hidden: tasks.length - shown.length };
+}
+
+/** "2 waiting, hidden": the end of a board column (or a list group) that left waiting tasks out. */
+export function hiddenWaitingText(count: number): string {
+  return `${count} waiting, hidden`;
 }
 
 // ---------------------------------------------------------------------------

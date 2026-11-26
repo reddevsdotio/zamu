@@ -1,5 +1,5 @@
 // The keyboard shortcut list (?), from .agent/design/m5/shortcuts.md and the M6 additions in
-// .agent/design/m6/shortcuts.md. On Windows and Linux ⌘ reads Ctrl.
+// .agent/design/m6/shortcuts.md (M6 and M7 sections). On Windows and Linux ⌘ reads Ctrl.
 
 export interface ShortcutRow {
   /** Chips in order. */
@@ -62,7 +62,11 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ['⇧C'], action: 'Cycle' },
       { keys: ['⇧B'], action: 'Add blocker' },
       { keys: ['⇧S'], action: 'Add subtask' },
+      { keys: ['⇧P'], action: 'Link a pull request (task view and peek)' },
+      { keys: ['⇧E'], action: 'Archive, or restore an archived task' },
+      { keys: ['⇧W'], action: 'Set the check-again day' },
       { keys: ['M'], action: 'Comment' },
+      { keys: ['⌘Z'], action: 'Undo archiving, while the toast shows' },
       { keys: ['⌘C'], action: 'Copy the task key' },
       { keys: ['⌘⇧C'], action: 'Copy the link' },
     ],

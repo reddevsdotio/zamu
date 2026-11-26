@@ -39,6 +39,8 @@ export interface CardListProps {
   renderCard: (card: TaskListItem) => ReactNode;
   /** A subtask shown as its own card: tighter. */
   isChild?: (card: TaskListItem) => boolean;
+  /** M7: a task waiting for its check-again day under "Waiting tasks: Shown, dimmed" (frame 101). */
+  isDimmed?: (card: TaskListItem) => boolean;
   /** Cards keep their place (manual order): drops between cards say where. Otherwise a drop is into the cell. */
   reorderable?: boolean;
   /** Turns drag and drop off (while loading). */
@@ -74,6 +76,7 @@ export const CardList = memo(function CardList({
   onDrop,
   renderCard,
   isChild,
+  isDimmed,
   reorderable = true,
   isDisabled = false,
   refuseDrops = false,
@@ -152,7 +155,7 @@ export const CardList = memo(function CardList({
       onAction={(key) => onAction(String(key))}
       disallowTypeAhead
       escapeKeyBehavior="none"
-      dependencies={[cursor, isSelected, renderCard, ...dependencies]}
+      dependencies={[cursor, isSelected, renderCard, isDimmed, ...dependencies]}
       dragAndDropHooks={dragAndDropHooks}
       data-column={column}
       renderEmptyState={() => empty ?? <div className="min-h-12 flex-1" />}
@@ -165,7 +168,12 @@ export const CardList = memo(function CardList({
           data-card-key={card.key}
           data-cursor={card.key === cursor || undefined}
           data-multi={isSelected(card.key) || undefined}
-          className={boardCardStyles({ child: isChild?.(card) ?? false })}
+          data-waiting={isDimmed?.(card) || undefined}
+          className={cn(
+            boardCardStyles({ child: isChild?.(card) ?? false }),
+            // m7.css .card.waiting: the card keeps its place, quieter.
+            isDimmed?.(card) && 'opacity-62',
+          )}
         >
           {/* React Aria's keyboard and screen reader drag starts from this button; sighted keyboard users
               have Shift+← / Shift+→. */}

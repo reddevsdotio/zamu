@@ -2,6 +2,7 @@ import type { TaskListItem, TaskStatus } from '@zamu/contracts';
 import { type ReactNode, useEffect, useRef } from 'react';
 import { Button as AriaButton, isTextDropItem, useDrop } from 'react-aria-components';
 import type { TaskGroupValue } from '~/features/views';
+import { hiddenWaitingText } from '~/features/views/display-options';
 import {
   Avatar,
   BoardCardSkeleton,
@@ -9,6 +10,8 @@ import {
   BoardColumnEmpty,
   BoardColumnHeader,
   BoardFoldedColumn,
+  Button,
+  ClockGlyph,
   CycleGlyph,
   cn,
   isMilestoneFilled,
@@ -43,6 +46,8 @@ export interface BoardColumnModel {
   fetchMore?: () => Promise<unknown>;
   /** Cards loaded so far (before "Hide done tasks after"), for "N more". */
   loaded?: number;
+  /** M7: waiting tasks left out under "Waiting tasks: Hidden" ("2 waiting, hidden"). */
+  hiddenWaiting?: number;
 }
 
 /** What every cell's CardList gets from the board. */
@@ -53,6 +58,7 @@ export type CellProps = Pick<
   | 'onAction'
   | 'renderCard'
   | 'isChild'
+  | 'isDimmed'
   | 'reorderable'
   | 'onDragEnd'
   | 'dependencies'
@@ -75,6 +81,42 @@ export interface BoardBodyProps {
   dropTarget?: string | null;
   /** Text of an empty open column. */
   emptyText: (column: BoardColumnModel) => ReactNode;
+  /** M7: "Show" in a column's "2 waiting, hidden" footer. */
+  onShowWaiting?: (column: BoardColumnModel) => void;
+}
+
+/** M7 (frame 101): the end of a column that leaves waiting tasks out, with Show. */
+export function HiddenWaitingFooter({
+  count,
+  column,
+  onShow,
+}: {
+  count: number;
+  /** The column's name, for Show's accessible name. */
+  column: string;
+  onShow?: () => void;
+}) {
+  return (
+    <div
+      data-hidden-waiting=""
+      className="mx-0 flex h-7.5 shrink-0 items-center gap-1.75 px-1.5 text-xs text-fg-3"
+    >
+      <ClockGlyph />
+      <span>{hiddenWaitingText(count)}</span>
+      <span className="flex-1" />
+      {onShow ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Show the waiting tasks in ${column}`}
+          className="h-6 px-1 text-xs text-accent-text"
+          onPress={onShow}
+        >
+          Show
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
 /** The header glyph of a group: status ring, priority bars, avatar, milestone diamond, cycle, label dot. */
@@ -180,6 +222,7 @@ export function BoardColumns({
   onDragOver,
   dropTarget = null,
   emptyText,
+  onShowWaiting,
 }: BoardBodyProps) {
   return (
     <div className="flex min-h-0 flex-1 gap-3.5 overflow-x-auto pt-3 pr-3.5 pl-4.5">
@@ -224,6 +267,13 @@ export function BoardColumns({
                 empty={<BoardColumnEmpty className="mx-0">{emptyText(column)}</BoardColumnEmpty>}
               />
             )}
+            {column.hiddenWaiting ? (
+              <HiddenWaitingFooter
+                count={column.hiddenWaiting}
+                column={column.label}
+                {...(onShowWaiting ? { onShow: () => onShowWaiting(column) } : {})}
+              />
+            ) : null}
           </BoardColumn>
         );
       })}

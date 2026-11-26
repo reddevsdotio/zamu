@@ -19,7 +19,8 @@ export type TaskFieldKey =
   | 'cycle'
   | 'blockedBy'
   | 'subtasks'
-  | 'parent';
+  | 'parent'
+  | 'checkAgain';
 
 /** The owned field behind each picker: subtasks are the children's parent field. Cycles are app-side. */
 const OWNED: Record<TaskFieldKey, TaskOwnedField | null> = {
@@ -33,10 +34,18 @@ const OWNED: Record<TaskFieldKey, TaskOwnedField | null> = {
   blockedBy: 'blockedBy',
   subtasks: 'parent',
   parent: 'parent',
+  // M7: not a Backlog.md field, so mirrored tasks may hold one.
+  checkAgain: null,
 };
 
 /** The lock tooltip of a read-only field. */
 export const READ_ONLY_TEXT = 'Read-only: fields come from Backlog.md';
+
+/** M7: an archived task refuses every change but restore. */
+export const ARCHIVED_TEXT = 'Archived: restore the task to change it.';
+
+/** M7: archived tasks are read-only (the server answers TASK_ARCHIVED). */
+export const isArchivedTarget = (target: FieldTarget) => target.archivedAt != null;
 
 export function toTargets(targets: FieldTarget | readonly FieldTarget[] | null | undefined): FieldTarget[] {
   if (!targets) return [];
@@ -68,13 +77,20 @@ export function projectKeysOf(targets: readonly FieldTarget[]): string[] {
 }
 
 /**
- * Why a field can't change for these targets, or null when it can. One task: its locked fields
- * (the picker still opens, read-only). Several: bulk rules; milestones and cycles need one project;
- * subtasks need one parent; a parent is set on one task.
+ * Why a field can't change for these targets, or null when it can. Archived tasks (M7): nothing changes.
+ * One task: its locked fields (the picker still opens, read-only). Several: bulk rules; milestones and
+ * cycles need one project; subtasks need one parent; a parent and a check-again day are set on one task.
  */
 export function fieldRefusal(targets: readonly FieldTarget[], field: TaskFieldKey): string | null {
   if (targets.length === 0) return 'Select a task first';
+  const archived = targets.filter(isArchivedTarget).length;
+  if (archived > 0) {
+    return targets.length === 1
+      ? ARCHIVED_TEXT
+      : `${archived} of ${targets.length} selected tasks are archived. Restore them to change them.`;
+  }
   if (targets.length === 1) return isFieldLocked(targets, field) ? READ_ONLY_TEXT : null;
+  if (field === 'checkAgain') return 'A check-again day is set on one task at a time. Select one task.';
   if (field === 'subtasks') return 'Subtasks need one parent. Select one task.';
   if (field === 'parent') return 'A parent is set on one task at a time. Select one task.';
   if (field === 'blockedBy') return 'Blockers are added to one task at a time. Select one task.';

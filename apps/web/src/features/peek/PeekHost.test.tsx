@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRoute,
@@ -12,13 +12,33 @@ import userEvent from '@testing-library/user-event';
 import type { Task } from '@zamu/contracts';
 import { ana, claudeDev, workItemFixtures } from '@zamu/contracts/testing/fixtures';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createFakeApi, type FakeApi } from '~/features/tasks/fake-api';
+import { TaskFieldToast, useTaskFieldKeys } from '~/features/task-fields';
+import { resetFieldToastForTests } from '~/features/task-fields/toast';
+import { createFakeApi, FAKE_REPOSITORY, type FakeApi } from '~/features/tasks/fake-api';
+import { taskQuery } from '~/features/tasks/queries';
 import { readTaskNavigation } from '~/features/views';
 import { testWorkspace } from '~/lib/testing';
-import { WorkspaceProvider } from '~/lib/workspace';
+import { useApi, WorkspaceProvider } from '~/lib/workspace';
 import { UIProvider } from '~/ui';
 import { PeekHost } from './PeekHost';
-import { closePeek, openPeek } from './store';
+import { closePeek, openPeek, usePeek } from './store';
+
+/**
+ * Stands in for a list: like the list, the board and Home, it binds the task keys (⇧W included) for its
+ * focused task and turns them off while the peek is open.
+ */
+function StandInList() {
+  const api = useApi();
+  const peekOpen = usePeek() != null;
+  const task = useQuery(taskQuery(api, 'PAY-1')).data;
+  const keys = useTaskFieldKeys({ targets: task ? [task] : [], enabled: !peekOpen, commands: false });
+  return (
+    <>
+      <p>List</p>
+      {keys.pickers}
+    </>
+  );
+}
 
 // The peek (frames 067–070; M6 frame 023 for the work record) over a stand-in list, against the
 // in-memory /api/v1 client.
@@ -52,13 +72,14 @@ function renderApp(url = '/w/acme/p/PAY') {
       <UIProvider>
         <Outlet />
         <PeekHost />
+        <TaskFieldToast />
       </UIProvider>
     ),
   });
   const list = createRoute({
     getParentRoute: () => root,
     path: '/w/$workspace/p/$projectKey/',
-    component: () => <p>List</p>,
+    component: StandInList,
   });
   const page = createRoute({
     getParentRoute: () => root,
@@ -89,7 +110,10 @@ beforeEach(() => {
   window.sessionStorage.clear();
 });
 
-afterEach(() => act(() => closePeek()));
+afterEach(() => {
+  act(() => closePeek());
+  resetFieldToastForTests();
+});
 
 describe('peek', () => {
   it('shows the title, the properties as chips and the latest comment, without a scrim', async () => {
@@ -196,6 +220,168 @@ describe('peek', () => {
     expect(within(panel).queryByRole('img', { name: /criteri|done item/ })).not.toBeInTheDocument();
     expect(within(panel).queryByRole('region', { name: 'Summary' })).not.toBeInTheDocument();
     expect(within(panel).getByText('First line.')).toBeInTheDocument();
+  });
+
+  describe('M7', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+      vi.setSystemTime(new Date(2026, 10, 26, 12));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('shows the newest request, the check-again chip and its reason under the chips', async () => {
+      const task = fake().tasks[0] as Task;
+      Object.assign(task, {
+        checkAgain: { on: '2026-12-03', reason: 'the bank issues the new certificate on Dec 1.' },
+        pullRequests: [
+          {
+            provider: 'github',
+            number: 482,
+            title: 'Retry failed payouts',
+            url: 'https://github.com/northwind/payments/pull/482',
+            state: 'open',
+            headBranch: 'pay-1-retry',
+            baseBranch: 'main',
+            author: 'claude-dev',
+            mergedBy: null,
+            how: 'branch',
+            linkedBy: null,
+            linkedAt: '2026-11-20T10:00:00.000Z',
+            openedAt: '2026-11-20T10:00:00.000Z',
+            mergedAt: null,
+            closedAt: null,
+            updatedAt: '2026-11-20T10:00:00.000Z',
+          },
+        ],
+      });
+      renderApp();
+      await screen.findByText('List');
+      act(() => openPeek({ key: 'PAY-1', keys: ['PAY-1'], from: 'List' }));
+      const panel = await screen.findByRole('region', { name: 'Peek: PAY-1' });
+      await within(panel).findByRole('heading', { name: /Task number 1/ });
+      expect(panel.querySelector('[data-request-chip]')).toHaveTextContent('#482 open');
+      const chip = within(panel).getByRole('button', { name: 'Check again' });
+      expect(chip).toHaveTextContent('Waiting until Dec 3');
+      expect(
+        within(panel).getByText('Why it waits: the bank issues the new certificate on Dec 1.'),
+      ).toBeInTheDocument();
+      // Shift+W opens the check-again picker.
+      const user = userEvent.setup();
+      await user.keyboard('{Shift>}W{/Shift}');
+      expect(await screen.findByRole('dialog', { name: /Check again/ })).toBeInTheDocument();
+    });
+
+    it('opens one check-again picker for one ⇧W, while the list behind keeps its keys off', async () => {
+      const task = fake().tasks[0] as Task;
+      Object.assign(task, { checkAgain: { on: '2026-12-03', reason: 'The bank answers' } });
+      const user = userEvent.setup();
+      renderApp();
+      await screen.findByText('List');
+      act(() => openPeek({ key: 'PAY-1', keys: ['PAY-1'], from: 'List' }));
+      const panel = await screen.findByRole('region', { name: 'Peek: PAY-1' });
+      await within(panel).findByRole('button', { name: 'Check again' });
+      await user.keyboard('{Shift>}W{/Shift}');
+      await screen.findByRole('dialog', { name: /Check again/ });
+      // Give a second picker the time to show up.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(screen.getAllByRole('dialog', { name: /Check again/ })).toHaveLength(1);
+    });
+
+    it('⇧P opens the paste field under the chips, and ↵ links the request', async () => {
+      api.current = createFakeApi({ fields: true, repository: true });
+      const linked = {
+        provider: 'github' as const,
+        number: 485,
+        title: 'Runbook entry for payout retries',
+        url: `https://${FAKE_REPOSITORY}/pull/485`,
+        state: 'open' as const,
+        headBranch: 'runbook',
+        baseBranch: 'main',
+        author: 'claude-dev',
+        mergedBy: null,
+        openedAt: '2026-11-20T10:00:00.000Z',
+        mergedAt: null,
+        closedAt: null,
+        updatedAt: '2026-11-20T10:00:00.000Z',
+      };
+      fake().requests.set(485, linked);
+      const user = userEvent.setup();
+      renderApp();
+      await screen.findByText('List');
+      act(() => openPeek({ key: 'PAY-1', keys: ['PAY-1'], from: 'List' }));
+      const panel = await screen.findByRole('region', { name: 'Peek: PAY-1' });
+      await within(panel).findByRole('heading', { name: /Task number 1/ });
+      expect(within(panel).queryByRole('textbox', { name: 'Pull request address' })).toBeNull();
+
+      await user.keyboard('{Shift>}P{/Shift}');
+      const field = await within(panel).findByRole('textbox', { name: 'Pull request address' });
+      expect(field).toHaveFocus();
+      await user.paste(`https://${FAKE_REPOSITORY}/pull/485`);
+      await waitFor(() => expect(panel.querySelector('[data-preview]')).not.toBeNull());
+      // Typing in the field never moves or closes the peek.
+      expect(screen.getByRole('region', { name: 'Peek: PAY-1' })).toBeInTheDocument();
+      await user.keyboard('{Enter}');
+      await waitFor(() => expect(fake().calls.link.at(-1)).toEqual({ key: 'PAY-1', url: linked.url }));
+      await waitFor(() =>
+        expect(within(panel).queryByRole('textbox', { name: 'Pull request address' })).toBeNull(),
+      );
+      expect(await screen.findByText('Linked #485 to PAY-1')).toBeInTheDocument();
+      // The chip shows the new request; the peek stays open.
+      await waitFor(() => expect(panel.querySelector('[data-request-chip]')).toHaveTextContent('#485 open'));
+      expect(screen.getByRole('region', { name: 'Peek: PAY-1' })).toBeInTheDocument();
+    });
+
+    it('Esc in the paste field closes the field, not the peek', async () => {
+      api.current = createFakeApi({ fields: true, repository: true });
+      const user = userEvent.setup();
+      renderApp();
+      await screen.findByText('List');
+      act(() => openPeek({ key: 'PAY-1', keys: ['PAY-1'], from: 'List' }));
+      const panel = await screen.findByRole('region', { name: 'Peek: PAY-1' });
+      await within(panel).findByRole('heading', { name: /Task number 1/ });
+      await user.keyboard('{Shift>}P{/Shift}');
+      await within(panel).findByRole('textbox', { name: 'Pull request address' });
+      await user.keyboard('{Escape}');
+      await waitFor(() =>
+        expect(within(panel).queryByRole('textbox', { name: 'Pull request address' })).toBeNull(),
+      );
+      expect(screen.getByRole('region', { name: 'Peek: PAY-1' })).toBeInTheDocument();
+    });
+
+    it('⇧P on a project without a repository shows the task view’s toast', async () => {
+      const user = userEvent.setup();
+      renderApp();
+      await screen.findByText('List');
+      act(() => openPeek({ key: 'PAY-1', keys: ['PAY-1'], from: 'List' }));
+      const panel = await screen.findByRole('region', { name: 'Peek: PAY-1' });
+      await within(panel).findByRole('heading', { name: /Task number 1/ });
+      // Let the project list (no repository) load: until it has, ⇧P opens the field.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await user.keyboard('{Shift>}P{/Shift}');
+      expect(
+        await screen.findByText('Payments has no repository. Link one in the project settings first.'),
+      ).toBeInTheDocument();
+      expect(within(panel).queryByRole('textbox', { name: 'Pull request address' })).toBeNull();
+    });
+
+    it('tags an archived task and keeps its day read-only', async () => {
+      const task = fake().tasks[0] as Task;
+      Object.assign(task, {
+        archivedAt: '2026-11-12T10:00:00.000Z',
+        checkAgain: { on: '2026-11-20', reason: 'Look again' },
+      });
+      renderApp();
+      await screen.findByText('List');
+      act(() => openPeek({ key: 'PAY-1', keys: ['PAY-1'], from: 'List' }));
+      const panel = await screen.findByRole('region', { name: 'Peek: PAY-1' });
+      await within(panel).findByRole('heading', { name: /Task number 1/ });
+      expect(panel.querySelector('[data-part="archived-tag"]')).toHaveTextContent('Archived');
+      expect(within(panel).queryByRole('button', { name: 'Check again' })).toBeNull();
+      expect(panel).toHaveTextContent('Check again: 6 days ago');
+      expect(within(panel).getByText('Look again')).toBeInTheDocument();
+    });
   });
 
   it('is read-only in mirrored projects and says so', async () => {

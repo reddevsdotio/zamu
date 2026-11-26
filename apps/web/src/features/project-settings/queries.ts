@@ -157,3 +157,18 @@ export function useDeleteProject(projectKey: string) {
     },
   });
 }
+
+/** GET /projects/{project}/repository: the Repository settings page. */
+export const repositorySettingsQuery = (api: WorkspaceApi, projectKey: string) =>
+  api.orpc.repository.get.queryOptions({ input: { project: projectKey } });
+
+/** GET /projects/{project}/archive-preview?days=N: what the next nightly run would archive. */
+export const archivePreviewQuery = (api: WorkspaceApi, projectKey: string, days: number) =>
+  api.orpc.projects.archivePreview.queryOptions({ input: { project: projectKey, days } });
+
+/** Done and Canceled tasks of the project that are not archived, for the Archive page's off state. */
+export const finishedCountsQuery = (api: WorkspaceApi, projectKey: string) =>
+  api.orpc.tasks.list.queryOptions({
+    input: { project: projectKey, limit: 1 },
+    select: (data) => ({ done: data.counts.done, canceled: data.counts.canceled }),
+  });

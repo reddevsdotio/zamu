@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
-import type { Task } from '@zamu/contracts';
+import type { Task, TimelineItem } from '@zamu/contracts';
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button as AriaButton,
@@ -11,6 +11,8 @@ import {
 import { CommentComposer } from '~/features/comments/CommentComposer';
 import { TaskTimeline } from '~/features/comments/TaskTimeline';
 import {
+  ARCHIVED_TEXT,
+  showFieldToast,
   type TaskFieldKey,
   useFieldChange,
   useProjectPlanning,
@@ -21,6 +23,7 @@ import { FileNotes, PlanSection, TaskSummary, WorkItemSection } from '~/features
 import { useApi, useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
 import { type WorkspaceUrlSlug, workspacePath } from '~/lib/workspace-paths';
 import {
+  ArchivedBar,
   Banner,
   Button,
   type ChecklistHandle,
@@ -36,6 +39,7 @@ import {
   useHotkeys,
   ViewHeader,
 } from '~/ui';
+import { MIRRORED_ARCHIVE_TEXT, useArchiveActions } from './archive';
 import { useNow } from './clock';
 import { describeError } from './errors';
 import { atTime, formatDay, formatRelative, toggleCheckbox } from './format';
@@ -43,6 +47,7 @@ import { listSearchFor } from './list-memory';
 import { Markdown } from './Markdown';
 import { backlogHistoryQuery, RemovedBanner, TaskFileBadge, useBacklogSummary } from './MirroredTask';
 import { commentPlaceholder, mirrorOf } from './mirror';
+import { PullRequestsSection } from './PullRequestsSection';
 import { membersQuery, projectsQuery, taskQuery, timelineQuery } from './queries';
 import { LockTooltip, type PropertyAnchors, TaskProperties } from './TaskPageProperties';
 import { BlockedBySection, projectOfKey, SubtasksSection } from './TaskPageRelations';
@@ -56,7 +61,10 @@ import { BlockedBySection, projectOfKey, SubtasksSection } from './TaskPageRelat
 // The properties sit on the right. J / K walk the list the task was opened from; Esc goes back to it
 // with the task selected. The task keys (S, P, A, I, L, ⇧D, ⇧M, ⇧C, ⇧B, ⇧S, ⌘C, ⌘⇧C) open their
 // pickers over the property rows; a person moving the task to In review or Done with open items sees
-// the finishing step first.
+// the finishing step first. M7: the pull requests sit between the description and the criteria (⇧P
+// links one); ⇧W sets the check-again day; ⇧E archives the task, or restores an archived one. An
+// archived task (frame 087) opens with the archived bar, changes nothing, and its comment box says to
+// restore it first; a mirrored one shows the bar without Restore (Backlog.md's folder decides).
 
 export interface TaskPageProps {
   projectKey: string;
@@ -125,6 +133,7 @@ export function TaskPage({ projectKey, taskKey }: TaskPageProps) {
     });
   };
   const mirror = mirrorOf(task);
+  const toggleArchive = useArchiveToggle();
 
   return (
     <div className="flex h-dvh min-h-0 min-w-0 flex-1 flex-col bg-bg text-fg">
@@ -151,7 +160,12 @@ export function TaskPage({ projectKey, taskKey }: TaskPageProps) {
             <Button variant="secondary" onPress={() => void copy(window.location.href)}>
               {copied ? 'Copied' : 'Copy link'}
             </Button>
-            <MoreMenu onCopyKey={() => void copy(taskKey)} fileUrl={task?.backlog?.fileUrl ?? null} />
+            <MoreMenu
+              onCopyKey={() => void copy(taskKey)}
+              fileUrl={task?.backlog?.fileUrl ?? null}
+              archive={task && !mirror.isMirrored ? (task.archivedAt ? 'restore' : 'archive') : null}
+              onArchive={() => (task ? toggleArchive(task) : undefined)}
+            />
           </>
         }
       >
@@ -211,7 +225,33 @@ function NavButton({
   );
 }
 
-function MoreMenu({ onCopyKey, fileUrl }: { onCopyKey: () => void; fileUrl: string | null }) {
+/**
+ * ⇧E on the open task: archive it, or restore it when archived, with the toast and Undo. A mirrored
+ * task says where to do it instead.
+ */
+function useArchiveToggle() {
+  const { archive, restore } = useArchiveActions();
+  return (task: Task) => {
+    if ((task.locked?.length ?? 0) > 0) {
+      showFieldToast({ text: MIRRORED_ARCHIVE_TEXT, tone: 'error' });
+      return;
+    }
+    void (task.archivedAt ? restore([task.key]) : archive([task.key]));
+  };
+}
+
+function MoreMenu({
+  onCopyKey,
+  fileUrl,
+  archive,
+  onArchive,
+}: {
+  onCopyKey: () => void;
+  fileUrl: string | null;
+  /** M7: Archive or Restore in the menu; null for mirrored tasks. */
+  archive?: 'archive' | 'restore' | null;
+  onArchive?: () => void;
+}) {
   return (
     <MenuTrigger>
       <Button variant="secondary" iconOnly aria-label="More" className="h-7 text-md">
@@ -221,12 +261,18 @@ function MoreMenu({ onCopyKey, fileUrl }: { onCopyKey: () => void; fileUrl: stri
         aria-label="More"
         onAction={(id) => {
           if (id === 'copy-key') onCopyKey();
+          else if (id === 'archive') onArchive?.();
           else if (id === 'file' && fileUrl) window.open(fileUrl, '_blank', 'noreferrer');
         }}
       >
         <MenuItem id="copy-key" kbd="⌘C">
           Copy key
         </MenuItem>
+        {archive ? (
+          <MenuItem id="archive" kbd="⇧E">
+            {archive === 'archive' ? 'Archive' : 'Restore'}
+          </MenuItem>
+        ) : null}
         {fileUrl ? (
           <>
             <MenuSeparator />
@@ -282,7 +328,13 @@ function TaskView({
   const doneList = useRef<ChecklistHandle>(null);
   const [lockTip, setLockTip] = useState<string | null>(null);
   const [revealId, setRevealId] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
   const locked = new Set(task.locked ?? []);
+  // M7: an archived task changes nothing until it is restored.
+  const archived = task.archivedAt != null;
+  const projectRepository = useProjectRepository(projectKey);
+  const toggleArchive = useArchiveToggle();
+  const { restore, isPending: isArchiving } = useArchiveActions();
 
   const statusRow = useRef<HTMLButtonElement>(null);
   const priorityRow = useRef<HTMLButtonElement>(null);
@@ -292,6 +344,7 @@ function TaskView({
   const milestoneRow = useRef<HTMLButtonElement>(null);
   const cycleRow = useRef<HTMLButtonElement>(null);
   const parentRow = useRef<HTMLButtonElement>(null);
+  const checkAgainRow = useRef<HTMLButtonElement>(null);
   const addSubtask = useRef<HTMLButtonElement>(null);
   const addBlocker = useRef<HTMLButtonElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -307,6 +360,7 @@ function TaskView({
       parent: parentRow,
       milestone: milestoneRow,
       cycle: cycleRow,
+      checkAgain: checkAgainRow,
     }),
     [],
   );
@@ -328,18 +382,30 @@ function TaskView({
     // Fields Backlog.md owns answer with the lock tooltip instead of a read-only picker. A move to In
     // review or Done with open items goes through the finishing warning, as everywhere else.
     onOpenField: (field) => {
-      if (!ownedBy(field)) return false;
+      if (archived || !ownedBy(field)) return false;
       setLockTip(field);
       return true;
     },
   });
 
   const startEditing = (part: 'title' | 'description') => {
-    if (locked.has(part)) setLockTip(part);
+    if (archived) showFieldToast({ text: ARCHIVED_TEXT, tone: 'error' });
+    else if (locked.has(part)) setLockTip(part);
     else setEditing(part);
   };
 
-  const isNative = locked.size === 0;
+  // ⇧P: the link field, when the project has a repository to link from.
+  const startLinking = () => {
+    if (archived) showFieldToast({ text: ARCHIVED_TEXT, tone: 'error' });
+    else if (projectRepository === null) {
+      showFieldToast({
+        text: `${task.project.name} has no repository. Link one in the project settings first.`,
+        tone: 'error',
+      });
+    } else setLinking(true);
+  };
+
+  const isNative = locked.size === 0 && !archived;
   useHotkeys(
     {
       Escape: onBack,
@@ -354,6 +420,8 @@ function TaskView({
       'Shift+x': () => {
         if (!criteriaList.current?.focusFirstOpen()) doneList.current?.focusFirstOpen();
       },
+      'Shift+p': startLinking,
+      'Shift+e': () => toggleArchive(task),
     },
     { enabled: editing === null && keys.open === null },
   );
@@ -384,11 +452,25 @@ function TaskView({
   })();
 
   const mirrorInfo = mirrorOf(task);
+  const branchBy = branchStartedBy(timeline?.items, task.workBranch ?? null, day);
+  const archivedCause = archivedWhy(task, timeline?.items);
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px]">
       <div ref={scrollRef} className="min-h-0 min-w-0 overflow-y-auto px-14 pt-8.5 max-[1199px]:px-9">
         <article className="mx-0 flex max-w-180 flex-col pb-10">
+          {archived && task.archivedAt ? (
+            <ArchivedBar
+              className="mb-4"
+              on={now == null ? '' : day(task.archivedAt)}
+              cause={archivedCause}
+              {...(isMirrored
+                ? {
+                    note: 'It stays out of lists, boards and counts. Move its file out of archive/tasks/ to restore it.',
+                  }
+                : { onRestore: () => void restore([task.key]), isRestoring: isArchiving })}
+            />
+          ) : null}
           {isHidden ? <RemovedBanner task={task} branch={summary?.defaultBranch} className="mb-3" /> : null}
           {task.backlog && !isHidden ? (
             <div className="mb-2.5 flex items-center gap-2">
@@ -397,6 +479,7 @@ function TaskView({
           ) : null}
           <TaskTitle
             task={task}
+            quiet={archived}
             headingRef={titleRef}
             isEditing={editing === 'title'}
             onEdit={() => startEditing('title')}
@@ -416,6 +499,7 @@ function TaskView({
             task={task}
             boxRef={descriptionRef}
             isLocked={locked.has('description')}
+            archived={archived}
             isEditing={editing === 'description'}
             clipped={hasSummary && !descriptionOpen}
             onExpand={setDescriptionOpen}
@@ -431,19 +515,29 @@ function TaskView({
               placement="bottom start"
             />
           ) : null}
+          <PullRequestsSection
+            task={task}
+            projectName={task.project.name}
+            isLinking={linking}
+            onLinkingChange={setLinking}
+            readOnly={archived}
+            branchBy={branchBy}
+          />
           <WorkItemSection task={task} kind="criterion" listRef={criteriaList} />
           <WorkItemSection task={task} kind="done" defaults={defaults} listRef={doneList} />
           <PlanSection key={`${task.key}:${task.status}`} task={task} day={day} />
           <FileNotes task={task} />
           <SubtasksSection
             task={task}
-            readOnly={locked.has('parent')}
+            readOnly={locked.has('parent') || archived}
+            hideEmpty={archived}
             onAdd={() => keys.openField('subtasks')}
             addRef={addSubtask}
           />
           <BlockedBySection
             task={task}
-            readOnly={locked.has('blockedBy')}
+            readOnly={locked.has('blockedBy') || archived}
+            hideEmpty={archived}
             onAdd={() => keys.openField('blockedBy')}
             addRef={addBlocker}
           />
@@ -455,15 +549,28 @@ function TaskView({
             projectName={projectName ?? projectKey}
             branch={summary?.defaultBranch}
             file={task.backlog?.file ?? null}
+            context={{
+              status: task.status,
+              pullRequests: task.pullRequests ?? [],
+              mergedOpen: task.mergedOpen ?? null,
+            }}
             composer={
-              <CommentComposer
-                taskKey={task.key}
-                members={members}
-                onSent={setRevealId}
-                placeholder={commentPlaceholder(mirrorInfo)}
-                hotkey={editing === null}
-                notes={!isMirrored}
-              />
+              archived ? (
+                <p className="m-0 rounded-md border border-dashed border-line px-3.5 py-2.75 text-md text-fg-3">
+                  {isMirrored
+                    ? 'Move the file out of archive/tasks/ to comment on the task.'
+                    : 'Restore the task to comment on it or change it.'}
+                </p>
+              ) : (
+                <CommentComposer
+                  taskKey={task.key}
+                  members={members}
+                  onSent={setRevealId}
+                  placeholder={commentPlaceholder(mirrorInfo)}
+                  hotkey={editing === null}
+                  notes={!isMirrored}
+                />
+              )
             }
           />
         </article>
@@ -481,11 +588,61 @@ function TaskView({
         onLockTipClose={() => setLockTip(null)}
         updatedBy={isMirrored ? null : lastActor}
         time={time}
+        day={day}
         now={now}
       />
       {keys.pickers}
     </div>
   );
+}
+
+/** The project's repository from the cached project list: undefined while unknown, null for none. */
+function useProjectRepository(projectKey: string): string | null | undefined {
+  const api = useApi();
+  return useQuery({
+    ...projectsQuery(api),
+    select: (data) => {
+      const project = data.items.find((item) => item.key === projectKey);
+      return project ? (project.repository ?? null) : undefined;
+    },
+  }).data;
+}
+
+/** "by claude-dev on laptop, Nov 3": the entry that recorded the work branch (frame 053). */
+export function branchStartedBy(
+  items: readonly TimelineItem[] | undefined,
+  branch: string | null,
+  day: (value: string) => string,
+): string | null {
+  if (!branch || !items) return null;
+  for (let index = items.length - 1; index >= 0; index--) {
+    const item = items[index];
+    if (item?.kind !== 'activity') continue;
+    if (!item.changes.some((change) => change.field === 'workBranch' && change.to === branch)) continue;
+    const when = day(item.createdAt);
+    const parts = [
+      item.actor ? `by ${item.actor.name}` : null,
+      item.source?.machine ? `on ${item.source.machine}` : null,
+    ].filter(Boolean);
+    return `${parts.join(' ')}${when ? `${parts.length ? ', ' : ''}${when}` : ''}` || null;
+  }
+  return null;
+}
+
+/** Why the task is archived, after the date: "14 days after it was done", "by Ana Ruiz" (frame 087). */
+export function archivedWhy(task: Task, items: readonly TimelineItem[] | undefined): string | null {
+  for (let index = (items?.length ?? 0) - 1; index >= 0; index--) {
+    const item = items?.[index];
+    if (item?.kind !== 'activity' || item.type !== 'task.archived') continue;
+    if (item.cause?.kind === 'archive') {
+      const days = item.cause.afterDays;
+      return `${days} ${days === 1 ? 'day' : 'days'} after it was ${task.status === 'canceled' ? 'canceled' : 'done'}`;
+    }
+    if (item.origin === 'backlog') return 'when its file moved to archive/tasks/';
+    if (item.actor) return `by ${item.actor.name}`;
+    break;
+  }
+  return task.archivedBy ? `by ${task.archivedBy.name}` : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -496,6 +653,7 @@ const titleClass = 'm-0 font-serif text-2xl leading-tight font-medium text-balan
 
 function TaskTitle({
   task,
+  quiet = false,
   headingRef,
   isEditing,
   onEdit,
@@ -503,6 +661,8 @@ function TaskTitle({
   onSave,
 }: {
   task: Task;
+  /** M7: archived, the title reads quieter (m7.css .task.ro). */
+  quiet?: boolean;
   headingRef: RefObject<HTMLHeadingElement | null>;
   isEditing: boolean;
   onEdit: () => void;
@@ -519,7 +679,7 @@ function TaskTitle({
     onDone();
   };
   return (
-    <h1 ref={headingRef} className={cn(titleClass, 'mb-3.5')}>
+    <h1 ref={headingRef} className={cn(titleClass, 'mb-3.5', quiet && 'text-fg-2')}>
       {isEditing ? (
         <AriaTextField aria-label="Title" value={draft} onChange={setDraft} className="flex">
           <AriaTextArea
@@ -561,6 +721,7 @@ function TaskDescription({
   task,
   boxRef,
   isLocked,
+  archived = false,
   isEditing,
   clipped,
   onExpand,
@@ -571,6 +732,8 @@ function TaskDescription({
   task: Task;
   boxRef: RefObject<HTMLDivElement | null>;
   isLocked: boolean;
+  /** M7: archived, the text is shown and nothing edits it. */
+  archived?: boolean;
   isEditing: boolean;
   /** Under a summary: two lines and "Show the description". */
   clipped: boolean;
@@ -626,6 +789,7 @@ function TaskDescription({
   }
 
   if (!source.trim()) {
+    if (archived) return <div ref={boxRef} />;
     return (
       <div ref={boxRef}>
         {isLocked ? (
@@ -648,7 +812,7 @@ function TaskDescription({
       source={source}
       size="page"
       variant={isLocked ? 'backlog' : 'default'}
-      {...(isLocked
+      {...(isLocked || archived
         ? {}
         : {
             onToggleCheckbox: (index: number) => void onSave(toggleCheckbox(source, index)),
@@ -664,10 +828,10 @@ function TaskDescription({
       ref={boxRef}
       onClick={(event) => {
         const target = event.target as HTMLElement;
-        if (target.closest('a, input, button') || window.getSelection()?.toString()) return;
+        if (archived || target.closest('a, input, button') || window.getSelection()?.toString()) return;
         onEdit();
       }}
-      className={cn('rounded-sm', !isLocked && 'cursor-text')}
+      className={cn('rounded-sm', !isLocked && !archived && 'cursor-text', archived && 'text-fg-2')}
     >
       {clipped ? (
         <ClippedText

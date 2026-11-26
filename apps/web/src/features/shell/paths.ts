@@ -32,6 +32,11 @@ export function projectHref(workspace: WorkspaceUrlSlug, projectKey: string): st
   return workspacePath(workspace, `/p/${encodeURIComponent(projectKey)}`);
 }
 
+/** M7: a project's list with only its archived tasks (the Archived filter, frame 083). */
+export function archivedTasksHref(workspace: WorkspaceUrlSlug, projectKey: string): string {
+  return `${projectHref(workspace, projectKey)}?archived=only`;
+}
+
 /** /p/PAY, /p/PAY?view=board, /p/PAY/milestones, /p/PAY/cycles, /p/PAY/settings, under the workspace. */
 export function projectPageHref(workspace: WorkspaceUrlSlug, projectKey: string, page: ProjectPage): string {
   const base = projectHref(workspace, projectKey);

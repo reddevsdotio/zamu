@@ -11,11 +11,12 @@ import type {
 } from '@zamu/contracts';
 import { describeActivity } from '~/features/tasks/format';
 import { progressText } from '~/features/views/work-progress';
-import { formatShortDate, type PillTone, STATUS_LABELS } from '~/ui';
+import { formatShortDate, mergedOpenText, type PillTone, requestRef, STATUS_LABELS } from '~/ui';
 
-// The words of Home (frames 099–106; M6 frame 064 for the criteria pill): group titles and hints, the
-// "why" line of a row, pills, the
-// deadlines strip, agent cards and the page title. Pure, so the screen and its tests share them.
+// The words of Home (frames 099–106; M6 frame 064 for the criteria pill; M7 frames 064 and 065 for
+// "Merged with open criteria" and "Check again"): group titles and hints, the "why" line of a row,
+// pills, the deadlines strip, agent cards and the page title. Pure, so the screen and its tests share
+// them.
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -89,6 +90,8 @@ export function agentsLine(agents: readonly Pick<HomeAgent, 'agent'>[]): string 
 
 const GROUP_TITLES: Record<HomeGroupKey, string> = {
   review: 'Needs your review',
+  mergedOpen: 'Merged with open criteria',
+  checkAgain: 'Check again',
   mentions: 'Mentions',
   blocked: 'Blocked',
   overdue: 'Overdue',
@@ -111,6 +114,12 @@ export function groupHint(group: Pick<HomeGroup, 'key' | 'items'>, tab: HomeTab)
       const projects = new Set(group.items.map((item) => item.task.project.key)).size;
       return projects === 1 ? 'In 1 project' : `Across ${projects} projects`;
     }
+    case 'mergedOpen':
+      return tab === 'mine'
+        ? 'Done through a merge. Check the criteria, waive them or reopen the task.'
+        : 'Done through a merge, with criteria still open.';
+    case 'checkAgain':
+      return 'The day you set has come.';
     case 'mentions':
       return 'Unanswered';
     case 'blocked':
@@ -160,7 +169,22 @@ export function pillView(pill: HomePill): PillView {
       return { text: 'asks a question', tone: 'accent' };
     case 'unassigned':
       return { text: 'needs owner', tone: 'default' };
+    case 'mergedOpen':
+      return {
+        text: `merged, ${pill.openItems} open ${pill.openItems === 1 ? 'item' : 'items'}`,
+        tone: 'accent',
+      };
+    case 'checkAgain':
+      return { text: 'check again', tone: 'accent' };
   }
+}
+
+/**
+ * The state pill of a "Merged with open criteria" row (frames 064, 065): "Merged with 2 open criteria",
+ * "Merged with 3 open items". Empty for other groups.
+ */
+export function mergedPillText(item: HomeItem): string {
+  return item.reason.kind === 'mergedOpen' ? mergedOpenText(item.reason) : '';
 }
 
 /**
@@ -217,6 +241,18 @@ export function whyText(
     case 'mention':
       if (tab === 'agents') return join(`asks ${shortName(reason.mentioned)}`, at(reason.at));
       return join(nameFor(reason.author, viewerId), at(reason.at));
+    case 'mergedOpen': {
+      // "#479 merged yesterday" (the merged request, when its link is still there).
+      const request = reason.pullRequest
+        ? requestRef(reason.pullRequest.provider, reason.pullRequest.number)
+        : '';
+      const when = now == null ? '' : mergedWhen(reason.at, now);
+      const by = reason.mergedBy ? `by ${reason.mergedBy}` : '';
+      return [request, when ? `merged ${when}` : request ? 'merged' : '', by].filter(Boolean).join(' ');
+    }
+    case 'checkAgain':
+      // The reason the person wrote when they set the day (frame 064).
+      return reason.reason;
     case 'blocked': {
       const keys = reason.blockers.map((blocker) => blocker?.key ?? 'a removed task');
       const shown = keys.slice(0, MAX_BLOCKERS).join(', ');
@@ -231,6 +267,18 @@ export function whyText(
       return '';
     }
   }
+}
+
+/** "today", "yesterday", "3 days ago": when a merge closed the task, by the browser's calendar. */
+export function mergedWhen(iso: string, now: number): string {
+  const day = (time: number) => {
+    const date = new Date(time);
+    return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY;
+  };
+  const days = Math.max(0, Math.round(day(now) - day(new Date(iso).getTime())));
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return `${days} days ago`;
 }
 
 /** Mine leaves out the avatar of the viewer's own tasks (they are all theirs). */

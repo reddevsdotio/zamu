@@ -7,7 +7,8 @@ import { clearedFilter, type FilterField, hasTaskFilter, type TaskFilter } from 
 import { requestDisplayOptions, requestFilterMenu } from './requests';
 
 // The view's palette commands (section "view"): Switch to board / list (V), Display options,
-// Filter…, Filter by <field>…, Clear filters. Mounted by the list, the board and Home.
+// Filter…, Filter by <field>…, Clear filters, and (M7) Hide archived tasks while they are shown ("Show
+// archived tasks in <project>" is the shell's). Mounted by the list, the board and Home.
 
 export interface UseViewCommandsOptions {
   /** The current layout; omit on Home (no switch). */
@@ -30,6 +31,8 @@ const FILTER_COMMAND_TITLES: Record<FilterField, string> = {
   blocked: 'Filter blocked tasks…',
   milestone: 'Filter by milestone…',
   cycle: 'Filter by cycle…',
+  checkAgain: 'Filter by check-again day…',
+  archived: 'Filter archived tasks…',
 };
 
 /** The palette closes first; open the popover once focus has gone back to the page. */
@@ -87,6 +90,19 @@ export function useViewCommands({
           run: later(() => requestFilterMenu(config.field)),
         });
       }
+    }
+    if (filter?.archived && onFilterChange) {
+      const { archived: _archived, ...rest } = filter;
+      list.push({
+        id: 'view.hide-archived',
+        title: 'Hide archived tasks',
+        section: 'view',
+        keywords: ['archive', 'archived', 'filter'],
+        run: () => {
+          onFilterChange(rest);
+          return undefined;
+        },
+      });
     }
     if (filtered && filter && onFilterChange) {
       list.push({

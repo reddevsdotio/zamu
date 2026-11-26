@@ -14,7 +14,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { type DisplayOptions, showsProperty } from '~/features/views/display-options';
+import { type DisplayOptions, showsProperty, waitingLook } from '~/features/views/display-options';
+import { ArchivedRowEnd, TaskCheckAgainChip, TaskRequestMarker } from '~/features/views/markers';
 import { workItemNoun } from '~/features/views/work-progress';
 import {
   Avatar,
@@ -51,7 +52,10 @@ import type { ListGroupRow, ListRow, ListTaskRow } from './groups';
 // Rows are 38px, group rows 46px (6px of air above the 40px header). Which properties a row shows
 // comes from the display options (showsProperty: priority only for Urgent and High, the avatar only
 // when the task is someone else's). The criteria marker (M6, off by default) sits after subtasks and
-// before the due date, from the counts the list already carries. The screen owns focus and selection; this draws them:
+// before the due date, from the counts the list already carries. M7 (frames 083, 101): the request marker
+// and the check-again chip follow the labels; a waiting task's row is dimmed under "Waiting tasks: Shown
+// dimmed"; an archived row has a quiet title and ends with "Archived Nov 12" and Restore on hover and
+// focus instead of the updated time. The screen owns focus and selection; this draws them:
 //   cursor     the row keys act on (accent-soft; a quieter tint while several tasks are selected)
 //   selected   multi-selected rows (accent-soft, with their checkbox ticked)
 //   checkboxes every row shows its checkbox while anything is selected (frame 014)
@@ -112,6 +116,8 @@ export interface TaskListProps {
   onGroupAdd?: (row: ListGroupRow) => void;
   /** DOM focus landed on a row (Tab, a click): the screen moves its cursor there. */
   onRowFocus?: (rowId: string) => void;
+  /** M7: Restore on an archived row; without it archived rows show no button. */
+  onRestore?: (row: ListTaskRow) => void;
   /** Under the last row (the hidden-tasks note of a mirrored project). */
   footer?: ReactNode;
   className?: string;
@@ -262,6 +268,7 @@ export function TaskList(props: TaskListProps) {
       toggle: (row) => latest.current.onGroupToggle(row),
       add: (row) => latest.current.onGroupAdd?.(row),
       focus: (rowId) => latest.current.onRowFocus?.(rowId),
+      restore: (row) => latest.current.onRestore?.(row),
     }),
     [],
   );
@@ -322,6 +329,7 @@ export function TaskList(props: TaskListProps) {
               today={props.today}
               wideKeys={props.wideKeys ?? false}
               hiddenView={props.hiddenView ?? false}
+              canRestore={props.onRestore != null}
               handlers={handlers}
             />
           );
@@ -338,6 +346,7 @@ interface RowHandlers {
   toggle: (row: ListGroupRow) => void;
   add: (row: ListGroupRow) => void;
   focus: (rowId: string) => void;
+  restore: (row: ListTaskRow) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -477,6 +486,7 @@ interface TaskRowViewProps {
   today: string;
   wideKeys: boolean;
   hiddenView: boolean;
+  canRestore: boolean;
   handlers: RowHandlers;
 }
 
@@ -496,9 +506,11 @@ const TaskRowView = memo(function TaskRowView({
   today,
   wideKeys,
   hiddenView,
+  canRestore,
   handlers,
 }: TaskRowViewProps) {
   const { task } = row;
+  const dimmed = waitingLook(display, task, now == null ? null : today) === 'dimmed';
   return (
     // biome-ignore lint/a11y: a virtualized treegrid of divs; rows take focus (roving tabIndex) and the screen binds the keys
     <div
@@ -510,6 +522,8 @@ const TaskRowView = memo(function TaskRowView({
       data-row-id={row.id}
       data-task-key={task.key}
       data-cursor={isCursor || undefined}
+      data-waiting={dimmed ? 'dimmed' : undefined}
+      data-archived={task.archivedAt ? '' : undefined}
       tabIndex={isTabStop ? 0 : -1}
       onFocus={(event) => {
         if (event.target === event.currentTarget) handlers.focus(row.id);
@@ -531,6 +545,8 @@ const TaskRowView = memo(function TaskRowView({
           : isCursor
             ? 'bg-bg-grp'
             : 'hover:bg-surface-hover',
+        // M7: a task waiting for its check-again day, as dimmed cards on the board.
+        dimmed && 'opacity-62',
       )}
     >
       {/* biome-ignore lint/a11y: the row holds the focus, its one cell does not */}
@@ -548,6 +564,7 @@ const TaskRowView = memo(function TaskRowView({
           today={today}
           wideKeys={wideKeys}
           hiddenView={hiddenView}
+          {...(canRestore ? { onRestore: () => handlers.restore(row) } : {})}
         />
       </div>
     </div>
@@ -576,6 +593,8 @@ export interface TaskRowContentProps {
   today: string;
   wideKeys?: boolean;
   hiddenView?: boolean;
+  /** M7: Restore on an archived row (left out for mirrored projects: Backlog.md decides). */
+  onRestore?: () => void;
 }
 
 /**
@@ -595,10 +614,13 @@ export function TaskRowContent({
   today,
   wideKeys = false,
   hiddenView = false,
+  onRestore,
 }: TaskRowContentProps) {
   const shows = (property: Parameters<typeof showsProperty>[1]) =>
     showsProperty(display, property, task, viewerId);
   const clock = now == null ? null : new Date(now);
+  const archived = task.archivedAt != null;
+  const mirrored = (task.locked?.length ?? 0) > 0;
   return (
     <>
       {checkboxes ? (
@@ -642,7 +664,7 @@ export function TaskRowContent({
         <StatusGlyph status={task.status} />
       </span>
       <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-        <span className="truncate font-medium text-fg">{task.title}</span>
+        <span className={cn('truncate font-medium', archived ? 'text-fg-3' : 'text-fg')}>{task.title}</span>
         {depth === 0 && task.parentKey ? (
           <span className="shrink-0 text-xs whitespace-nowrap text-fg-3">sub of {task.parentKey}</span>
         ) : null}
@@ -658,6 +680,8 @@ export function TaskRowContent({
         <span className="flex shrink-0 items-center gap-2">
           {task.blocked && shows('blocked') ? <BlockedMarker /> : null}
           {task.labels?.length && shows('labels') ? <LabelList labels={task.labels} max={3} /> : null}
+          <TaskRequestMarker task={task} display={display} />
+          <TaskCheckAgainChip task={task} display={display} today={now == null ? null : today} />
           {task.subtaskProgress && task.subtaskProgress.total > 0 && shows('subtasks') ? (
             <SubtaskProgress done={task.subtaskProgress.done} total={task.subtaskProgress.total} />
           ) : null}
@@ -687,6 +711,14 @@ export function TaskRowContent({
               {atTime(formatDay, now)(task.createdAt)}
             </time>
           ) : null}
+          {/* Frame 083: "Archived Nov 12" (and Restore on hover) where "updated" was, before the avatar. */}
+          {archived && task.archivedAt ? (
+            <ArchivedRowEnd
+              archivedAt={task.archivedAt}
+              now={now}
+              {...(onRestore && !mirrored ? { onRestore } : {})}
+            />
+          ) : null}
           {display.properties.assignee ? (
             task.assignee && shows('assignee') ? (
               <Avatar name={task.assignee.name} kind={task.assignee.kind} size={18} />
@@ -694,7 +726,7 @@ export function TaskRowContent({
               <span aria-hidden className="size-4.5 shrink-0" />
             )
           ) : null}
-          {display.properties.updated ? (
+          {!archived && display.properties.updated ? (
             <time
               dateTime={task.updatedAt}
               className="w-10 shrink-0 text-right text-xs whitespace-nowrap text-fg-3 tabular-nums"

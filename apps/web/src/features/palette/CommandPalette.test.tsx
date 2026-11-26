@@ -30,22 +30,46 @@ configure({ asyncUtilTimeout: 3000 });
 
 const api = vi.hoisted(() => ({
   queries: [] as string[],
+  /** M7: searches for archived tasks (archived: 'only'), asked separately. */
+  archivedQueries: [] as string[],
   tasks: [
     { key: 'HBR-166', title: 'Offline cache: browse every tab without a connection', status: 'in_progress' },
     { key: 'HBR-48', title: 'Cache exchange rates for offline use', status: 'todo' },
     { key: 'PAY-142', title: 'Retry failed payouts with exponential backoff', status: 'in_progress' },
-  ],
+    {
+      key: 'PAY-118',
+      title: 'Payout CSV export for accountants',
+      status: 'done',
+      archivedAt: '2026-11-12T10:00:00.000Z',
+    },
+    { key: 'PAY-150', title: 'Payout report export', status: 'done' },
+    {
+      key: 'PAY-97',
+      title: 'Payout export to the old ledger',
+      status: 'canceled',
+      archivedAt: '2026-11-03T10:00:00.000Z',
+    },
+  ] as { key: string; title: string; status: string; archivedAt?: string }[],
 }));
 
 /** The test workspace (/w/acme) around the fake client. */
 const workspace = (() => {
   const client = {
     tasks: {
-      list: async (input: { q?: string; limit?: number }) => {
-        api.queries.push(input.q ?? '');
+      list: async (input: { q?: string; limit?: number; archived?: 'only' | 'include' }) => {
+        (input.archived === 'only' ? api.archivedQueries : api.queries).push(input.q ?? '');
         const q = (input.q ?? '').toLowerCase();
+        const words = q.split(/\s+/).filter(Boolean);
+        // Like core, an unsorted mix: archived tasks are left out unless asked for.
         const items = api.tasks
-          .filter((task) => task.key.toLowerCase().includes(q) || task.title.toLowerCase().includes(q))
+          .filter((task) =>
+            input.archived === 'only' ? task.archivedAt != null : task.archivedAt == null || input.archived,
+          )
+          .filter((task) =>
+            words.every(
+              (word) => task.key.toLowerCase().includes(word) || task.title.toLowerCase().includes(word),
+            ),
+          )
           .slice(0, input.limit ?? 50)
           .map((task) => ({
             ...task,
@@ -191,6 +215,7 @@ beforeEach(() => {
   resetRecentForTests();
   window.localStorage.clear();
   api.queries = [];
+  api.archivedQueries = [];
   ran.calls = [];
 });
 
@@ -408,6 +433,50 @@ describe('command palette', () => {
     await user.keyboard('2');
     expect(ran.calls).toEqual(['status:Todo']);
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('lists archived results last with the tag, and offers the project’s archived tasks', async () => {
+    const user = userEvent.setup();
+    renderPalette([
+      {
+        id: 'navigate.archived.PAY',
+        title: 'Show archived tasks in Payments',
+        section: 'navigate',
+        keywords: ['archive', 'archived'],
+        run: () => {
+          ran.calls.push('archived:PAY');
+        },
+      },
+    ]);
+    await screen.findByText('home');
+    act(() => openPalette());
+    await user.type(input(), 'payout export');
+    const tasks = await screen.findByRole('group', { name: 'Tasks' });
+    await waitFor(() => expect(within(tasks).getAllByRole('option')).toHaveLength(3));
+    // Live first, then archived (asked for separately), each archived one with its tag.
+    expect(
+      within(tasks)
+        .getAllByRole('option')
+        .map((option) => option.getAttribute('aria-label')),
+    ).toEqual([
+      'PAY-150 Payout report export',
+      'PAY-118 Payout CSV export for accountants, archived',
+      'PAY-97 Payout export to the old ledger, archived',
+    ]);
+    expect(api.archivedQueries).toEqual(['payout export']);
+    const [live, first, second] = within(tasks).getAllByRole('option');
+    expect(live?.querySelector('[data-part="archived-tag"]')).toBeNull();
+    expect(first?.querySelector('[data-part="archived-tag"]')).toHaveTextContent('Archived');
+    expect(second?.querySelector('[data-part="archived-tag"]')).toHaveTextContent('Archived');
+    expect(screen.getByText('Archived tasks come last and carry the tag')).toBeInTheDocument();
+    // Actions: the project's archived tasks, once.
+    const actions = screen.getByRole('group', { name: 'Actions' });
+    expect(
+      within(actions).getByRole('option', { name: 'Show archived tasks in Payments' }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('option', { name: 'Show archived tasks in Payments' })).toHaveLength(1);
+    await user.click(within(actions).getByRole('option', { name: 'Show archived tasks in Payments' }));
+    expect(ran.calls).toEqual(['archived:PAY']);
   });
 
   it('G then P mode lists only projects, and Backspace widens it to everything', async () => {

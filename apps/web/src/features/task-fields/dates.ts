@@ -83,6 +83,21 @@ export function quickPicks(today: string): QuickPick[] {
   ];
 }
 
+export interface CheckAgainPick {
+  id: 'week' | 'two-weeks' | 'month';
+  label: string;
+  date: string;
+}
+
+/** M7: the check-again picker's quick picks: in a week, in two weeks, in a month (frame 095). */
+export function checkAgainPicks(today: string): CheckAgainPick[] {
+  return [
+    { id: 'week', label: 'In a week', date: addDays(today, 7) },
+    { id: 'two-weeks', label: 'In two weeks', date: addDays(today, 14) },
+    { id: 'month', label: 'In a month', date: addMonths(today, 1) },
+  ];
+}
+
 function validDate(year: number, month: number, day: number): string | null {
   if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
   if (month < 1 || month > 12 || day < 1 || year < 1000 || year > 9999) return null;

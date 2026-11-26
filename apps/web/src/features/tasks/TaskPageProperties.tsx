@@ -12,15 +12,21 @@ import { useWorkspaceSlug } from '~/lib/workspace';
 import {
   Avatar,
   BlockedNotice,
+  CheckAgainChip,
+  CheckAgainReason,
   cn,
   DueChip,
+  FlagLine,
   Kbd,
   LabelChip,
   LockGlyph,
   localToday,
+  mergedOpenText,
   PriorityGlyph,
   ProgressBar,
   ProgressBox,
+  RequestStatePill,
+  requestRef,
   StatusGlyph,
   UnassignedAvatar,
 } from '~/ui';
@@ -33,7 +39,9 @@ import { projectOfKey } from './TaskPageRelations';
 // hover). Fields Backlog.md owns show a lock on hover, and a press says where to change them. Mirrored
 // tasks end with "From the file". M6 adds "Criteria" and "Done items" under the assignee (frames 001,
 // 004, 021): the count with "1 waived · 1 open", "None yet", or "project defaults"; a press moves focus
-// to the list, like ⇧X.
+// to the list, like ⇧X. M7 (frames 051, 052, 063, 087, 095 to 097): the flag line of a merge with open
+// items at the top, "Pull request" (the request that matters most, its state, "+3"), "Check again" with
+// the day and the reason (⇧W), and an archived task whose rows show their values and change nothing.
 
 /** The lock tooltip of a field Backlog.md owns (frame 054). */
 export const LOCKED_FIELD_TEXT = 'Set in Backlog.md. Edit the file to change it.';
@@ -88,6 +96,7 @@ const SHORTCUTS: Partial<Record<TaskFieldKey, string>> = {
   dueDate: '⇧D',
   milestone: '⇧M',
   cycle: '⇧C',
+  checkAgain: '⇧W',
 };
 
 const ARIA_SHORTCUTS: Partial<Record<TaskFieldKey, string>> = {
@@ -98,6 +107,7 @@ const ARIA_SHORTCUTS: Partial<Record<TaskFieldKey, string>> = {
   dueDate: 'Shift+D',
   milestone: 'Shift+M',
   cycle: 'Shift+C',
+  checkAgain: 'Shift+W',
 };
 
 const rowClass =
@@ -114,6 +124,7 @@ function FieldRow({
   rowRef,
   isOpen,
   locked,
+  archived = false,
   onOpen,
   children,
 }: {
@@ -124,17 +135,19 @@ function FieldRow({
   isOpen: boolean;
   /** Backlog.md owns the value. */
   locked: boolean;
+  /** M7: the task is archived; a press says to restore it first. */
+  archived?: boolean;
   onOpen: (field: TaskFieldKey) => void;
   children: ReactNode;
 }) {
-  const kbd = SHORTCUTS[field];
+  const kbd = archived ? undefined : SHORTCUTS[field];
   return (
     <AriaButton
       ref={rowRef}
       onPress={() => onOpen(field)}
-      aria-label={`${label}${locked ? ', set in Backlog.md' : ''}`}
-      aria-keyshortcuts={locked ? undefined : ARIA_SHORTCUTS[field]}
-      aria-haspopup={locked ? undefined : 'dialog'}
+      aria-label={`${label}${locked ? ', set in Backlog.md' : archived ? ', archived' : ''}`}
+      aria-keyshortcuts={locked || archived ? undefined : ARIA_SHORTCUTS[field]}
+      aria-haspopup={locked || archived ? undefined : 'dialog'}
       data-field={field}
       data-locked={locked || undefined}
       className={cn(
@@ -278,9 +291,18 @@ const Separator = () => <div aria-hidden className="my-2 h-px bg-line-soft" />;
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 
 export type PropertyAnchors = Record<
-  'status' | 'priority' | 'assignee' | 'labels' | 'dueDate' | 'parent' | 'milestone' | 'cycle',
+  'status' | 'priority' | 'assignee' | 'labels' | 'dueDate' | 'parent' | 'milestone' | 'cycle' | 'checkAgain',
   RefObject<HTMLButtonElement | null>
 >;
+
+/** Which request the sidebar names: open first, then drafts, merged and closed; the newest of those. */
+const STATE_ORDER = ['open', 'draft', 'merged', 'closed'] as const;
+export function sidebarRequest(requests: readonly NonNullable<Task['pullRequests']>[number][]) {
+  return [...requests].sort(
+    (a, b) =>
+      STATE_ORDER.indexOf(a.state) - STATE_ORDER.indexOf(b.state) || b.openedAt.localeCompare(a.openedAt),
+  )[0];
+}
 
 export interface TaskPropertiesProps {
   task: Task;
@@ -304,6 +326,8 @@ export interface TaskPropertiesProps {
   onFocusCriteria?: () => void;
   /** M6: the Done items row moves focus to the first open done item. */
   onFocusDone?: () => void;
+  /** M7: the archived day, "Nov 12" (empty until the clock is known). */
+  day?: (value: string) => string;
 }
 
 export function TaskProperties({
@@ -320,9 +344,14 @@ export function TaskProperties({
   defaults = [],
   onFocusCriteria,
   onFocusDone,
+  day = () => '',
 }: TaskPropertiesProps) {
   const locked = new Set(task.locked ?? []);
   const isMirrored = locked.size > 0;
+  const archived = task.archivedAt != null;
+  const requests = task.pullRequests ?? [];
+  const request = sidebarRequest(requests);
+  const flag = task.mergedOpen && task.status === 'done' && !archived ? task.mergedOpen : null;
   const openBlockers = (task.blockedBy ?? []).filter(
     (item) => item != null && isOpenStatus(item.status),
   ).length;
@@ -339,6 +368,7 @@ export function TaskProperties({
       rowRef={anchors[field]}
       isOpen={openField === field}
       locked={owned}
+      archived={archived}
       onOpen={onOpenField}
     >
       {children}
@@ -351,6 +381,7 @@ export function TaskProperties({
       aria-label="Properties"
       className="flex min-h-0 flex-col overflow-y-auto border-l border-line px-4.5 py-4.5"
     >
+      {flag ? <FlagLine className="mb-2">{mergedOpenText(flag)}</FlagLine> : null}
       {openBlockers > 0 ? <BlockedNotice count={openBlockers} className="mb-2" /> : null}
       {row('status', 'Status', locked.has('status'), <StatusGlyph status={task.status} withLabel />)}
       {row(
@@ -360,7 +391,7 @@ export function TaskProperties({
         task.priority === 'none' ? (
           <>
             <PriorityGlyph priority="none" decorative />
-            <Placeholder>Set priority</Placeholder>
+            <Placeholder>{archived ? 'None' : 'Set priority'}</Placeholder>
           </>
         ) : (
           <PriorityGlyph priority={task.priority} withLabel />
@@ -383,11 +414,20 @@ export function TaskProperties({
         ) : (
           <>
             <UnassignedAvatar decorative />
-            <Placeholder>Assign</Placeholder>
+            <Placeholder>{archived ? 'None' : 'Assign'}</Placeholder>
           </>
         ),
       )}
-      {isMirrored && !task.criteria?.length ? null : (
+      {request ? (
+        <StaticRow label="Pull request">
+          <span className="tabular-nums">{requestRef(request.provider, request.number)}</span>
+          {requests.length > 1 ? (
+            <span className="font-normal text-fg-2 tabular-nums">+{requests.length - 1}</span>
+          ) : null}
+          <RequestStatePill state={request.state} />
+        </StaticRow>
+      ) : null}
+      {(isMirrored || archived) && !task.criteria?.length ? null : (
         <WorkRow
           label="Criteria"
           shortcut="Shift+X"
@@ -400,7 +440,7 @@ export function TaskProperties({
           )}
         </WorkRow>
       )}
-      {isMirrored && !task.doneItems?.length ? null : (
+      {(isMirrored || archived) && !task.doneItems?.length ? null : (
         <WorkRow label="Done items" {...(onFocusDone ? { onPress: onFocusDone } : {})}>
           {task.doneItems?.length ? (
             <WorkCount
@@ -430,7 +470,7 @@ export function TaskProperties({
         labels.length ? (
           labels.map((label) => <LabelChip key={label.id} name={label.name} color={label.color} />)
         ) : (
-          <Placeholder>Add labels</Placeholder>
+          <Placeholder>{archived ? 'None' : 'Add labels'}</Placeholder>
         ),
       )}
       {row(
@@ -446,9 +486,24 @@ export function TaskProperties({
             className="text-sm"
           />
         ) : (
-          <Placeholder>{isMirrored ? 'None' : 'Set due date'}</Placeholder>
+          <Placeholder>{isMirrored || archived ? 'None' : 'Set due date'}</Placeholder>
         ),
       )}
+      {archived && !task.checkAgain
+        ? null
+        : row(
+            'checkAgain',
+            'Check again',
+            false,
+            task.checkAgain ? (
+              <span className="flex min-w-0 basis-full flex-col gap-1">
+                <CheckAgainChip on={task.checkAgain.on} today={today ?? null} />
+                <CheckAgainReason className="font-normal">{task.checkAgain.reason}</CheckAgainReason>
+              </span>
+            ) : (
+              <Placeholder>Set a day</Placeholder>
+            ),
+          )}
       <ParentRow
         parent={task.parent}
         rowRef={anchors.parent}
@@ -480,7 +535,7 @@ export function TaskProperties({
                 ) : null}
               </>
             ) : (
-              <Placeholder>Add to milestone</Placeholder>
+              <Placeholder>{archived ? 'None' : 'Add to milestone'}</Placeholder>
             ),
           )
         : null}
@@ -497,7 +552,7 @@ export function TaskProperties({
                 </span>
               </>
             ) : (
-              <Placeholder>Add to cycle</Placeholder>
+              <Placeholder>{archived ? 'None' : 'Add to cycle'}</Placeholder>
             ),
           )
         : null}
@@ -509,12 +564,16 @@ export function TaskProperties({
           </span>
         </StaticRow>
       )}
-      {task.updatedAt !== task.createdAt || isMirrored ? (
+      {task.updatedAt !== task.createdAt || isMirrored || archived ? (
         <StaticRow label="Updated">
           <span className="text-xs font-normal text-fg-3">
-            {isMirrored
-              ? `From the file, ${time(task.updatedAt).replace(/^Just now$/, 'just now')}`
-              : `${time(task.updatedAt)}${updatedBy ? ` by ${updatedBy}` : ''}`}
+            {archived && task.archivedAt
+              ? now == null
+                ? ''
+                : `${day(task.archivedAt)}, archived`
+              : isMirrored
+                ? `From the file, ${time(task.updatedAt).replace(/^Just now$/, 'just now')}`
+                : `${time(task.updatedAt)}${updatedBy ? ` by ${updatedBy}` : ''}`}
           </span>
         </StaticRow>
       ) : null}

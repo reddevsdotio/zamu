@@ -7,9 +7,12 @@ import {
   displayListInput,
   groupTasks,
   hideOldDone,
+  isWaiting,
   normalizeDisplayOptions,
   sameDisplayOptions,
   showsProperty,
+  waitingLook,
+  withoutHiddenWaiting,
 } from './display-options';
 
 type Row = Pick<TaskListItem, 'key' | 'status' | 'priority' | 'updatedAt'> &
@@ -205,5 +208,46 @@ describe('groupTasks', () => {
     expect(groupTasks(tasks, 'none')).toEqual([
       { key: 'all', label: 'All tasks', value: { field: 'none' }, tasks },
     ]);
+  });
+});
+
+describe('waiting tasks (M7)', () => {
+  const TODAY = '2026-11-26';
+  const waiting = { checkAgain: { on: '2026-12-03', reason: 'The bank answers' } };
+  const due = { checkAgain: { on: '2026-11-26', reason: 'Today' } };
+  const none = { checkAgain: null };
+
+  it('defaults to dimmed, and reads stored values', () => {
+    expect(defaultDisplayOptions('board').waiting).toBe('dimmed');
+    expect(defaultDisplayOptions('list').properties).toMatchObject({ pullRequest: false, checkAgain: true });
+    expect(normalizeDisplayOptions('board', { waiting: 'hidden' }).waiting).toBe('hidden');
+    expect(normalizeDisplayOptions('board', { waiting: 'sometimes' }).waiting).toBe('dimmed');
+    expect(
+      sameDisplayOptions(defaultDisplayOptions('board'), {
+        ...defaultDisplayOptions('board'),
+        waiting: 'shown',
+      }),
+    ).toBe(false);
+  });
+
+  it('waits only while the day is ahead, and never on a guess', () => {
+    expect(isWaiting(waiting, TODAY)).toBe(true);
+    expect(isWaiting(due, TODAY)).toBe(false);
+    expect(isWaiting(none, TODAY)).toBe(false);
+    expect(isWaiting(waiting, null)).toBe(false);
+  });
+
+  it('dims or hides waiting tasks, never one whose day has come', () => {
+    expect(waitingLook({ waiting: 'dimmed' }, waiting, TODAY)).toBe('dimmed');
+    expect(waitingLook({ waiting: 'hidden' }, waiting, TODAY)).toBe('hidden');
+    expect(waitingLook({ waiting: 'shown' }, waiting, TODAY)).toBeNull();
+    expect(waitingLook({ waiting: 'dimmed' }, due, TODAY)).toBeNull();
+    const tasks = [waiting, due, none];
+    expect(withoutHiddenWaiting(tasks, { waiting: 'hidden' }, TODAY)).toEqual({
+      tasks: [due, none],
+      hidden: 1,
+    });
+    expect(withoutHiddenWaiting(tasks, { waiting: 'dimmed' }, TODAY)).toEqual({ tasks, hidden: 0 });
+    expect(withoutHiddenWaiting(tasks, { waiting: 'hidden' }, null)).toEqual({ tasks, hidden: 0 });
   });
 });
