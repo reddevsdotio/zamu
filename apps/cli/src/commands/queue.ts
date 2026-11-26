@@ -1,6 +1,7 @@
 // zamu queue and zamu queue drop ID (M6): the writes waiting in the offline queue, and removing one
 // that should not be sent. Both work on the local file only and never contact the server.
 import type { CliQueueEntry } from '@zamu/contracts';
+import { isKnown, type Login, readLogins } from '../config';
 import { type CommandContext, emit } from '../context';
 import { notFoundError } from '../errors';
 import { formatTime, table } from '../format';
@@ -8,9 +9,18 @@ import { dropQueued, listQueue, queuePath } from '../queue';
 
 export async function showQueue(context: CommandContext): Promise<void> {
   const items = await listQueue(context.io);
+  // Writes of several workspaces: name each one's workspace by the slug of its stored login.
+  const slugs = new Map(
+    (await readLogins(context.io).catch((): Login[] => []))
+      .filter(isKnown)
+      .map((login) => [`${login.url} ${login.workspace.id}`, login.workspace.slug]),
+  );
+  const workspaceOf = (entry: CliQueueEntry) =>
+    entry.workspaceId ? (slugs.get(`${entry.url} ${entry.workspaceId}`) ?? entry.workspaceId) : '';
   emit(context, 'queue.list', { items }, (data) => {
     if (data.items.length === 0) return 'Nothing queued.\n';
     const servers = new Set(data.items.map((entry) => entry.url));
+    const workspaces = new Set(data.items.map((entry) => entry.workspaceId ?? ''));
     const count = data.items.length === 1 ? '1 write waits' : `${data.items.length} writes wait`;
     const head = `${count} for the server; the next zamu command that reaches it sends them, oldest first.\n`;
     return `${head}\n${table<CliQueueEntry>(
@@ -19,6 +29,7 @@ export async function showQueue(context: CommandContext): Promise<void> {
         { header: 'ID', value: (entry) => entry.id },
         { header: 'QUEUED', value: (entry) => formatTime(entry.queuedAt) },
         ...(servers.size > 1 ? [{ header: 'SERVER', value: (entry: CliQueueEntry) => entry.url }] : []),
+        ...(workspaces.size > 1 ? [{ header: 'WORKSPACE', value: workspaceOf }] : []),
         { header: 'TASK', value: (entry) => entry.taskKey },
         { header: 'WRITE', value: (entry) => entry.summary },
       ],

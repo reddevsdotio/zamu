@@ -1,11 +1,13 @@
 // Typed /api/v1 client: the contract from @zamu/contracts over OpenAPILink (plain REST + JSON), with
 // Problem bodies decoded into ORPCErrors that carry the contract's codes. Every request has 5 seconds
 // to connect and answer (M6): an agent's command never hangs on a server that is down or restarting,
-// and a write the offline queue accepts (queue.ts) is stored instead.
+// and a write the offline queue accepts (queue.ts) is stored instead. A login's requests name its
+// workspace in the x-zamu-workspace header (0.10), so a key used for another workspace fails loudly
+// with WORKSPACE_MISMATCH instead of reading the wrong data.
 import { createORPCClient } from '@orpc/client';
 import type { ContractRouterClient } from '@orpc/contract';
 import { OpenAPILink } from '@orpc/openapi-client/fetch';
-import { type Contract, contract, decodeProblem } from '@zamu/contracts';
+import { type Contract, contract, decodeProblem, WORKSPACE_HEADER } from '@zamu/contracts';
 import type { FetchLike } from './io';
 
 export type ApiClient = ContractRouterClient<Contract>;
@@ -23,6 +25,8 @@ export interface ClientOptions {
   /** Server origin (the contract paths already start with /api/v1). */
   url: string;
   key: string;
+  /** Slug of the workspace the key is for, sent as x-zamu-workspace. Omitted when not known. */
+  workspace?: string | null;
   fetch?: FetchLike;
   /** Limit per request in milliseconds (default REQUEST_TIMEOUT_MS). */
   timeoutMs?: number;
@@ -92,6 +96,7 @@ export function withTimeout(fetch: (request: Request, init?: RequestInit) => Pro
 export function createApiClient({
   url,
   key,
+  workspace,
   fetch,
   timeoutMs = REQUEST_TIMEOUT_MS,
 }: ClientOptions): ApiClient {
@@ -101,9 +106,38 @@ export function createApiClient({
     fetch ? fetch(request) : globalThis.fetch(request, init);
   const link = new OpenAPILink(contract, {
     url,
-    headers: { authorization: `Bearer ${key}`, 'user-agent': USER_AGENT, accept: 'application/json' },
+    headers: {
+      authorization: `Bearer ${key}`,
+      'user-agent': USER_AGENT,
+      accept: 'application/json',
+      ...(workspace ? { [WORKSPACE_HEADER]: workspace } : {}),
+    },
     customErrorResponseBodyDecoder: (body) => decodeProblem(body),
     fetch: withTimeout(send, timeoutMs),
   });
   return createORPCClient<ApiClient>(link);
+}
+
+type Procedure = (...args: unknown[]) => Promise<unknown>;
+
+/** Calls the procedure at `path` (["tasks", "update"]) of a client. */
+export function callProcedure(client: ApiClient, path: readonly string[], args: unknown[]): Promise<unknown> {
+  let target: unknown = client;
+  for (const part of path) target = (target as Record<string, unknown>)[part];
+  return (target as Procedure)(...args);
+}
+
+/**
+ * A client whose every procedure call goes through `call`, with the procedure's path. The offline
+ * queue and the clone match wrap the real client with it.
+ */
+export function proxyClient(call: (path: string[], args: unknown[]) => Promise<unknown>): ApiClient {
+  const proxy = (path: string[]): unknown =>
+    new Proxy(() => {}, {
+      // `then` must stay undefined, or awaiting the client would call it.
+      get: (_target, property) =>
+        typeof property === 'string' && property !== 'then' ? proxy([...path, property]) : undefined,
+      apply: (_target, _this, args: unknown[]) => call(path, args),
+    });
+  return proxy([]) as ApiClient;
 }

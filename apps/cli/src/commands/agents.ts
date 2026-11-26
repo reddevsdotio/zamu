@@ -5,7 +5,7 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { type Project, ProjectKeyInput, ProjectList } from '@zamu/contracts';
-import { envKey, readConfig } from '../config';
+import { envKey, readLogins } from '../config';
 import { type CommandContext, emit } from '../context';
 import { EXIT, toCliError, usageError } from '../errors';
 import { gitRoot, resolveProject } from '../project';
@@ -69,7 +69,7 @@ export function agentsBlock(project: string | null, relation: BacklogRelation = 
     '',
     intro,
     'Read `zamu instructions` before you start, then `zamu instructions creating`, `working` and `finishing` for each step.',
-    'Credentials come from ZAMU_URL and ZAMU_KEY, or from `zamu login`. Never write a key into the repository.',
+    'Credentials come from ZAMU_URL and ZAMU_KEY, or from `zamu login` (one login per workspace; `--workspace <slug>` picks one). Never write a key into the repository.',
     ...backlog,
     AGENTS_BLOCK_END,
   ].join('\n');
@@ -104,7 +104,7 @@ async function blockProject(context: CommandContext, flag: string | undefined): 
     if (!parsed.success) throw usageError(`--project ${flag}: not a project key.`);
     return parsed.data;
   }
-  const credentials = Boolean(envKey(io)) || (await readConfig(io).catch(() => null)) !== null;
+  const credentials = Boolean(envKey(io)) || (await readLogins(io).catch(() => [])).length > 0;
   try {
     return (await resolveProject(context, undefined, { remote: credentials }))?.key ?? null;
   } catch (error) {
@@ -124,7 +124,7 @@ async function blockProject(context: CommandContext, flag: string | undefined): 
 async function projectRelation(context: CommandContext, project: string | null): Promise<BacklogRelation> {
   if (!project) return 'unknown';
   const { io } = context;
-  const credentials = Boolean(envKey(io)) || (await readConfig(io).catch(() => null)) !== null;
+  const credentials = Boolean(envKey(io)) || (await readLogins(io).catch(() => [])).length > 0;
   if (!credentials) return 'unknown';
   try {
     const client = await context.client();

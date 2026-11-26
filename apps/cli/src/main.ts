@@ -3,7 +3,7 @@
 import { CLI_EXIT_QUEUED } from '@zamu/contracts';
 import { Command, CommanderError } from 'commander';
 import { agents } from './commands/agents';
-import { login, logout, whoami } from './commands/auth';
+import { login, logout, whoami, workspaces } from './commands/auth';
 import { backlogRefresh, backlogStatus } from './commands/backlog';
 import { backlogExport } from './commands/backlog-export';
 import { addComment, deleteComment, editComment, listComments } from './commands/comments';
@@ -58,7 +58,13 @@ export function buildProgram(context: CommandContext): Command {
   program
     .description('Command-line client for Zamu. Every command takes --json.')
     .version(VERSION, '-v, --version')
+    .option(
+      '--workspace <slug>',
+      "workspace of the stored login to use (slug or id; default: this clone's, else the default login)",
+    )
     .exitOverride()
+    // Every subcommand's help lists --workspace under "Global Options".
+    .configureHelp({ showGlobalOptions: true })
     .showHelpAfterError(context.json ? false : '(add --help for usage)')
     .configureOutput({
       writeOut: (text) => io.stdout(text),
@@ -72,11 +78,17 @@ export function buildProgram(context: CommandContext): Command {
       getOutHasColors: () => false,
       getErrHasColors: () => false,
     })
+    .hook('preAction', () => {
+      const flag = program.opts<{ workspace?: string }>().workspace;
+      if (flag !== undefined) context.workspaceFlag = flag;
+    })
     .addHelpText(
       'after',
       `
-Credentials: zamu login stores the server URL and key in $XDG_CONFIG_HOME/zamu/config.json
-(~/.config/zamu/config.json). ZAMU_URL and ZAMU_KEY override it.
+Credentials: zamu login stores one login per server and workspace in
+$XDG_CONFIG_HOME/zamu/config.json (~/.config/zamu/config.json); zamu workspaces lists them. A command
+uses --workspace, then ZAMU_KEY (with ZAMU_URL), then the login for this clone's git remote (the one
+whose workspace links it, or has the project of .zamu.json), then the default login.
 
 Project: commands that need one take --project, then ZAMU_PROJECT, then the nearest .zamu.json, then
 the project linked to this clone's git remote (zamu link). zamu whoami shows which one applies here.
@@ -108,13 +120,31 @@ Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task w
       .command('login')
       .description('check an API key against the server and store it')
       .requiredOption('--key <key>', 'API key (zamu_live_...); "-" reads it from stdin')
-      .option('--url <server>', 'server URL (default: ZAMU_URL, the stored URL, or http://localhost:3000)'),
-  ).action((options: { key: string; url?: string }) => login(context, options));
-
-  leaf(program.command('logout').description('remove the stored URL and key')).action(() => logout(context));
+      .option(
+        '--url <server>',
+        "server URL (default: ZAMU_URL, the default login's server, or http://localhost:3000)",
+      )
+      .option('--default', 'make it the default login (the first login always is)'),
+  ).action((options: { key: string; url?: string; default?: boolean }) => login(context, options));
 
   leaf(
-    program.command('whoami').description('show the user, workspace, key scope and the project used here'),
+    program
+      .command('logout')
+      .description('remove the login used here, the one --workspace names, or every login with --all')
+      .option('--all', 'remove every stored login'),
+  ).action((options: { all?: boolean }) => logout(context, options));
+
+  leaf(
+    program
+      .command('workspaces')
+      .description('list the stored logins and which one applies here, or change the default')
+      .option('--default <slug>', 'make the login for this workspace (slug or id) the default'),
+  ).action((options: { default?: string }) => workspaces(context, options));
+
+  leaf(
+    program
+      .command('whoami')
+      .description('show the user, workspace, key scope, the login and the project used here'),
   ).action(() => whoami(context));
 
   leaf(

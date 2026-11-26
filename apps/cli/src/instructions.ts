@@ -21,10 +21,15 @@ The work, in three guides:
   zamu instructions finishing    the final summary, In review, the final report
 
 Basics:
-  zamu whoami                                   who you act as and which project applies here
+  zamu whoami                                   who you act as, in which workspace, and which
+                                                project applies here
   zamu tasks list --mine --status todo,in_progress
   zamu tasks show KEY                           the task, its work record and its history
   Add --json to any command for versioned output (zamu.v1.*).
+
+Credentials: ZAMU_KEY (with ZAMU_URL), or the logins zamu login stores, one per workspace. In a clone
+zamu picks the login whose workspace has this repository's project. zamu workspaces lists the logins;
+--workspace <slug> picks one when a clone matches several (exit code 1, "matches 2 logins").
 
 Rules:
 - Search before you create a task. Two tasks for one piece of work split its history.
