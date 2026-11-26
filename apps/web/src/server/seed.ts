@@ -1,10 +1,12 @@
 // Development data: a workspace with projects PAY and WEB, a few tasks, the agent claude-dev acting
 // for the admin, fresh API keys, and with `backlog` the mirrored Backlog.md project BACK. With
 // `secondWorkspace`, the admin also owns a second workspace (Globex) whose project has the same key,
-// PAY, and its own claude-dev agent, so links, keys and lists can be checked for isolation. Everything
-// goes through @zamu/auth and @zamu/core, like real use, except backdating one task for the dashboard's
-// Stalled group. Re-running is safe: existing workspaces, projects and agents are kept, and new keys are
-// issued each time.
+// PAY, and its own claude-dev agent, so links, keys and lists can be checked for isolation. With
+// `pullRequests`, PAY links a repository and gets requests in every state, archived tasks and
+// check-again days. Everything goes through @zamu/auth and @zamu/core, like real use, except a few
+// direct writes noted where they happen (a backdated task, the repository link's check state, one
+// archive by the nightly job). Re-running is safe: existing workspaces, projects and agents are kept,
+// and new keys are issued each time.
 import {
   AcceptInvitationError,
   acceptInvitationWithSignUp,
@@ -12,10 +14,17 @@ import {
   getActorFromRequest,
   isFirstRun,
 } from '@zamu/auth';
-import type { CreateTaskInput, Priority, TaskStatus } from '@zamu/contracts';
+import {
+  type CreateTaskInput,
+  DEFAULT_ARCHIVE_AFTER_DAYS,
+  type Priority,
+  type TaskStatus,
+} from '@zamu/contracts';
 import {
   type Actor,
   addCalendarDays,
+  applyRequest,
+  archiveTasks,
   Conflict,
   type CoreContext,
   createAgent,
@@ -27,13 +36,18 @@ import {
   createProject,
   createTask,
   createWorkspace,
+  ensureRepositoryLink,
   formatMention,
+  isEncryptionReady,
   listMembers,
   listMyWorkspaces,
+  newRepositoryWebhookSecret,
+  recordActivities,
   SlugTaken,
   todayIn,
   touchLastWorkspace,
   toWorkspaceRole,
+  updateProject,
   updateTask,
 } from '@zamu/core';
 import type { z } from 'zod';
@@ -59,6 +73,14 @@ export interface SeedOptions {
    */
   secondWorkspace?: boolean;
   secondWorkspaceName?: string;
+  /**
+   * M7, when PAY is new: link PAY to github.com/northwind/payments with requests in every state
+   * (open, draft, merged, closed) and tasks linked by branch, by a `Closes:` line and by hand; one
+   * task Done through a merge with open criteria; tasks archived by hand and by the nightly job;
+   * tasks waiting and ready to check again. PAY keeps the 14 days new projects get; WEB, when new,
+   * has archiving off, like a project from before archiving existed. Default false.
+   */
+  pullRequests?: boolean;
   adminName?: string;
   adminEmail?: string;
   adminPassword?: string;
@@ -122,6 +144,7 @@ export const SEED_DEFAULTS = {
   backlog: false,
   dashboard: false,
   secondWorkspace: false,
+  pullRequests: false,
 } satisfies Required<SeedOptions>;
 
 /** How long ago the seed's stalled agent task was last updated: past the 24-hour agent threshold. */
@@ -331,6 +354,12 @@ export async function seedDevData(ctx: CoreContext, options: SeedOptions = {}): 
     opts.planning && opts.dashboard && created.has('PAY') && created.has('WEB')
       ? await seedDashboard(ctx, admin, agent, { name: user.name, opts })
       : null;
+
+  if (opts.pullRequests && created.has('PAY')) {
+    const added = await seedRequests(ctx, admin, agent, { webIsNew: created.has('WEB') });
+    const pay = createdProjects.find((p) => p.key === 'PAY');
+    if (pay) pay.tasks += added;
+  }
 
   if (opts.backlog) {
     const backlog = await seedBacklogProject(ctx, admin);
@@ -602,4 +631,308 @@ async function seedDashboard(
   const since = new Date(Date.now() - STALLED_SEED_HOURS * 3_600_000).toISOString();
   await ctx.db.execute(`update task set updated_at = '${since}' where id = '${stalled.id}'`);
   return member;
+}
+
+/** The made-up repository PAY links with `pullRequests`. */
+export const REQUESTS_SEED = {
+  repository: 'https://github.com/northwind/payments',
+  defaultBranch: 'main',
+};
+
+type SeedRequest = Parameters<typeof applyRequest>[3];
+
+/** Seed task specs for seedRequests, created in this order after the base PAY tasks. */
+interface RequestSeedTask {
+  title: string;
+  status: TaskStatus;
+  priority: Priority;
+  assignee: Who;
+  /** Created by the agent through the CLI on this branch: the task's work branch. */
+  branch?: string;
+  criteria?: string[];
+  checkAgain?: { inDays: number; reason: string };
+}
+
+const REQUEST_TASKS = {
+  refundCap: {
+    title: 'Reject refunds above the captured amount',
+    status: 'in_progress',
+    priority: 'high',
+    assignee: 'agent',
+    branch: 'claude/pay-refund-cap',
+    criteria: [
+      'A refund above the captured amount fails with 422',
+      'Partial refunds never add up to more than the captured amount',
+      'The refund form shows the amount left to refund',
+    ],
+  },
+  payoutTimeout: {
+    title: 'Add a request timeout to the payout client',
+    status: 'in_progress',
+    priority: 'medium',
+    assignee: 'agent',
+    branch: 'claude/pay-payout-timeout',
+  },
+  payoutsHang: {
+    title: 'Payouts hang when the bank API stops answering',
+    status: 'todo',
+    priority: 'high',
+    assignee: 'admin',
+  },
+  webhookWorker: {
+    title: 'Split the webhook dispatcher into its own worker',
+    status: 'in_progress',
+    priority: 'medium',
+    assignee: 'agent',
+    branch: 'claude/pay-webhook-worker',
+  },
+  statementFees: {
+    title: 'Show payout fees on the monthly statement',
+    status: 'in_progress',
+    priority: 'low',
+    assignee: 'admin',
+  },
+  fxCache: {
+    title: 'Cache exchange rates for an hour',
+    status: 'todo',
+    priority: 'medium',
+    assignee: 'admin',
+  },
+  currencyColumn: {
+    title: 'Drop the unused currency column from invoices',
+    status: 'done',
+    priority: 'low',
+    assignee: 'admin',
+  },
+  secondProcessor: {
+    title: 'Try a second card processor for EU payments',
+    status: 'canceled',
+    priority: 'none',
+    assignee: null,
+  },
+  rotateSecret: {
+    title: 'Rotate the webhook signing secret',
+    status: 'done',
+    priority: 'medium',
+    assignee: 'agent',
+  },
+  sftpHost: {
+    title: "Switch payouts to the bank's new SFTP host",
+    status: 'todo',
+    priority: 'medium',
+    assignee: 'admin',
+    checkAgain: { inDays: 6, reason: 'Waiting for the bank to send the new host and key' },
+  },
+  payoutTotals: {
+    title: "Confirm last month's payout totals with finance",
+    status: 'in_progress',
+    priority: 'medium',
+    assignee: 'admin',
+    checkAgain: { inDays: -1, reason: 'Finance said they would answer by yesterday' },
+  },
+} satisfies Record<string, RequestSeedTask>;
+
+/** How long ago the nightly job's archived task closed: past PAY's 14 days. */
+const ARCHIVED_BY_JOB_DAYS = 20;
+
+/**
+ * M7 demo data for a new PAY (see SeedOptions.pullRequests). Returns how many tasks it added.
+ *
+ * - The repository link has checked the repository 20 minutes ago and moves tasks for events
+ *   since a month ago, so the requests below act like webhook deliveries. A direct write: only a
+ *   real check sets that state. With APP_ENCRYPTION_KEY the link also gets a webhook secret and
+ *   a good delivery.
+ * - #45 (by branch) opened, then merged into main: its task goes to In review, then Done with two
+ *   open criteria (Home's "Merged with open criteria").
+ * - #46 (a `Closes:` line) merged: its task goes to Done.
+ * - #47 (by branch, and a `Closes:` line for a second task) open: both go to In review.
+ * - #48 (by branch) a draft: linked, nothing moves.
+ * - #44 closed without merging, linked by hand by the admin.
+ * - Archived: a Done task by the admin, a Canceled one by the agent, and a Done task closed 20
+ *   days ago by the nightly job (written directly, like the job does, so other projects are left
+ *   alone).
+ * - Check again: one task waiting (in six days), one ready (yesterday) in the admin's Home.
+ */
+async function seedRequests(
+  ctx: CoreContext,
+  admin: Actor,
+  agent: Actor,
+  { webIsNew }: { webIsNew: boolean },
+): Promise<number> {
+  const now = Date.now();
+  const at = (hoursAgo: number) => new Date(now - hoursAgo * 3_600_000).toISOString();
+  const today = todayIn(ctx);
+
+  await updateProject(ctx, admin, { project: 'PAY', repository: REQUESTS_SEED.repository });
+  if (webIsNew) await updateProject(ctx, admin, { project: 'WEB', archiveAfterDays: null });
+
+  // Tasks. The agent's tasks with a branch are created the way `zamu tasks create` does from a
+  // clone on that branch, which records the work branch.
+  const ids = {} as Record<keyof typeof REQUEST_TASKS, { id: string; key: string }>;
+  for (const [name, spec] of Object.entries(REQUEST_TASKS) as [
+    keyof typeof REQUEST_TASKS,
+    RequestSeedTask,
+  ][]) {
+    const by =
+      spec.assignee === 'agent'
+        ? spec.branch
+          ? { ...agent, source: { machine: 'claude-dev-laptop', branch: spec.branch } }
+          : agent
+        : admin;
+    const created = await createTask(ctx, by, {
+      project: 'PAY',
+      title: spec.title,
+      status: spec.status,
+      priority: spec.priority,
+      assignee: spec.assignee === 'admin' ? admin.userId : spec.assignee === 'agent' ? agent.userId : null,
+      ...(spec.criteria ? { criteria: spec.criteria } : {}),
+      ...(spec.checkAgain
+        ? {
+            checkAgain: {
+              on: addCalendarDays(today, spec.checkAgain.inDays),
+              reason: spec.checkAgain.reason,
+            },
+          }
+        : {}),
+    });
+    ids[name] = { id: created.id, key: created.key };
+  }
+  await updateTask(ctx, agent, { key: ids.refundCap.key, checkCriteria: [1] });
+
+  // The repository link, as after a good check.
+  const link = await ctx.db.transaction(async (tx) => {
+    const pay = await tx.query.project.findFirst({ where: { workspaceId: admin.workspaceId, key: 'PAY' } });
+    if (!pay) throw new Error('PAY not found');
+    return ensureRepositoryLink(tx, ctx, pay);
+  });
+  if (!link) throw new Error('PAY has no repository link');
+  if (isEncryptionReady(ctx)) await newRepositoryWebhookSecret(ctx, admin, { project: 'PAY' });
+  const movesFrom = at(30 * 24);
+  await ctx.db.execute(
+    `update repository_link set default_branch = '${REQUESTS_SEED.defaultBranch}', moves_from = '${movesFrom}', ` +
+      `synced_at = '${at(1 / 3)}', sync_cursor = '${at(2)}'` +
+      (isEncryptionReady(ctx) ? `, webhook_last_at = '${at(2)}', webhook_last_status = 'ok'` : '') +
+      ` where id = '${link.id}'`,
+  );
+  const live = { ...link, defaultBranch: REQUESTS_SEED.defaultBranch, movesFrom: new Date(movesFrom) };
+
+  const request = (
+    number: number,
+    fields: Omit<SeedRequest, 'number' | 'webUrl' | 'baseBranch' | 'mergedBy' | 'mergedAt' | 'closedAt'> &
+      Partial<Pick<SeedRequest, 'mergedBy' | 'mergedAt' | 'closedAt'>>,
+  ): SeedRequest => ({
+    number,
+    baseBranch: REQUESTS_SEED.defaultBranch,
+    mergedBy: null,
+    mergedAt: null,
+    closedAt: null,
+    webUrl: `${REQUESTS_SEED.repository}/pull/${number}`,
+    ...fields,
+  });
+  const refundCap = request(45, {
+    title: 'Cap refunds at the captured amount',
+    body: 'Refunds above what was captured now fail with 422 before they reach the processor.',
+    state: 'open',
+    headBranch: 'claude/pay-refund-cap',
+    author: 'claude-dev',
+    openedAt: at(72),
+    updatedAt: at(72),
+  });
+  const events: { request: SeedRequest; hand?: string }[] = [
+    { request: refundCap },
+    {
+      request: {
+        ...refundCap,
+        state: 'merged',
+        mergedBy: 'ana-ruiz',
+        mergedAt: at(5),
+        closedAt: at(5),
+        updatedAt: at(5),
+      },
+    },
+    {
+      request: request(46, {
+        title: 'Show payout fees on statements',
+        body: `Adds a fees line under each payout.\n\nCloses: ${ids.statementFees.key}`,
+        state: 'merged',
+        headBranch: 'ana/statement-fees',
+        author: 'ana-ruiz',
+        mergedBy: 'ana-ruiz',
+        openedAt: at(50),
+        mergedAt: at(26),
+        closedAt: at(26),
+        updatedAt: at(26),
+      }),
+    },
+    {
+      request: request(47, {
+        title: 'Time out payout client calls after 10 seconds',
+        body:
+          'Every call the payout client makes now gives up after 10 seconds and retries once.\n\n' +
+          `Closes: ${ids.payoutsHang.key}`,
+        state: 'open',
+        headBranch: 'claude/pay-payout-timeout',
+        author: 'claude-dev',
+        openedAt: at(3),
+        updatedAt: at(3),
+      }),
+    },
+    {
+      request: request(48, {
+        title: 'Move webhook dispatch into its own worker',
+        body: 'Work in progress: the dispatcher runs, retries are not wired yet.',
+        state: 'draft',
+        headBranch: 'claude/pay-webhook-worker',
+        author: 'claude-dev',
+        openedAt: at(2),
+        updatedAt: at(2),
+      }),
+    },
+    {
+      request: request(44, {
+        title: 'Cache exchange rates in memory',
+        body: 'Closed: the rates must be shared between instances.',
+        state: 'closed',
+        headBranch: 'ana/fx-cache',
+        author: 'ana-ruiz',
+        openedAt: at(96),
+        closedAt: at(48),
+        updatedAt: at(48),
+      }),
+      hand: ids.fxCache.id,
+    },
+  ];
+  for (const event of events) {
+    await ctx.db.transaction((tx) =>
+      applyRequest(tx, ctx, live, event.request, {
+        live: true,
+        ...(event.hand ? { hand: { taskId: event.hand, actor: admin } } : {}),
+      }),
+    );
+  }
+
+  // Archived by hand: by the admin, and by the agent (agents may archive too).
+  await archiveTasks(ctx, admin, { keys: [ids.currencyColumn.key] });
+  await archiveTasks(ctx, agent, { keys: [ids.secondProcessor.key] });
+
+  // Archived by the nightly job: closed 20 days ago, archived with no actor and the archive cause.
+  const job = ids.rotateSecret.id;
+  await ctx.db.execute(
+    `update task set closed_at = '${at(ARCHIVED_BY_JOB_DAYS * 24)}', archived_at = '${at(3)}', ` +
+      `archived_by_id = null where id = '${job}'`,
+  );
+  await ctx.db.transaction((tx) =>
+    recordActivities(tx, null, [
+      {
+        workspaceId: admin.workspaceId,
+        projectId: link.projectId,
+        taskId: job,
+        type: 'task.archived',
+        changes: [],
+        origin: 'app',
+        cause: { kind: 'archive', afterDays: DEFAULT_ARCHIVE_AFTER_DAYS },
+      },
+    ]),
+  );
+  return Object.keys(REQUEST_TASKS).length;
 }
