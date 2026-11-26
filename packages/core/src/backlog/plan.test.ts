@@ -112,6 +112,7 @@ function applyInMemory(plan: BacklogPlan, before: ExistingState): ExistingState 
       milestone !== undefined ? { milestoneId: resolve(milestone) } : {},
     );
     if (update.restore) row.hiddenAt = null;
+    if (update.archived !== undefined) row.archivedAt = update.archived ? (row.archivedAt ?? NOW) : null;
   }
   for (const hide of plan.tasks.hides) (tasks.get(hide.id) as ExistingTask).hiddenAt = NOW;
   for (const create of plan.tasks.creates) {
@@ -136,6 +137,7 @@ function applyInMemory(plan: BacklogPlan, before: ExistingState): ExistingState 
       createdAt: create.createdAt,
       backlogData: JSON.parse(JSON.stringify(create.backlogData)),
       hiddenAt: null,
+      archivedAt: create.archived ? NOW : null,
     });
   }
   const files = plan.files.map((file) => ({
@@ -519,6 +521,117 @@ describe('planRefresh against existing rows', () => {
     const row = plan.files.find((file) => file.path.includes('back-2 - Second'));
     expect(row).toMatchObject({ task: { id: 't:BACK-2' } });
     expect(row?.error).toBeTruthy();
+  });
+
+  // M7: the archive folder decides archived_at; status changes decide closed_at.
+  const archivePath = (id: string, title: string) => taskPath(folder, id, title, 'archive/tasks');
+  const moveToArchive = (files: FolderFile[], id: string, title: string): FolderFile[] =>
+    files.map((file) =>
+      file.path === taskPath(folder, id, title) ? { ...file, path: archivePath(id, title) } : file,
+    );
+
+  it('archives a task whose file moves to archive/tasks/ and restores it when it moves back', () => {
+    const files = base();
+    const { state, mappings } = firstRead(files);
+    const moved = moveToArchive(files, 'back-2', 'Second');
+    const archived = incremental(moved, folder, state, mappings);
+    // The block's kind changes, but task.archived names the move: no Backlog.md-only change is listed.
+    expect(archived.tasks.updates).toEqual([
+      {
+        id: 't:BACK-2',
+        set: { backlogData: expect.objectContaining({ kind: 'archived' }) },
+        changes: [],
+        restore: false,
+        archived: true,
+      },
+    ]);
+    const after = applyInMemory(archived, state);
+    expect(after.tasks.find((row) => row.id === 't:BACK-2')?.archivedAt).toEqual(NOW);
+    // Re-reading the archived folder changes nothing.
+    expect(incremental(moved, folder, after, mappings).tasks.updates).toEqual([]);
+    const back = incremental(files, folder, after, mappings);
+    expect(back.tasks.updates).toEqual([
+      expect.objectContaining({ id: 't:BACK-2', changes: [], archived: false }),
+    ]);
+    // An open task coming out of the archive keeps closed_at as it is (null).
+    expect(back.tasks.updates[0]?.closedAt).toBeUndefined();
+  });
+
+  it('creates tasks of the archive folder and the legacy completed/ folder archived', () => {
+    const files = base();
+    files.push(
+      {
+        path: archivePath('back-3', 'Third'),
+        text: taskFile({ id: 'BACK-3', title: 'Third', status: 'Done' }),
+      },
+      {
+        path: `${folder}/completed/back-4 - Fourth.md`,
+        text: taskFile({ id: 'BACK-4', title: 'Fourth', status: 'Done' }),
+      },
+    );
+    const plan = planRefresh(input(files, folder, { mappings: mappingsFor(files) }));
+    const archived = (id: string) => plan.tasks.creates.find((task) => task.backlogId === id)?.archived;
+    expect([archived('BACK-1'), archived('BACK-3'), archived('BACK-4'), archived('DRAFT-1')]).toEqual([
+      false,
+      true,
+      true,
+      false,
+    ]);
+    expect(plan.counts).toMatchObject({ tasks: 3, archived: 2, completed: 1, drafts: 1 });
+  });
+
+  it('reads the archived state from the row when it is known, else from the stored block', () => {
+    const files = base();
+    const { state, mappings } = firstRead(files);
+    const setArchived = (archivedAt: Date | null | undefined) => ({
+      ...state,
+      tasks: state.tasks.map((row) => (row.id === 't:BACK-2' ? { ...row, archivedAt } : row)),
+    });
+    // Archived in Zamu but the file is in tasks/: the files win.
+    expect(incremental(files, folder, setArchived(NOW), mappings).tasks.updates).toEqual([
+      { id: 't:BACK-2', set: {}, changes: [], restore: false, archived: false },
+    ]);
+    // Not loaded: the block says task, as the file does, so nothing changes.
+    expect(incremental(files, folder, setArchived(undefined), mappings).tasks.updates).toEqual([]);
+    const moved = moveToArchive(files, 'back-2', 'Second');
+    const after = applyInMemory(incremental(moved, folder, state, mappings), state);
+    const unknown = {
+      ...after,
+      tasks: after.tasks.map((row) => (row.id === 't:BACK-2' ? { ...row, archivedAt: undefined } : row)),
+    };
+    expect(incremental(moved, folder, unknown, mappings).tasks.updates).toEqual([]);
+    expect(incremental(files, folder, unknown, mappings).tasks.updates).toEqual([
+      expect.objectContaining({ id: 't:BACK-2', archived: false }),
+    ]);
+  });
+
+  it('plans closed_at from status changes and from leaving the archive while closed', () => {
+    const files = base();
+    const { state, mappings } = firstRead(files);
+    const withStatus = (status: string, archive = false) => {
+      const text = taskFile({ id: 'BACK-2', title: 'Second', status });
+      return files.map((file) =>
+        file.path === taskPath(folder, 'back-2', 'Second')
+          ? { path: archive ? archivePath('back-2', 'Second') : file.path, text }
+          : file,
+      );
+    };
+    const update = (plan: BacklogPlan) => plan.tasks.updates.find((entry) => entry.id === 't:BACK-2');
+    const done = incremental(withStatus('Done'), folder, state, mappings);
+    expect(update(done)).toMatchObject({ set: { status: 'done' }, closedAt: 'close' });
+    const closed = applyInMemory(done, state);
+    expect(update(incremental(withStatus('In Progress'), folder, closed, mappings))).toMatchObject({
+      set: { status: 'in_progress' },
+      closedAt: 'clear',
+    });
+    // Archived while Done, then out of the archive while still Done: closed_at starts again.
+    const archived = applyInMemory(incremental(withStatus('Done', true), folder, closed, mappings), closed);
+    expect(update(incremental(withStatus('Done'), folder, archived, mappings))).toMatchObject({
+      archived: false,
+      closedAt: 'reset',
+    });
+    // Into the archive changes no date; a file edit without a status change neither.
+    expect(update(incremental(withStatus('Done', true), folder, closed, mappings))?.closedAt).toBeUndefined();
   });
 
   it('skips ids that cannot become task keys', () => {
