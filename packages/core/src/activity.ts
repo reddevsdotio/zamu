@@ -1,12 +1,16 @@
 // Activity: one row per task change, written in the transaction of the change. M3 adds the
 // origin (app or a Backlog.md refresh), the commit a refresh read, and project-level rows. M5 adds
 // labels, dueDate, blockedBy and parent changes. M6 adds the work record changes (criteria, done
-// items, plan, final summary) and the machine and branch the CLI sent with the change.
+// items, plan, final summary) and the machine and branch the CLI sent with the change. M7 adds the
+// cause of system changes (a request event, the archive job), origin git, the system actor a
+// history line names, and the work branch, check-again and pull request changes.
 import {
   type Activity,
+  ActivityCause,
   type ActivityChange,
   ActivityList,
   type ActivityOrigin,
+  type ActivitySystemActor,
   type EntrySource,
   formatTaskKey,
   ListTaskActivityInput,
@@ -68,7 +72,17 @@ export type StoredChange =
   | { field: 'dueDate'; from: string | null; to: string | null }
   | { field: 'blockedBy'; from: StoredTaskRef[]; to: StoredTaskRef[] }
   | { field: 'parent'; from: StoredTaskRef | null; to: StoredTaskRef | null }
-  | StoredWorkRecordChange;
+  | StoredWorkRecordChange
+  | StoredM7Change;
+
+/**
+ * M7: the work branch, the check-again day and a request linked or unlinked. Stored in the
+ * contract's shape: they hold text, days and request references, nothing to resolve.
+ */
+export type StoredM7Change = Extract<ActivityChange, { field: (typeof M7_CHANGE_FIELDS)[number] }>;
+
+/** M7 change kinds, stored and returned as they are. */
+export const M7_CHANGE_FIELDS = ['workBranch', 'checkAgain', 'pullRequest'] as const;
 
 /**
  * M6: a change of a criterion or done item (criterion.checked, doneItem.waived, ...) or of the plan
@@ -93,6 +107,7 @@ const CONTRACT_FIELDS = new Set<string>([
   'blockedBy',
   'parent',
   ...WORK_RECORD_CHANGE_FIELDS,
+  ...M7_CHANGE_FIELDS,
 ]);
 
 /** Orders labels as stored changes and task shapes list them: by name ignoring case, then by name. */
@@ -125,12 +140,20 @@ export function compareTaskKeys(a: string, b: string): number {
   return 0;
 }
 
-/** Where a row comes from. Defaults to the app; a Backlog.md refresh passes its commit. */
+/**
+ * Where a row comes from. Defaults to the app; a Backlog.md refresh passes its commit, and (M7) a
+ * request event passes origin git with the request URL.
+ */
 export interface ActivityOriginFields {
-  /** Default app. backlog rows must be written with a null actor (the Backlog.md actor). */
+  /**
+   * Default app. backlog rows must be written with a null actor (the Backlog.md actor); so must
+   * git rows (M7: the host of a request event).
+   */
   origin?: ActivityOrigin;
-  /** The commit a Backlog.md refresh read. */
+  /** The commit a Backlog.md refresh read, or (M7) the request URL of a git row. */
   originRef?: string | null;
+  /** M7: why the system made the change: a request event or the archive job. */
+  cause?: ActivityCause | null;
 }
 
 export interface ActivityEntry extends ActivityOriginFields {
@@ -140,7 +163,10 @@ export interface ActivityEntry extends ActivityOriginFields {
   changes: StoredChange[];
 }
 
-/** A system entry has no actor (the hourly cycle job, a Backlog.md refresh), so it names its workspace. */
+/**
+ * A system entry has no actor (the hourly cycle job, a Backlog.md refresh, M7: a request event or
+ * the archive job), so it names its workspace.
+ */
 export interface SystemActivityEntry extends ActivityEntry {
   workspaceId: string;
 }
@@ -189,6 +215,10 @@ function activityValues(actor: Actor | null, entry: AnyEntry | AnySystemEntry) {
   if (origin === 'backlog' && actor) {
     throw new Error('Backlog.md activity is written without an actor (the Backlog.md actor)');
   }
+  if (origin === 'git' && actor) {
+    throw new Error('Git host activity is written without an actor (the host)');
+  }
+  const cause = entry.cause ? ActivityCause.parse(entry.cause) : null;
   const isProject = 'details' in entry;
   return {
     workspaceId,
@@ -203,7 +233,34 @@ function activityValues(actor: Actor | null, entry: AnyEntry | AnySystemEntry) {
     // M6: what the CLI sent (x-zamu-machine, x-zamu-branch); the web app and jobs send neither.
     machine: actor?.source?.machine ?? null,
     branch: actor?.source?.branch ?? null,
+    cause,
   };
+}
+
+/**
+ * M7: who a history line names when the row has no actor: the git host of a request event (origin
+ * git, the provider from the cause), Backlog.md (origin backlog), or Zamu's own jobs (origin app:
+ * the hourly cycle job, the archive job). Null when a person or an agent acted.
+ */
+export function systemActorOf(
+  row: Pick<ActivityRow, 'actorId' | 'origin'> & { cause?: ActivityRow['cause'] },
+): ActivitySystemActor | null {
+  if (row.actorId) return null;
+  if (row.origin === 'backlog') return { kind: 'backlog' };
+  if (row.origin === 'git') {
+    const cause = ActivityCause.safeParse(row.cause ?? null);
+    if (cause.success && cause.data.kind === 'pull_request')
+      return { kind: 'git', provider: cause.data.provider };
+    // A git row always has a request cause; an unreadable one still names a host.
+    return { kind: 'git', provider: 'github' };
+  }
+  return { kind: 'zamu' };
+}
+
+/** M7: a stored cause as the contract reads it; null when none or unreadable. */
+export function causeOf(row: { cause?: ActivityRow['cause'] }): ActivityCause | null {
+  const parsed = ActivityCause.safeParse(row.cause ?? null);
+  return parsed.success ? parsed.data : null;
 }
 
 /**
@@ -414,6 +471,8 @@ export async function toActivities(db: DbOrTx, taskKey: string, rows: ActivityRo
           change.field === 'backlog' && Array.isArray(change.to) ? change.to.map(String) : [],
         ),
         source: entrySourceOf(row),
+        cause: causeOf(row),
+        system: systemActorOf(row),
         createdAt: row.createdAt,
       };
     }),

@@ -2,6 +2,7 @@
 // and (through the API) the CLI. Services take a context, the actor and a contract input.
 export * from './activity';
 export * from './api-keys';
+export * from './archive';
 export * from './authz';
 export * from './backlog';
 export * from './comments';
@@ -21,7 +22,9 @@ export * from './members';
 export * from './mentions';
 export * from './milestones';
 export * from './projects';
+export * from './pull-requests';
 export * from './relations';
+export * from './repository';
 export * from './secrets';
 export * from './tasks';
 export * from './timeline';

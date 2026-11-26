@@ -9,6 +9,9 @@
 //   metadata addresses are always refused. GIT_HTTP_HOSTS hosts are reached over plain HTTP.
 // - A rejected or unreachable check pauses the mirrors that use the connection; a later working
 //   check resumes them. Deleting a connection pauses its mirrors in the same transaction.
+// - M7: repository links read requests through a connection too. Deleting it leaves them with
+//   none (a public read) and restarts their moves_from; a failed check shows on their Repository
+//   page as the sync error, and a working one clears it.
 import {
   CreateGitConnectionInput,
   DeleteGitConnectionInput,
@@ -47,7 +50,7 @@ import { loadUsers, userRef } from './internal';
 import type { JobQueue } from './jobs';
 import { decryptSecret, EncryptionKeyMissing, encryptSecret, isEncryptionReady } from './secrets';
 
-const { backlogSource, gitConnection, project } = schema;
+const { backlogSource, gitConnection, project, repositoryLink } = schema;
 
 const NAME_UNIQUE = 'git_connection_workspaceId_name_unique';
 
@@ -106,6 +109,18 @@ function factoryOf(ctx: GitContext): ProviderFactory {
 
 function nowOf(ctx: GitContext): Date {
   return ctx.now?.() ?? new Date();
+}
+
+/**
+ * M7: the adapter for a public repository, without a token, with the context's host policy and
+ * HTTP for GIT_HTTP_HOSTS. Repository links without a connection read through it.
+ */
+export function publicProvider(
+  ctx: GitConnectionContext,
+  provider: GitProviderName,
+  host: string,
+): GitProvider {
+  return buildProvider(ctx, provider, host, '');
 }
 
 /** Builds the adapter for a host and token with the context's host policy. */
@@ -510,7 +525,13 @@ export async function deleteConnection(
           ),
         );
     }
-    // connection_id is set null by the foreign key.
+    // M7: repository links read a public repository from now on, and requests seen before the
+    // change move nothing (moves_from). The foreign key would clear connection_id on its own.
+    await tx
+      .update(repositoryLink)
+      .set({ connectionId: null, movesFrom: nowOf(ctx), syncError: null })
+      .where(and(eq(repositoryLink.connectionId, row.id), eq(repositoryLink.workspaceId, actor.workspaceId)));
+    // connection_id of Backlog.md sources is set null by the foreign key.
     await tx.delete(gitConnection).where(eq(gitConnection.id, row.id));
     const pausedProjects: ProjectRef[] = affected.map(({ id, key, name }) => ({ id, key, name }));
     return { id: row.id, pausedProjects };
@@ -599,7 +620,8 @@ export interface ConnectionStatusChange {
  * rejected and unreachable pause every mirror on the connection that is not paused or detached.
  * working resumes the paused ones whose project still has a repository, back to healthy or
  * warnings after a read, setup before the first. Callers enqueue refreshes for resumed sources.
- * Run it inside the caller's transaction.
+ * M7: a failed check also becomes the sync error of the repository links reading through the
+ * connection; a working check clears that error. Run it inside the caller's transaction.
  */
 export async function markConnectionStatus(
   tx: DbOrTx,
@@ -622,6 +644,11 @@ export async function markConnectionStatus(
 
   if (status !== 'working') {
     const label = status === 'rejected' ? 'rejected its token' : 'could not reach its host';
+    // M7: the Repository page of every project reading through it says so until a check works.
+    await tx
+      .update(repositoryLink)
+      .set({ syncError: `The git connection "${connection.name}" ${label}${detail ? `: ${detail}` : '.'}` })
+      .where(eq(repositoryLink.connectionId, connectionId));
     const paused = await tx
       .update(backlogSource)
       .set({
@@ -637,6 +664,17 @@ export async function markConnectionStatus(
       .returning({ id: backlogSource.id });
     return { pausedSourceIds: paused.map((row) => row.id), resumedSourceIds: [] };
   }
+
+  // M7: clear the failed check from the Repository pages; the next sync reports its own result.
+  await tx
+    .update(repositoryLink)
+    .set({ syncError: null })
+    .where(
+      and(
+        eq(repositoryLink.connectionId, connectionId),
+        sql`starts_with(${repositoryLink.syncError}, ${`The git connection "${connection.name}" `})`,
+      ),
+    );
 
   const resumable = tx
     .select({ id: backlogSource.id })

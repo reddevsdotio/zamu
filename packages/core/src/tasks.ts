@@ -5,13 +5,20 @@
 // list filters and orderings over them, and bulk changes of native tasks.
 // M6: the work record (criteria and done items in criteria.ts, plan and final summary on the row),
 // the project's default done items on create, the ifStatus precondition, and the finishing rule.
+// M7: when a task closed (closed_at), the work branch from the CLI with the requests it links, the
+// check-again day, the archived refusal (archive.ts) and the archived and checkAgain list filters,
+// the request, check-again and archive fields of tasks and rows, and setStatusFromSource for
+// moves a request makes.
 import {
+  type ActivityCause,
   ASSIGNEE_AGENTS,
   ASSIGNEE_ME,
   BacklogBlock,
   type BacklogTaskLink,
   BulkUpdateTasksInput,
   CalendarDate,
+  type CheckAgain,
+  type CheckAgainInput,
   CreateTaskInput,
   type CycleSelector,
   DEFAULT_TASK_PRIORITY,
@@ -23,9 +30,13 @@ import {
   GetTaskInput,
   ListTasksInput,
   MAX_TASK_LABELS,
+  MAX_WORK_BRANCH_LENGTH,
   MAX_WORK_ITEMS,
   OPEN_TASK_STATUSES,
   type Priority,
+  type PullRequestLinkHow,
+  type PullRequestState,
+  type PullRequestSummary,
   parseBacklogId,
   parseRepositoryUrl,
   parseTaskKey,
@@ -49,7 +60,7 @@ import {
   type WorkTextMeta,
 } from '@zamu/contracts';
 import { type DbOrTx, schema, type Tx } from '@zamu/db';
-import { createProvider, hostnameOf } from '@zamu/git-providers';
+import { createProvider, hostnameOf, type ProviderKind, parseRequestUrl } from '@zamu/git-providers';
 import {
   and,
   asc,
@@ -69,12 +80,14 @@ import { z } from 'zod';
 import {
   compareLabelNames,
   compareTaskKeys,
+  recordActivities,
   recordActivity,
   type StoredChange,
   type StoredLabelRef,
   type StoredTaskRef,
 } from './activity';
-import { type Actor, authorize } from './authz';
+import { assertTaskWritable, TaskArchived, taskArchived } from './archive';
+import { type Actor, authorize, isSession } from './authz';
 import type { DbContext, GitContext } from './context';
 import {
   FINISHING_STATUSES,
@@ -101,6 +114,7 @@ import {
   addCalendarDays,
   type ClockContext,
   type CycleRow,
+  clockNow,
   cycleStateOn,
   resolveCycleSelector,
   todayIn,
@@ -145,7 +159,20 @@ import {
   taskKeysById,
 } from './relations';
 
-const { activity, comment, cycle, gitConnection, milestone, project, task, taskLabel, user } = schema;
+const {
+  activity,
+  comment,
+  cycle,
+  gitConnection,
+  milestone,
+  project,
+  pullRequest,
+  repositoryLink,
+  task,
+  taskLabel,
+  taskPullRequest,
+  user,
+} = schema;
 type TaskInsert = typeof task.$inferInsert;
 
 /**
@@ -369,9 +396,156 @@ async function taskBacklog(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Requests, check-again days and the merged flag (M7)
+// ---------------------------------------------------------------------------
+
+/** A link that shows: not removed by hand, and made some way (hand, branch or description). */
+const visibleLink = () =>
+  and(
+    isNull(taskPullRequest.removedAt),
+    or(taskPullRequest.viaHand, taskPullRequest.viaBranch, taskPullRequest.viaDescription),
+  ) as SQL;
+
+/**
+ * The host kind of a request from its web address (GitHub /pull/, GitLab /-/merge_requests/,
+ * Forgejo and Gitea /pulls/). Hosts write these addresses themselves, so the parse holds; GitHub
+ * is the fallback for an address none of them would write.
+ */
+export function requestProvider(webUrl: string): ProviderKind {
+  return parseRequestUrl(webUrl)?.provider ?? 'github';
+}
+
+/** How a link shows: the first of hand, branch, description that is true. */
+function linkHow(row: { viaHand: boolean; viaBranch: boolean }): PullRequestLinkHow {
+  return row.viaHand ? 'hand' : row.viaBranch ? 'branch' : 'description';
+}
+
+/** The linked requests of `taskIds` (removed links left out), newest opened first, per task. */
+async function loadRequestLinks(db: DbOrTx, taskIds: string[]) {
+  if (taskIds.length === 0) return [];
+  return db
+    .select({
+      taskId: taskPullRequest.taskId,
+      number: pullRequest.number,
+      title: pullRequest.title,
+      state: pullRequest.state,
+      headBranch: pullRequest.headBranch,
+      baseBranch: pullRequest.baseBranch,
+      author: pullRequest.author,
+      mergedBy: pullRequest.mergedBy,
+      webUrl: pullRequest.webUrl,
+      openedAt: pullRequest.openedAt,
+      mergedAt: pullRequest.mergedAt,
+      closedAt: pullRequest.closedAt,
+      hostUpdatedAt: pullRequest.hostUpdatedAt,
+      viaHand: taskPullRequest.viaHand,
+      viaBranch: taskPullRequest.viaBranch,
+      linkedById: taskPullRequest.linkedById,
+      linkedAt: taskPullRequest.createdAt,
+    })
+    .from(taskPullRequest)
+    .innerJoin(pullRequest, eq(pullRequest.id, taskPullRequest.pullRequestId))
+    .where(and(inArray(taskPullRequest.taskId, taskIds), visibleLink()))
+    .orderBy(asc(taskPullRequest.taskId), desc(pullRequest.openedAt), desc(pullRequest.number));
+}
+
+/** What rows show of a task's requests: the newest, the newest merged, and how many. */
+export interface RequestSummary {
+  /** The newest linked request by opened date. */
+  newest: PullRequestSummary;
+  /** The linked request merged last; null when none is merged. */
+  merged: PullRequestSummary | null;
+  /** Who merged `merged`, as the host names them; null when unknown or nothing is merged. */
+  mergedBy: string | null;
+  count: number;
+}
+
+/**
+ * The linked requests of each task among `taskIds` as rows show them (RequestSummary), in one
+ * query, for list rows, cards and Home rows. Tasks without a link are left out.
+ */
+export async function requestSummariesOf(
+  db: DbOrTx,
+  taskIds: string[],
+): Promise<Map<string, RequestSummary>> {
+  const result = new Map<string, RequestSummary & { mergedAt: Date | null }>();
+  if (taskIds.length === 0) return result;
+  const rows = await db
+    .select({
+      taskId: taskPullRequest.taskId,
+      number: pullRequest.number,
+      title: pullRequest.title,
+      state: pullRequest.state,
+      webUrl: pullRequest.webUrl,
+      mergedAt: pullRequest.mergedAt,
+      mergedBy: pullRequest.mergedBy,
+    })
+    .from(taskPullRequest)
+    .innerJoin(pullRequest, eq(pullRequest.id, taskPullRequest.pullRequestId))
+    .where(and(inArray(taskPullRequest.taskId, [...new Set(taskIds)]), visibleLink()))
+    .orderBy(asc(taskPullRequest.taskId), desc(pullRequest.openedAt), desc(pullRequest.number));
+  for (const row of rows) {
+    const summary: PullRequestSummary = {
+      provider: requestProvider(row.webUrl),
+      number: row.number,
+      title: row.title,
+      url: row.webUrl,
+      state: row.state as PullRequestState,
+    };
+    const mergedAt = row.state === 'merged' ? row.mergedAt : null;
+    const entry = result.get(row.taskId);
+    if (!entry) {
+      result.set(row.taskId, {
+        newest: summary,
+        merged: row.state === 'merged' ? summary : null,
+        mergedBy: row.state === 'merged' ? row.mergedBy : null,
+        mergedAt,
+        count: 1,
+      });
+      continue;
+    }
+    entry.count += 1;
+    const later = mergedAt !== null && (entry.mergedAt === null || mergedAt > entry.mergedAt);
+    if (row.state === 'merged' && (entry.merged === null || later)) {
+      entry.merged = summary;
+      entry.mergedBy = row.mergedBy;
+      entry.mergedAt = mergedAt;
+    }
+  }
+  return result;
+}
+
+/** The check-again day of a row as tasks carry it; null when none. */
+export function checkAgainOf(row: Pick<TaskRow, 'checkAgainOn' | 'checkAgainReason'>): CheckAgain | null {
+  return row.checkAgainOn && row.checkAgainReason !== null
+    ? { on: row.checkAgainOn, reason: row.checkAgainReason }
+    : null;
+}
+
+/**
+ * The merged-with-open-items flag: set while a merge closed the task, it is still Done and not
+ * archived, and an item is open. Null otherwise.
+ */
+function mergedOpenOf(
+  row: Pick<TaskRow, 'mergedDoneAt' | 'status' | 'archivedAt'>,
+  open: { criteria: number; done: number },
+) {
+  if (!row.mergedDoneAt || row.status !== 'done' || row.archivedAt) return null;
+  if (open.criteria + open.done === 0) return null;
+  return { at: row.mergedDoneAt, openCriteria: open.criteria, openDoneItems: open.done };
+}
+
 async function toTask(db: DbOrTx, projectRow: ProjectRow, row: TaskRow, view: TaskView): Promise<Task> {
   // Sequential: toTask runs inside transactions, where queries share one connection.
-  const users = await usersFor(db, [row.assigneeId, row.createdById, row.createdOnBehalfOfId]);
+  const links = await loadRequestLinks(db, [row.id]);
+  const users = await usersFor(db, [
+    row.assigneeId,
+    row.createdById,
+    row.createdOnBehalfOfId,
+    row.archivedById,
+    ...links.map((link) => link.linkedById),
+  ]);
   const refs = await planningRefs(db, [row], view.today);
   const source = await loadBacklogSource(db, projectRow.id);
   const backlog = row.backlogId
@@ -410,6 +584,38 @@ async function toTask(db: DbOrTx, projectRow: ProjectRow, row: TaskRow, view: Ta
     planMeta: meta.plan,
     finalSummary: row.finalSummary,
     finalSummaryMeta: meta.finalSummary,
+    workBranch: row.workBranch,
+    pullRequests: links.map((link) => ({
+      provider: requestProvider(link.webUrl),
+      number: link.number,
+      title: link.title,
+      url: link.webUrl,
+      state: link.state,
+      headBranch: link.headBranch,
+      baseBranch: link.baseBranch,
+      author: link.author,
+      mergedBy: link.mergedBy,
+      how: linkHow(link),
+      linkedBy:
+        link.viaHand && link.linkedById
+          ? users.has(link.linkedById)
+            ? requireUser(users, link.linkedById)
+            : null
+          : null,
+      linkedAt: link.linkedAt,
+      openedAt: link.openedAt,
+      mergedAt: link.mergedAt,
+      closedAt: link.closedAt,
+      updatedAt: link.hostUpdatedAt,
+    })),
+    checkAgain: checkAgainOf(row),
+    closedAt: row.closedAt,
+    archivedAt: row.archivedAt,
+    archivedBy: row.archivedAt && row.archivedById ? requireUser(users, row.archivedById) : null,
+    mergedOpen: mergedOpenOf(row, {
+      criteria: items.criteria.filter((item) => item.state === 'open').length,
+      done: items.doneItems.filter((item) => item.state === 'open').length,
+    }),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
@@ -433,7 +639,12 @@ async function workTextMeta(
   };
   const found = new Map<
     string,
-    { actorId: string | null; onBehalfOfId: string | null; origin: 'app' | 'backlog'; createdAt: Date }
+    {
+      actorId: string | null;
+      onBehalfOfId: string | null;
+      origin: z.input<typeof WorkTextMeta>['origin'];
+      createdAt: Date;
+    }
   >();
   // Sequential: toTask runs inside transactions, where queries share one connection.
   for (const field of WORK_TEXT_FIELDS) {
@@ -733,6 +944,9 @@ const isOpenTask = () => inArray(task.status, [...OPEN_TASK_STATUSES]);
  * project the actor can read in the workspace. `counts` covers every status for the same filters,
  * ignoring the status filter, so the UI can show group sizes. Hidden tasks (file gone from
  * Backlog.md) are left out of the page and the counts unless `hidden` is only or include.
+ * M7: so are archived tasks unless `archived` is include or only; `checkAgain` keeps tasks whose
+ * check-again day is after today (waiting), today or past (ready), set or not set (none), today
+ * in the context's time zone.
  *
  * Assignee, milestone and cycle take one value or several (M5); a task matches any of them, `none`
  * matching tasks without one. M5 filters: label ids (any of), due (overdue and soon count open tasks only, judged on today in
@@ -787,6 +1001,17 @@ export async function listTasks(
   }
   if (filters.hidden === 'only') conditions.push(isNotNull(task.hiddenAt));
   else if (filters.hidden !== 'include') conditions.push(isNull(task.hiddenAt));
+  // M7: archived tasks are left out unless asked for.
+  const archived = filters.archived ?? 'exclude';
+  if (archived === 'only') conditions.push(isNotNull(task.archivedAt));
+  else if (archived === 'exclude') conditions.push(isNull(task.archivedAt));
+  if (filters.checkAgain) {
+    const today = todayIn(ctx);
+    if (filters.checkAgain === 'waiting') conditions.push(sql`${task.checkAgainOn} > ${today}::date`);
+    else if (filters.checkAgain === 'ready') conditions.push(sql`${task.checkAgainOn} <= ${today}::date`);
+    else if (filters.checkAgain === 'set') conditions.push(isNotNull(task.checkAgainOn));
+    else conditions.push(isNull(task.checkAgainOn));
+  }
   if (filters.q) {
     const pattern = `%${escapeLike(filters.q)}%`;
     conditions.push(
@@ -887,10 +1112,21 @@ export async function listTasks(
   return TaskListPage.parse({ items: await toListItems(db, page, todayIn(ctx)), nextCursor, counts });
 }
 
+/** Tasks as list rows (see toListItems), for other services that return rows (archive.ts). */
+export function toTaskListItems(
+  db: DbOrTx,
+  rows: Pick<ListRow, 'task' | 'project' | 'hasFinalSummary'>[],
+  today: string,
+  options: { inTransaction?: boolean } = {},
+): Promise<z.input<typeof TaskListItem>[]> {
+  return toListItems(db, rows, today, options);
+}
+
 /**
  * Tasks as list rows, with everything a row shows. A fixed number of queries for the whole set
  * (users, milestones, cycles, mirrors, comment counts, labels, blockers, subtask progress, parent
- * keys, M6 criteria and done item counts), whatever its size.
+ * keys, M6 criteria and done item counts, M7 the newest request and the request count), whatever
+ * its size.
  */
 async function toListItems(
   db: DbOrTx,
@@ -926,12 +1162,11 @@ async function toListItems(
         rows.flatMap((row) => (row.task.parentId ? [row.task.parentId] : [])),
       ),
     () => workItemProgressOf(db, ids),
+    () => requestSummariesOf(db, ids),
   ] as const;
   // A transaction has one connection: run its reads one after the other.
-  const [users, refs, mirrored, comments, labels, blocked, progress, parentKeys, items] = await runReads(
-    reads,
-    options.inTransaction === true,
-  );
+  const [users, refs, mirrored, comments, labels, blocked, progress, parentKeys, items, requests] =
+    await runReads(reads, options.inTransaction === true);
   return rows.map(({ task: row, project: projectRef, hasFinalSummary }) => ({
     id: row.id,
     key: formatTaskKey(projectRef.key, row.number, row.keySuffix),
@@ -958,6 +1193,10 @@ async function toListItems(
     criteriaProgress: progressFor(items, row.id).criteria,
     doneProgress: progressFor(items, row.id).done,
     hasFinalSummary,
+    checkAgain: checkAgainOf(row),
+    archivedAt: row.archivedAt,
+    pullRequest: requests.get(row.id)?.newest ?? null,
+    pullRequestCount: requests.get(row.id)?.count ?? 0,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }));
@@ -1172,6 +1411,164 @@ async function rankForPosition(
 }
 
 // ---------------------------------------------------------------------------
+// Closing, check-again days and work branches (M7)
+// ---------------------------------------------------------------------------
+
+/** Done and Canceled close a task. */
+const CLOSED_STATUSES: ReadonlySet<TaskStatus> = new Set(['done', 'canceled']);
+
+/**
+ * What a status change to `to` does besides the status: closed_at is set when the task enters
+ * Done or Canceled and cleared when it leaves them, and merged_done_at is cleared when it leaves
+ * Done (reopening ends the merged-with-open-items flag).
+ */
+function closingFields(
+  current: Pick<TaskRow, 'closedAt' | 'mergedDoneAt'>,
+  to: TaskStatus,
+  now: Date,
+): Partial<TaskInsert> {
+  const fields: Partial<TaskInsert> = {};
+  const closed = CLOSED_STATUSES.has(to);
+  if (closed && current.closedAt === null) fields.closedAt = now;
+  if (!closed && current.closedAt !== null) fields.closedAt = null;
+  if (to !== 'done' && current.mergedDoneAt !== null) fields.mergedDoneAt = null;
+  return fields;
+}
+
+function sameCheckAgain(a: CheckAgain | null, b: CheckAgain | null): boolean {
+  return a === b || (a !== null && b !== null && a.on === b.on && a.reason === b.reason);
+}
+
+/**
+ * The check-again change of a write: `requested` (undefined leaves the day alone, null clears it),
+ * then cleared when the write moves the task to Done or Canceled. Returns the columns to set and
+ * the history line, or null when nothing changes.
+ */
+function checkAgainChange(
+  current: Pick<TaskRow, 'checkAgainOn' | 'checkAgainReason'>,
+  requested: CheckAgainInput | null | undefined,
+  closes: boolean,
+): { set: Partial<TaskInsert>; change: StoredChange } | null {
+  const before = checkAgainOf(current);
+  let after: CheckAgain | null = requested === undefined ? before : requested;
+  if (closes) after = null;
+  if (sameCheckAgain(before, after)) return null;
+  return {
+    set: { checkAgainOn: after?.on ?? null, checkAgainReason: after?.reason ?? null },
+    change: { field: 'checkAgain', from: before, to: after },
+  };
+}
+
+/** Branch names a repository's default branch has while Zamu has not read it yet. */
+const USUAL_DEFAULT_BRANCHES: ReadonlySet<string> = new Set(['main', 'master']);
+
+/**
+ * The work branch a write records: the CLI's x-zamu-branch, on a write that sets the status to In
+ * progress or In review, unless the actor is a person in the web app (a session) or the branch is
+ * the repository's default branch (main or master while Zamu has not read it). Null otherwise.
+ */
+async function workBranchFor(
+  tx: Tx,
+  actor: Actor,
+  projectRow: ProjectRow,
+  status: TaskStatus,
+): Promise<string | null> {
+  const branch = actor.source?.branch ?? null;
+  if (!branch || isSession(actor) || !STARTED_STATUSES.has(status)) return null;
+  if (branch.length > MAX_WORK_BRANCH_LENGTH) return null;
+  const [link] = await tx
+    .select({ defaultBranch: repositoryLink.defaultBranch })
+    .from(repositoryLink)
+    .where(eq(repositoryLink.projectId, projectRow.id))
+    .limit(1);
+  const defaultBranch = link?.defaultBranch ?? null;
+  if (defaultBranch ? branch === defaultBranch : USUAL_DEFAULT_BRANCHES.has(branch)) return null;
+  return branch;
+}
+
+/**
+ * Links the open and draft requests Zamu knows with head branch `branch` to the task, in one
+ * insert, when its work branch is recorded. A link removed by hand stays removed. Each request
+ * that starts to show gets a task.pull_request_linked row (how: branch) as the actor.
+ */
+async function linkBranchRequests(
+  tx: Tx,
+  actor: Actor,
+  projectRow: ProjectRow,
+  taskId: string,
+  branch: string,
+): Promise<void> {
+  const requests = await tx
+    .select({
+      id: pullRequest.id,
+      number: pullRequest.number,
+      title: pullRequest.title,
+      webUrl: pullRequest.webUrl,
+    })
+    .from(pullRequest)
+    .where(
+      and(
+        eq(pullRequest.projectId, projectRow.id),
+        eq(pullRequest.headBranch, branch),
+        inArray(pullRequest.state, ['open', 'draft']),
+      ),
+    )
+    .orderBy(asc(pullRequest.number));
+  if (requests.length === 0) return;
+  const before = await tx
+    .select({
+      pullRequestId: taskPullRequest.pullRequestId,
+      removedAt: taskPullRequest.removedAt,
+      shown: sql<boolean>`${taskPullRequest.viaHand} or ${taskPullRequest.viaBranch} or ${taskPullRequest.viaDescription}`,
+    })
+    .from(taskPullRequest)
+    .where(
+      and(
+        eq(taskPullRequest.taskId, taskId),
+        inArray(
+          taskPullRequest.pullRequestId,
+          requests.map((request) => request.id),
+        ),
+      ),
+    );
+  const known = new Map(before.map((row) => [row.pullRequestId, row]));
+  await tx
+    .insert(taskPullRequest)
+    .values(requests.map((request) => ({ taskId, pullRequestId: request.id, viaBranch: true })))
+    .onConflictDoUpdate({
+      target: [taskPullRequest.taskId, taskPullRequest.pullRequestId],
+      set: { viaBranch: true },
+      setWhere: isNull(taskPullRequest.removedAt),
+    });
+  const linked = requests.filter((request) => {
+    const row = known.get(request.id);
+    return !row || (row.removedAt === null && !row.shown);
+  });
+  await recordActivities(
+    tx,
+    actor,
+    linked.map((request) => ({
+      projectId: projectRow.id,
+      taskId,
+      type: 'task.pull_request_linked' as const,
+      changes: [
+        {
+          field: 'pullRequest' as const,
+          from: null,
+          to: {
+            provider: requestProvider(request.webUrl),
+            number: request.number,
+            title: request.title,
+            url: request.webUrl,
+            how: 'branch' as const,
+          },
+        },
+      ],
+    })),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Create and update
 // ---------------------------------------------------------------------------
 
@@ -1214,6 +1611,10 @@ function asProjectTask(row: TaskRow): ProjectTask {
  * done items come first unless `skipDefaultDoneItems` (a given item equal to a default one is not
  * added twice). At most MAX_WORK_ITEMS per list, defaults included. `plan` sets the plan. The
  * task.created entry lists each item added and the plan.
+ *
+ * M7: `checkAgain` sets a check-again day with its reason (dropped when the task is created Done
+ * or Canceled, which also sets closed_at). A task created In progress or In review from the CLI
+ * records the work branch (see workBranchFor) and links the open requests of that branch.
  */
 export async function createTask(
   ctx: TaskContext,
@@ -1260,6 +1661,10 @@ export async function createTask(
     const description = parsed.description ? parsed.description : null;
     const dueDate = parsed.dueDate ?? null;
     const plan = parsed.plan ? parsed.plan : null;
+    // M7: a task created closed has closed now and keeps no check-again day.
+    const closed = CLOSED_STATUSES.has(parsed.status);
+    const checkAgain = closed ? null : (parsed.checkAgain ?? null);
+    const workBranch = await workBranchFor(tx, actor, projectRow, parsed.status);
     const [row] = await tx
       .insert(task)
       .values({
@@ -1279,6 +1684,10 @@ export async function createTask(
         dueDate,
         parentId: parentRow?.id ?? null,
         plan,
+        closedAt: closed ? clockNow(ctx) : null,
+        checkAgainOn: checkAgain?.on ?? null,
+        checkAgainReason: checkAgain?.reason ?? null,
+        workBranch,
       })
       .returning();
     if (!row) throw new Error('task insert returned no row');
@@ -1319,12 +1728,15 @@ export async function createTask(
     }
     if (plan !== null) changes.push({ field: 'plan', from: null, to: plan });
     for (const itemPlan of itemPlans) changes.push(...itemPlan.changes);
+    if (checkAgain) changes.push({ field: 'checkAgain', from: null, to: checkAgain });
+    if (workBranch) changes.push({ field: 'workBranch', from: null, to: workBranch });
     await recordActivity(tx, actor, {
       projectId: projectRow.id,
       taskId: row.id,
       type: 'task.created',
       changes,
     });
+    if (workBranch) await linkBranchRequests(tx, actor, projectRow, row.id, workBranch);
 
     return toTask(tx, projectRow, row, viewOf(ctx));
   });
@@ -1405,6 +1817,8 @@ async function applyTaskPatch(
   current: TaskRow,
   patch: TaskPatch,
 ): Promise<TaskRow> {
+  // M7: an archived task is read-only, whatever the patch.
+  assertTaskWritable(projectRow, current);
   const set: Partial<TaskInsert> = {};
   /** now() of the transaction when the cycle changes, null when it is cleared. */
   let cycleAddedAt: SQL | null | undefined;
@@ -1423,6 +1837,8 @@ async function applyTaskPatch(
   if (patch.status !== undefined && patch.status !== current.status) {
     set.status = patch.status;
     changes.push({ field: 'status', from: current.status, to: patch.status });
+    // M7: closed_at and the merged flag follow the status.
+    Object.assign(set, closingFields(current, patch.status, clockNow(ctx)));
   }
   if (patch.priority !== undefined) {
     const value = priorityToValue(patch.priority);
@@ -1474,6 +1890,23 @@ async function applyTaskPatch(
     criterion: itemOperationsOf(patch, 'criterion'),
     done: itemOperationsOf(patch, 'done'),
   };
+
+  // M7: the check-again day (cleared when the task closes) and the work branch. Neither is a
+  // Backlog.md field, so mirrored tasks take them too.
+  const closes = set.status !== undefined && CLOSED_STATUSES.has(set.status);
+  const checkAgain = checkAgainChange(current, patch.checkAgain, closes);
+  if (checkAgain) {
+    Object.assign(set, checkAgain.set);
+    changes.push(checkAgain.change);
+  }
+  const workBranch =
+    patch.status !== undefined
+      ? await workBranchFor(tx, actor, projectRow, set.status ?? current.status)
+      : null;
+  if (workBranch !== null && workBranch !== current.workBranch) {
+    set.workBranch = workBranch;
+    changes.push({ field: 'workBranch', from: current.workBranch, to: workBranch });
+  }
 
   // M5 fields: work out what changes first, so a mirrored task is refused before anything is written.
   const currentLabels =
@@ -1635,6 +2068,7 @@ async function applyTaskPatch(
       changes,
     });
   }
+  if (set.workBranch) await linkBranchRequests(tx, actor, projectRow, row.id, set.workBranch);
   return row;
 }
 
@@ -1681,6 +2115,11 @@ async function resolveProjectTasksById(
  *   operations (criteria.ts), plan and finalSummary change the work record; on a mirrored task
  *   each fails with TaskMirrored. An agent moving the task to In review or Done while an item is
  *   open after this request's operations fails with OpenItems; people are never refused.
+ * - M7: an archived task fails every change with TaskArchived (restore it first). checkAgain sets
+ *   or clears (null) the check-again day; moving the task to Done or Canceled clears it with a
+ *   history line. Entering Done or Canceled sets closed_at, leaving them clears it, and leaving
+ *   Done clears the merged-with-open-items flag. A status change to In progress or In review from
+ *   the CLI records the work branch and links the open requests of that branch (workBranchFor).
  */
 export async function updateTask(
   ctx: TaskContext,
@@ -1699,6 +2138,7 @@ export async function updateTask(
       project: narrow,
     });
     authorize(actor, 'task.write', { type: 'project', projectId: projectRow.id });
+    assertTaskWritable(projectRow, current);
 
     if (ifUpdatedAt) {
       const [check] = await tx
@@ -1734,6 +2174,7 @@ export async function updateTask(
  * - M6: an agent moving tasks to In review or Done fails with OpenItems when any of them has an
  *   open item; the issues name each refused task (path keys.<index>), and openItems lists the
  *   items when only one task is refused. Nothing changes then.
+ * - M7: any archived task fails the request with TaskArchived, the issues naming each one.
  * Returns every task as a list row, in the order of the keys sent.
  */
 export async function bulkUpdateTasks(
@@ -1761,6 +2202,28 @@ export async function bulkUpdateTasks(
           ...(field ? { field } : {}),
           ...(file ? { file } : {}),
           ...(mirroredHit.task.backlogId ? { backlogId: mirroredHit.task.backlogId } : {}),
+        },
+      );
+    }
+    // M7: archived tasks are read-only; name every one so the client can say which.
+    const archived = hits.flatMap((hit, index) =>
+      hit.task.archivedAt
+        ? [{ index, key: formatTaskKey(hit.project.key, hit.task.number, hit.task.keySuffix) }]
+        : [],
+    );
+    const [firstArchived] = archived;
+    if (firstArchived) {
+      const error = taskArchived(firstArchived.key);
+      const keys = [...new Set(archived.map((entry) => entry.key))];
+      throw new TaskArchived(
+        keys.length === 1
+          ? error.message
+          : `${keys.join(', ')} are archived, so no task changed. Restore them first.`,
+        {
+          issues: archived.map((entry) => ({
+            path: `keys.${entry.index}`,
+            message: taskArchived(entry.key).message,
+          })),
         },
       );
     }
@@ -1863,6 +2326,71 @@ function bulkOwnedField(patch: Omit<BulkUpdateTasksInput, 'keys'>): TaskOwnedFie
   if (patch.dueDate !== undefined) return 'dueDate';
   if (patch.addLabels !== undefined || patch.removeLabels !== undefined) return 'labels';
   return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Moves made by the system (M7)
+// ---------------------------------------------------------------------------
+
+/**
+ * A move made by the system, such as a request that was opened or merged: no actor, no permission
+ * check, no finishing rule. Skipped (changed false) for tasks of mirrored projects, whose files
+ * own the status, for archived tasks, and when the task has the status already. Otherwise it has
+ * the side effects of a person's status change: the top of the new column, closed_at, the
+ * check-again day cleared on Done (with its history line), the milestone activated on In review,
+ * and merged_done_at set when the cause is a merge and the task has open items. The task.updated
+ * row has no actor, origin git and the request URL as origin_ref for a request cause, and the
+ * cause. Locks the project, then the task, like every status change. Run inside the caller's
+ * transaction; the workspace comes from the caller's repository link.
+ */
+export async function setStatusFromSource(
+  tx: Tx,
+  ctx: TaskContext,
+  input: { workspaceId: string; taskId: string; status: 'in_review' | 'done'; cause: ActivityCause },
+): Promise<{ changed: boolean; from: TaskStatus }> {
+  const [hit] = await tx
+    .select({ projectId: task.projectId })
+    .from(task)
+    .innerJoin(project, eq(project.id, task.projectId))
+    .where(and(eq(task.id, input.taskId), eq(project.workspaceId, input.workspaceId)))
+    .limit(1);
+  if (!hit) throw new NotFound('Task not found');
+  const [projectRow] = await tx.select().from(project).where(eq(project.id, hit.projectId)).for('update');
+  const [current] = await tx.select().from(task).where(eq(task.id, input.taskId)).for('update');
+  if (!projectRow || !current) throw new NotFound('Task not found');
+  const from = current.status;
+  if (from === input.status || current.archivedAt !== null) return { changed: false, from };
+  if (sourceMirrors(await loadBacklogSource(tx, projectRow.id))) return { changed: false, from };
+
+  const now = clockNow(ctx);
+  const set: Partial<TaskInsert> = { status: input.status, ...closingFields(current, input.status, now) };
+  const changes: StoredChange[] = [{ field: 'status', from, to: input.status }];
+  const checkAgain = checkAgainChange(current, undefined, CLOSED_STATUSES.has(input.status));
+  if (checkAgain) {
+    Object.assign(set, checkAgain.set);
+    changes.push(checkAgain.change);
+  }
+  const { cause } = input;
+  if (input.status === 'done' && cause.kind === 'pull_request' && cause.event === 'merged') {
+    const open = await openItemsByTask(tx, [current.id]);
+    if (open.has(current.id)) set.mergedDoneAt = now;
+  }
+  set.rank = await topRank(tx, projectRow.id, input.status, current.id);
+  const [row] = await tx.update(task).set(set).where(eq(task.id, current.id)).returning();
+  if (!row) throw new Error('task update returned no row');
+  if (row.milestoneId && STARTED_STATUSES.has(row.status))
+    await activateMilestoneForTask(tx, row.milestoneId);
+  await recordActivity(tx, null, {
+    workspaceId: input.workspaceId,
+    projectId: projectRow.id,
+    taskId: row.id,
+    type: 'task.updated',
+    changes,
+    origin: cause.kind === 'pull_request' ? 'git' : 'app',
+    originRef: cause.kind === 'pull_request' ? cause.url : null,
+    cause,
+  });
+  return { changed: true, from };
 }
 
 /** Whether `selector` names the cycle `cycleId` already points at, without resolving current/next. */

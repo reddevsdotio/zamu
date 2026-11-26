@@ -2,10 +2,14 @@
 // M3: project shapes carry their Backlog.md source summary. While a source is active the key is
 // fixed, milestones stay on and the repository cannot point elsewhere; clearing it pauses the mirror.
 // M6: the done items every new task starts with (defaultDoneItems), set by owners and admins.
+// M7: the archive setting (archiveAfterDays: 14 days for new projects, off for older ones, owners
+// and admins change it, mirrored projects follow Backlog.md's archive folder), and counts that
+// leave archived tasks out.
 import {
   BacklogProblem,
   CreateProjectInput,
   type CurrentCycle,
+  DEFAULT_ARCHIVE_AFTER_DAYS,
   DeleteProjectInput,
   OPEN_TASK_STATUSES,
   PROJECT_OWNED_FIELDS,
@@ -23,16 +27,18 @@ import type { z } from 'zod';
 import { type Actor, authorize, can } from './authz';
 import type { DbContext } from './context';
 import { type ClockContext, currentCycles } from './cycles';
-import { Conflict, isUniqueViolation, ProjectMirrored, parseInput } from './errors';
+import { Conflict, Forbidden, isUniqueViolation, ProjectMirrored, parseInput } from './errors';
 import {
   type BacklogSourceRow,
   findProjectByKey,
   loadBacklogSource,
   type ProjectRow,
   sourceIsActive,
+  sourceMirrors,
   toDate,
   userRef,
 } from './internal';
+import { syncRepositoryLinkKey } from './repository';
 
 export { isMirrored } from './internal';
 
@@ -115,7 +121,8 @@ type ProjectContext = DbContext & ClockContext;
 
 /**
  * The contract shape. `currentCycle` is dropped when the project does not use cycles. `backlog`
- * is the project's Backlog.md source summary (backlogSummaryFor), null without a source.
+ * is the project's Backlog.md source summary (backlogSummaryFor), null without a source. M7:
+ * archiveAfterDays reads null while the project mirrors Backlog.md, whose archive folder decides.
  */
 export function toProject(
   row: ProjectRow,
@@ -134,6 +141,7 @@ export function toProject(
     backlog,
     locked: lockedProjectFields(backlog),
     defaultDoneItems: row.defaultDoneItems ?? [],
+    archiveAfterDays: backlog && sourceMirrors(backlog) ? null : row.archiveAfterDays,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
@@ -202,14 +210,14 @@ function repositoryRace(short: string | null): Conflict {
 }
 
 const openCount = (status: string) =>
-  sql<number>`count(${task.id}) filter (where ${task.status} = ${status} and ${task.hiddenAt} is null)`.mapWith(
+  sql<number>`count(${task.id}) filter (where ${task.status} = ${status} and ${task.hiddenAt} is null and ${task.archivedAt} is null)`.mapWith(
     Number,
   );
 
 /**
  * Projects the actor can read, with open task counts per status, the distinct assignees of open
  * tasks (people first), the last activity time, the current cycle and the Backlog.md source.
- * Hidden tasks count nowhere. Most recently active first.
+ * Hidden tasks count nowhere, nor (M7) do archived ones. Most recently active first.
  */
 export async function listProjects(ctx: ProjectContext, actor: Actor): Promise<ProjectList> {
   const { db } = ctx;
@@ -288,6 +296,7 @@ async function openAssignees({ db }: DbContext, projectIds: string[]): Promise<M
         inArray(task.projectId, projectIds),
         inArray(task.status, [...OPEN_TASK_STATUSES]),
         isNull(task.hiddenAt),
+        isNull(task.archivedAt),
       ),
     )
     .orderBy(asc(task.projectId), desc(user.kind), asc(user.name), asc(user.id)); // 'person' > 'agent'
@@ -301,7 +310,8 @@ async function openAssignees({ db }: DbContext, projectIds: string[]): Promise<M
 
 /**
  * Creates a project. Conflict when the key is already used in the workspace, or when another
- * project already links the repository.
+ * project already links the repository. M7: new projects archive closed tasks after
+ * DEFAULT_ARCHIVE_AFTER_DAYS days.
  */
 export async function createProject(
   { db }: DbContext,
@@ -315,7 +325,14 @@ export async function createProject(
   try {
     const [row] = await db
       .insert(project)
-      .values({ workspaceId: actor.workspaceId, key, name, description: description || null, ...repo })
+      .values({
+        workspaceId: actor.workspaceId,
+        key,
+        name,
+        description: description || null,
+        archiveAfterDays: DEFAULT_ARCHIVE_AFTER_DAYS,
+        ...repo,
+      })
       .returning();
     if (!row) throw new Error('project insert returned no row');
     return toProject(row);
@@ -339,6 +356,10 @@ export async function createProject(
  *
  * M6: defaultDoneItems replaces the done items new tasks start with ([] clears them). Owners and
  * admins only (project.defaults); tasks that exist keep theirs.
+ *
+ * M7: archiveAfterDays (1 to 365, null is off) sets when the nightly job archives closed tasks.
+ * Owners and admins only, like the task defaults; a mirrored project fails with ProjectMirrored,
+ * as Backlog.md's archive folder decides there.
  */
 export async function updateProject(
   ctx: ProjectContext,
@@ -396,6 +417,20 @@ export async function updateProject(
         const same = before.length === after.length && before.every((text, index) => text === after[index]);
         if (!same) changes.defaultDoneItems = after;
       }
+      if (parsed.archiveAfterDays !== undefined) {
+        if (!can(actor, 'project.defaults', { type: 'project', projectId: current.id })) {
+          throw new Forbidden('Only owners and admins can change the archive setting of a project');
+        }
+        if (sourceMirrors(source)) {
+          throw new ProjectMirrored(
+            `${current.key} reads Backlog.md, so its archive follows the archive/tasks/ folder there`,
+            { field: 'archiveAfterDays', hint: 'Move task files under archive/tasks/ and push' },
+          );
+        }
+        if (parsed.archiveAfterDays !== current.archiveAfterDays) {
+          changes.archiveAfterDays = parsed.archiveAfterDays;
+        }
+      }
       if (parsed.repository !== undefined) {
         const repo = repositoryColumns(parsed.repository);
         if (repo.repository !== current.repository) {
@@ -419,6 +454,8 @@ export async function updateProject(
 
       const [row] = await tx.update(project).set(changes).where(eq(project.id, current.id)).returning();
       if (!row) throw new Error('project update returned no row');
+      // M7: a new repository starts its repository link over (old requests go, links reset).
+      if (changes.repositoryKey !== undefined) await syncRepositoryLinkKey(tx, ctx, row);
       return toProjectWithCycle(ctx, tx, row);
     });
   } catch (error) {

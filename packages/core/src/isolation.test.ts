@@ -6,11 +6,14 @@
 // every Globex row with a snapshot taken before the calls.
 import { randomBytes } from 'node:crypto';
 import { schema } from '@zamu/db';
+import { signWebhook } from '@zamu/git-providers';
 import { eq, inArray, or } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listTaskActivity } from './activity';
 import { createApiKey, issueApiKey, listApiKeys, revokeApiKey } from './api-keys';
+import { archivePreview, archiveTasks, restoreTasks } from './archive';
 import type { Actor } from './authz';
+import { recordingJobQueue } from './backlog/testing';
 import { createComment, deleteComment, listComments, updateComment } from './comments';
 import { createCycle, endCycle, getCycle, listCycles, updateCycle } from './cycles';
 import { getDashboard, getDashboardCounts } from './dashboard';
@@ -37,18 +40,38 @@ import {
   updateMilestone,
 } from './milestones';
 import { createProject, deleteProject, listProjects, updateProject } from './projects';
+import {
+  handleRepositoryEvent,
+  linkPullRequest,
+  RequestNotFound,
+  RequestOtherRepository,
+  receiveRepositoryWebhook,
+  unlinkPullRequest,
+} from './pull-requests';
+import {
+  getRepositorySettings,
+  newRepositoryWebhookSecret,
+  pollRepositories,
+  syncRepositoryNow,
+  updateRepositorySettings,
+} from './repository';
 import { loadEncryptionKey } from './secrets';
-import { bulkUpdateTasks, createTask, getTask, listTasks, updateTask } from './tasks';
+import { bulkUpdateTasks, createTask, getTask, listTasks, setStatusFromSource, updateTask } from './tasks';
 import {
   addMember,
+  createPullRequestRow,
+  createRepositoryLinkRow,
   createUser,
   createWorld,
   isoDate,
+  linkPullRequestRow,
   randomWorkspaceSlug,
+  scopeOf,
   type TestContext,
   testContext,
   type World,
 } from './testing/fixtures';
+import { FakeRequestHost, fakeRequestFactory, requestInfo } from './testing/requests';
 import { listTaskTimeline } from './timeline';
 import { getWorkspaceContents, updateWorkspace } from './workspaces';
 
@@ -98,6 +121,15 @@ describe('workspace isolation', () => {
     else expect((result as { items: unknown[] }).items).toEqual([]);
   }
 
+  /**
+   * Rows in a fixed order, so the comparison does not depend on where Postgres put an updated
+   * tuple: by id when the table has one, else by the whole row.
+   */
+  function sorted<T extends Record<string, unknown>>(rows: T[]): T[] {
+    const keyOf = (row: T) => (typeof row.id === 'string' ? row.id : JSON.stringify(row));
+    return [...rows].sort((a, b) => (keyOf(a) < keyOf(b) ? -1 : keyOf(a) > keyOf(b) ? 1 : 0));
+  }
+
   /** Every Globex row the calls could touch, for the final comparison. */
   async function globexRows() {
     const ws = globex.workspaceId;
@@ -107,7 +139,7 @@ describe('workspace isolation', () => {
         .from(schema.task)
         .where(eq(schema.task.projectId, globexPay.id))
     ).map((row) => row.id);
-    return {
+    const rows = {
       organization: await ctx.db.select().from(schema.organization).where(eq(schema.organization.id, ws)),
       member: await ctx.db.select().from(schema.member).where(eq(schema.member.organizationId, ws)),
       project: await ctx.db.select().from(schema.project).where(eq(schema.project.workspaceId, ws)),
@@ -143,7 +175,22 @@ describe('workspace isolation', () => {
         .select({ id: schema.apikey.id, enabled: schema.apikey.enabled, metadata: schema.apikey.metadata })
         .from(schema.apikey)
         .where(eq(schema.apikey.id, ids.globexKey as string)),
+      repositoryLink: await ctx.db
+        .select()
+        .from(schema.repositoryLink)
+        .where(eq(schema.repositoryLink.workspaceId, ws)),
+      pullRequest: await ctx.db
+        .select()
+        .from(schema.pullRequest)
+        .where(eq(schema.pullRequest.workspaceId, ws)),
+      taskPullRequest: await ctx.db
+        .select()
+        .from(schema.taskPullRequest)
+        .where(inArray(schema.taskPullRequest.taskId, taskIds)),
     };
+    return Object.fromEntries(
+      Object.entries(rows).map(([table, list]) => [table, sorted(list as Record<string, unknown>[])]),
+    );
   }
 
   beforeAll(async () => {
@@ -217,6 +264,35 @@ describe('workspace isolation', () => {
       access: 'write',
     });
 
+    // M7: a request linked to PAY-1, a ready check-again day on it, a task merged with an open
+    // criterion (PAY-3) and an archived task (PAY-4), so Pat's Globex Home has both new groups.
+    const globexScope = scopeOf({ id: globexPay.id, workspaceId: globex.workspaceId });
+    await createRepositoryLinkRow(ctx.db, globexScope, { repositoryKey: `github.com/${MARK}/payments` });
+    const request = await createPullRequestRow(ctx.db, globexScope, {
+      number: 482,
+      title: `${MARK} request`,
+      webUrl: `https://github.com/${MARK}/payments/pull/482`,
+    });
+    await linkPullRequestRow(ctx.db, one.id, request.id);
+    await updateTask(ctx, globex.ownerActor, {
+      key: one.key,
+      checkAgain: { on: isoDate(-1), reason: `${MARK} reason` },
+    });
+    const three = await createTask(ctx, globex.agentActor, {
+      project: 'PAY',
+      title: `${MARK} three`,
+      status: 'done',
+      criteria: [`${MARK} open criterion`],
+    });
+    await ctx.db.update(schema.task).set({ mergedDoneAt: new Date() }).where(eq(schema.task.id, three.id));
+    await linkPullRequestRow(ctx.db, three.id, request.id, { viaDescription: true });
+    const four = await createTask(ctx, globex.ownerActor, {
+      project: 'PAY',
+      title: `${MARK} four`,
+      assignee: pat.id,
+    });
+    await archiveTasks(ctx, globex.ownerActor, { keys: [four.key] });
+
     Object.assign(ids, {
       label: label.id,
       milestone: milestone.id,
@@ -227,6 +303,9 @@ describe('workspace isolation', () => {
       connection: connection?.id,
       invitation: invitation.id,
       globexKey: globexKey.id,
+      request: request.id,
+      three: three.id,
+      four: four.id,
     });
     for (const id of [
       ...Object.values(ids),
@@ -398,6 +477,119 @@ describe('workspace isolation', () => {
     expect((await getDashboardCounts(ctx, patA)).total).toBe(0);
     expectNoLeak(await listTaskTimeline(ctx, patA, { key: 'PAY-1' }));
     expectNoLeak(await listTaskActivity(ctx, patA, { key: 'PAY-1' }));
+  });
+
+  it('archive, check again and requests read and write Acme only', async () => {
+    expect((await listTasks(ctx, patA, { archived: 'only' })).items).toEqual([]);
+    expect((await listTasks(ctx, patA, { checkAgain: 'set' })).items).toEqual([]);
+    expectNoLeak(await listTasks(ctx, patA, { archived: 'include', q: MARK }));
+    const acmeOne = await getTask(ctx, patA, { key: 'PAY-1' });
+    expect(acmeOne).toMatchObject({ pullRequests: [], checkAgain: null, mergedOpen: null });
+    expectNoLeak(acmeOne);
+    // PAY-4 is Globex's archived task; Acme has no PAY-4.
+    await expectRefused(archiveTasks(ctx, patA, { keys: ['PAY-4'] }));
+    await expectRefused(restoreTasks(ctx, patA, { keys: ['PAY-4'] }));
+    const preview = await archivePreview(ctx, patA, { project: 'PAY', days: 1 });
+    expect(preview).toEqual({ project: 'PAY', days: 1, count: 0 });
+    // The system move resolves the task in the workspace it is given.
+    await expectRefused(
+      ctx.db.transaction((tx) =>
+        setStatusFromSource(tx, ctx, {
+          workspaceId: acme.workspaceId,
+          taskId: ids.one as string,
+          status: 'done',
+          cause: {
+            kind: 'pull_request',
+            provider: 'github',
+            number: 482,
+            title: 'Acme',
+            url: 'https://github.com/acme/payments/pull/482',
+            event: 'merged',
+            by: null,
+          },
+        }),
+      ),
+    );
+    const home = await getHome(ctx, patA, { tab: 'mine' });
+    expect(home.groups.find((g) => g.key === 'mergedOpen')?.total).toBe(0);
+    expect(home.groups.find((g) => g.key === 'checkAgain')?.total).toBe(0);
+    // Pat sees both groups in Globex.
+    const globexHome = await getHome(ctx, patG, { tab: 'everyone' });
+    expect(globexHome.groups.find((g) => g.key === 'mergedOpen')?.total).toBe(1);
+  });
+
+  it('repository links, requests and webhooks stay in Acme', async () => {
+    const host = new FakeRequestHost('github', 'github.com');
+    const jobs = recordingJobQueue();
+    const prCtx = {
+      ...ctx,
+      encryptionKey: gitCtx.encryptionKey,
+      providerFactory: fakeRequestFactory(host),
+      jobs,
+    };
+    await updateProject(prCtx, acme.ownerActor, {
+      project: 'PAY',
+      repository: 'https://github.com/acme/payments',
+    });
+    const settings = await getRepositorySettings(prCtx, acme.ownerActor, { project: 'PAY' });
+    expectNoLeak(settings);
+    expect(settings.connection).toBeNull();
+    await expectRefused(
+      updateRepositorySettings(prCtx, acme.ownerActor, {
+        project: 'PAY',
+        connectionId: ids.connection as string,
+      }),
+    );
+    // Globex's request is in another repository; Acme has no #482 to unlink.
+    const refused = await expectRefused(
+      linkPullRequest(prCtx, patA, { key: 'PAY-1', url: `https://github.com/${MARK}/payments/pull/482` }),
+    );
+    expect(refused).toBeInstanceOf(RequestOtherRepository);
+    expect(await expectRefused(unlinkPullRequest(prCtx, patA, { key: 'PAY-1', number: 482 }))).toBeInstanceOf(
+      RequestNotFound,
+    );
+
+    // A delivery to Acme's webhook naming PAY-1 and PAY-3 links Acme's PAY-1 only.
+    const { url, secret } = await newRepositoryWebhookSecret(prCtx, acme.ownerActor, { project: 'PAY' });
+    const webhookId = url.split('/').at(-1) as string;
+    const body = JSON.stringify({
+      action: 'opened',
+      number: 482,
+      pull_request: {
+        number: 482,
+        title: 'Acme request',
+        body: 'Closes: PAY-1, PAY-3',
+        state: 'open',
+        draft: false,
+        merged: false,
+        head: { ref: 'feat/acme' },
+        base: { ref: 'main' },
+        user: { login: 'acme-dev' },
+        html_url: 'https://github.com/acme/payments/pull/482',
+        created_at: '2040-01-01T10:00:00Z',
+        updated_at: '2040-01-01T10:00:00Z',
+      },
+    });
+    const headers = { ...signWebhook('github', body, secret), 'X-GitHub-Event': 'pull_request' };
+    expect(await receiveRepositoryWebhook(prCtx, { webhookId, headers, rawBody: body })).toMatchObject({
+      status: 202,
+    });
+    const [job] = jobs.sent;
+    const payload = job?.data as { linkId: string };
+    await handleRepositoryEvent(prCtx, {
+      linkId: payload.linkId,
+      request: requestInfo(
+        { number: 482, title: 'Acme request', body: 'Closes: PAY-1, PAY-3', headBranch: 'feat/acme' },
+        { path: 'acme/payments' },
+      ),
+      action: 'opened',
+    });
+    const one = await getTask(prCtx, patA, { key: 'PAY-1' });
+    expect(one.pullRequests).toEqual([expect.objectContaining({ number: 482, how: 'description' })]);
+    expectNoLeak(one);
+    await syncRepositoryNow(prCtx, acme.ownerActor, { project: 'PAY' });
+    await pollRepositories(prCtx, { workspaceIds: [acme.workspaceId] });
+    for (const sent of jobs.sent) expectNoLeak(sent);
   });
 
   it('workspace settings: counts and renames are Acme only', async () => {

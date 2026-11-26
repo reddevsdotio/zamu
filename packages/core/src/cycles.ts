@@ -255,7 +255,8 @@ async function cycleCounts(
     .from(task)
     .innerJoin(cycle, eq(cycle.id, task.cycleId))
     .leftJoin(user, eq(user.id, task.assigneeId))
-    // Tasks removed from Backlog.md stay in their cycle but count nowhere.
+    // Tasks removed from Backlog.md stay in their cycle but count nowhere. M7: archived tasks
+    // count, so archiving never lowers a progress bar.
     .where(and(inArray(task.cycleId, cycleIds), isNull(task.hiddenAt)))
     .groupBy(cycle.id);
   for (const { cycleId, ...counts } of rows) result.set(cycleId, counts);
@@ -597,8 +598,9 @@ async function endLockedCycle(
       afterStart: sql<boolean>`coalesce(${task.cycleAddedAt} > (${current.startsOn}::date::timestamp at time zone ${timeZone}), false)`,
     })
     .from(task)
-    // Hidden tasks (removed from Backlog.md) do not roll over; they stay in the ended cycle.
-    .where(and(eq(task.cycleId, current.id), isNull(task.hiddenAt)))
+    // Hidden tasks (removed from Backlog.md) do not roll over; they stay in the ended cycle. M7:
+    // nor do archived ones, which are read-only.
+    .where(and(eq(task.cycleId, current.id), isNull(task.hiddenAt), isNull(task.archivedAt)))
     .for('update');
   const unfinished = tasks.filter((t) => t.status !== 'done' && t.status !== 'canceled');
 

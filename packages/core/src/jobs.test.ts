@@ -15,7 +15,12 @@ import {
   JOB_QUEUE_OPTIONS,
   JOB_SCHEDULES,
   type JobQueue,
+  jobSchedules,
   parseJobPayload,
+  REPOSITORY_EVENT,
+  REPOSITORY_POLL,
+  REPOSITORY_SYNC,
+  TASKS_ARCHIVE_DUE,
 } from './jobs';
 import { type TestContext, testContext } from './testing/fixtures';
 
@@ -44,7 +49,16 @@ describe('jobs', () => {
   }
 
   it('exports names, payload schemas and the schedules', () => {
-    expect(JOB_NAMES).toEqual(['invitations.expire', 'cycles.end-due', 'backlog.refresh', 'backlog.poll']);
+    expect(JOB_NAMES).toEqual([
+      'invitations.expire',
+      'cycles.end-due',
+      'backlog.refresh',
+      'backlog.poll',
+      'repository.event',
+      'repository.sync',
+      'repository.poll',
+      'tasks.archive-due',
+    ]);
     expect(isJobName('invitations.expire')).toBe(true);
     expect(isJobName('cycles.end-due')).toBe(true);
     expect(isJobName('nope')).toBe(false);
@@ -53,6 +67,51 @@ describe('jobs', () => {
     expect(JOB_SCHEDULES[BACKLOG_POLL]).toEqual({ cron: '15 * * * *', tz: 'UTC', data: {} });
     expect(JOB_SCHEDULES[BACKLOG_REFRESH]).toBeUndefined();
     expect(JOB_QUEUE_OPTIONS[BACKLOG_REFRESH]).toEqual({ policy: 'stately' });
+    // M7
+    expect(JOB_SCHEDULES[REPOSITORY_POLL]).toEqual({ cron: '45 * * * *', tz: 'UTC', data: {} });
+    expect(JOB_SCHEDULES[TASKS_ARCHIVE_DUE]).toEqual({ cron: '30 2 * * *', tz: 'UTC', data: {} });
+    expect(jobSchedules('Europe/Paris')[TASKS_ARCHIVE_DUE]).toEqual({
+      cron: '30 2 * * *',
+      tz: 'Europe/Paris',
+      data: {},
+    });
+    expect(jobSchedules('Europe/Paris')[REPOSITORY_POLL]?.tz).toBe('UTC');
+    expect(JOB_SCHEDULES[REPOSITORY_SYNC]).toBeUndefined();
+    expect(JOB_SCHEDULES[REPOSITORY_EVENT]).toBeUndefined();
+    expect(JOB_QUEUE_OPTIONS[REPOSITORY_SYNC]).toEqual({ policy: 'stately' });
+    expect(JOB_QUEUE_OPTIONS[REPOSITORY_EVENT]).toBeUndefined();
+    const linkId = crypto.randomUUID();
+    expect(parseJobPayload(REPOSITORY_SYNC, { linkId })).toEqual({ linkId });
+    expect(() => parseJobPayload(REPOSITORY_SYNC, { linkId: 'nope' })).toThrow();
+    const request = {
+      number: 12,
+      title: 'Retry webhooks',
+      body: 'Closes: PAY-1',
+      state: 'open',
+      headBranch: 'feat/retry',
+      baseBranch: 'main',
+      author: 'claude-dev',
+      mergedBy: null,
+      webUrl: 'https://github.com/northwind/payments/pull/12',
+      openedAt: '2040-01-01T10:00:00.000Z',
+      mergedAt: null,
+      closedAt: null,
+      updatedAt: '2040-01-01T10:00:00.000Z',
+    };
+    expect(parseJobPayload(REPOSITORY_EVENT, { linkId, request, action: 'opened' })).toEqual({
+      linkId,
+      request,
+      action: 'opened',
+    });
+    expect(parseJobPayload(REPOSITORY_EVENT, { linkId, request })).toEqual({ linkId, request });
+    expect(() =>
+      parseJobPayload(REPOSITORY_EVENT, { linkId, request: { ...request, state: 'gone' } }),
+    ).toThrow();
+    expect(() => parseJobPayload(REPOSITORY_EVENT, { linkId, request, action: 'labeled' })).toThrow();
+    expect(parseJobPayload(REPOSITORY_POLL, {})).toEqual({});
+    expect(parseJobPayload(TASKS_ARCHIVE_DUE, { now: '2040-01-01T02:30:00Z' })).toEqual({
+      now: '2040-01-01T02:30:00Z',
+    });
     const sourceId = crypto.randomUUID();
     expect(parseJobPayload(BACKLOG_REFRESH, { sourceId, trigger: 'webhook' })).toEqual({
       sourceId,
@@ -99,6 +158,19 @@ describe('jobs', () => {
     await expect(
       ctx.db.transaction((tx) => enqueue(boss, tx, INVITATIONS_EXPIRE, { now: 'not a date' })),
     ).rejects.toThrow();
+  });
+
+  it('creates repository.sync as a stately queue: one queued check per link', async () => {
+    expect((await boss.getQueue(REPOSITORY_SYNC))?.policy).toBe('stately');
+    const linkId = crypto.randomUUID();
+    const first = await ctx.db.transaction((tx) =>
+      enqueue(boss, tx, REPOSITORY_SYNC, { linkId }, { singletonKey: linkId }),
+    );
+    const second = await ctx.db.transaction((tx) =>
+      enqueue(boss, tx, REPOSITORY_SYNC, { linkId }, { singletonKey: linkId }),
+    );
+    expect(first).toBeTruthy();
+    expect(second).toBeNull();
   });
 
   it('creates backlog.refresh as a stately queue', async () => {

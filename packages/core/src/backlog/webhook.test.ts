@@ -3,7 +3,7 @@ import { schema } from '@zamu/db';
 import { type ProviderKind, signWebhook } from '@zamu/git-providers';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { BACKLOG_REFRESH } from '../jobs';
+import { BACKLOG_REFRESH, REPOSITORY_EVENT } from '../jobs';
 import { decryptSecret } from '../secrets';
 import { createWorld, TEST_PUBLIC_URL, type TestContext, testContext, type World } from '../testing/fixtures';
 import { loadSource } from './refresh';
@@ -190,6 +190,44 @@ describe('acceptBacklogWebhook', () => {
         deleted,
       ),
     ).toEqual({ status: 204, reason: 'branch_deleted' });
+  });
+
+  it('sends request events to the project repository link (M7)', async () => {
+    const { row, secret, project } = await source('gitlab');
+    ctx.jobs.clear();
+    const body = JSON.stringify({
+      object_kind: 'merge_request',
+      user: { username: 'claude-dev' },
+      object_attributes: {
+        iid: 4,
+        title: 'Retry',
+        description: 'Closes: BACK-1',
+        state: 'opened',
+        action: 'open',
+        draft: false,
+        source_branch: 'feat/retry',
+        target_branch: 'main',
+        url: `${project.repository}/-/merge_requests/4`,
+        created_at: '2040-01-01T10:00:00Z',
+        updated_at: '2040-01-01T10:00:00Z',
+      },
+    });
+    const headers = { ...signWebhook('gitlab', body, secret), 'X-Gitlab-Event': 'Merge Request Hook' };
+    expect(await acceptBacklogWebhook(ctx, row.webhookId, headers, body)).toEqual({
+      status: 202,
+      reason: 'request_queued',
+    });
+    const [link] = await base.db
+      .select()
+      .from(schema.repositoryLink)
+      .where(eq(schema.repositoryLink.projectId, project.id));
+    expect(link).toMatchObject({ webhookLastStatus: 'ok', connectionId: row.connectionId });
+    expect(ctx.jobs.sent).toEqual([
+      expect.objectContaining({
+        name: REPOSITORY_EVENT,
+        data: expect.objectContaining({ linkId: link?.id, action: 'opened' }),
+      }),
+    ]);
   });
 
   it('answers 404 to unknown ids and 410 once detached', async () => {

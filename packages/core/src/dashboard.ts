@@ -1,6 +1,7 @@
 // Dashboard: the action queue (In review, Mentions, Stalled, Deadlines), one row per project and
 // the agents strip, across every project the actor can read. Rules: section 5 "Dashboard rules" of
-// the M4 plan.
+// the M4 plan. M7: archived tasks are left out of every group and count, but milestone and cycle
+// progress keep counting them.
 //
 // Query budget: readableProjects, then one query per queue group, one for the project rows and one
 // for the agents, in parallel. Each group query returns its first QUEUE_ITEM_LIMIT items with the
@@ -192,7 +193,7 @@ function reviewSource(params: Params): GroupSource {
       join project p on p.id = t.project_id
       left join "user" ua on ua.id = t.assignee_id
       left join "user" ur on ur.id = ua.responsible_user_id
-      where ${projectIn('t.project_id', params)} and t.status = 'in_review'
+      where ${projectIn('t.project_id', params)} and t.status = 'in_review' and t.archived_at is null
         ${mineOnly(params, assignedToMine('t.assignee_id', params.me))}`,
     order: sql`b."taskPriority" desc, b.since asc, b."taskId" asc`,
   };
@@ -223,7 +224,7 @@ function mentionsSource(params: Params): GroupSource {
         ${mineOnly(params, sql`cm.user_id = ${params.me}::uuid`)}
         and c.deleted_at is null
         and c.author_id <> cm.user_id
-        and t.status in (${OPEN_STATUSES_SQL})
+        and t.status in (${OPEN_STATUSES_SQL}) and t.archived_at is null
         and not exists (
           select 1 from comment reply
           where reply.task_id = c.task_id and reply.created_at > c.created_at
@@ -249,7 +250,7 @@ function stalledSource(params: Params): GroupSource {
       left join "user" ua on ua.id = t.assignee_id
       left join "user" ur on ur.id = ua.responsible_user_id
       cross join lateral (select ${LAST_TOUCH} as at) touched
-      where ${projectIn('t.project_id', params)} and t.status = 'in_progress'
+      where ${projectIn('t.project_id', params)} and t.status = 'in_progress' and t.archived_at is null
         ${mineOnly(params, assignedToMine('t.assignee_id', params.me))}
         and touched.at < case when ua.kind = 'agent'
           then ${agentCutoff}::timestamptz else ${personCutoff}::timestamptz end`,
@@ -258,7 +259,8 @@ function stalledSource(params: Params): GroupSource {
 }
 
 function deadlinesSource(params: Params): GroupSource {
-  const open = sql`t.status in (${OPEN_STATUSES_SQL})`;
+  // Archived tasks still count in progress (done, total) but are not open work.
+  const open = sql`t.status in (${OPEN_STATUSES_SQL}) and t.archived_at is null`;
   const mine =
     params.scope === 'mine'
       ? sql`and count(*) filter (where ${open} and ${assignedToMine('t.assignee_id', params.me)}) > 0`
@@ -437,7 +439,8 @@ function toDeadlineItem(row: Row, today: string): DeadlineItem {
  * with progress and the number of other open milestones. One query, most recently active first.
  */
 async function projectRows(db: Db, params: Params): Promise<z.input<typeof DashboardProject>[]> {
-  const status = (value: string) => sql.raw(`count(*) filter (where pt.status = '${value}')`);
+  const status = (value: string) =>
+    sql.raw(`count(*) filter (where pt.status = '${value}' and pt.archived_at is null)`);
   const rows = await db.execute<Row>(
     sql`
       select p.key, p.name, p.uses_milestones as "usesMilestones", p.uses_cycles as "usesCycles",
@@ -548,7 +551,8 @@ async function agentRows(db: Db, params: Params): Promise<z.input<typeof Dashboa
         from task t
         join project p on p.id = t.project_id
         cross join lateral (select ${LAST_TOUCH} as at) touched
-        where t.assignee_id = u.id and t.status = 'in_progress' and ${projectIn('t.project_id', params)}
+        where t.assignee_id = u.id and t.status = 'in_progress' and t.archived_at is null
+          and ${projectIn('t.project_id', params)}
         order by touched.at asc, t.id asc
         limit 1) cur on true
       -- Newest activity row and comment per agent in the scoped projects. Each walks

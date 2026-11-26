@@ -32,11 +32,65 @@ export const BACKLOG_REFRESH = 'backlog.refresh';
  */
 export const BACKLOG_POLL = 'backlog.poll';
 
+/**
+ * M7: applies one request event a repository webhook delivered (pull-requests.ts). Payload:
+ * `{ linkId, request, action? }`: the repository link, the request as the payload described it,
+ * and the host's action. Events of one link may run in any order: older ones are dropped.
+ */
+export const REPOSITORY_EVENT = 'repository.event';
+
+/**
+ * M7: reads the requests of one repository updated since the last check and applies each like a
+ * webhook event. Payload: `{ linkId }`. Stately per link (singletonKey linkId): at most one queued
+ * and one running check.
+ */
+export const REPOSITORY_SYNC = 'repository.sync';
+
+/** M7: hourly at :45, enqueues repository.sync for every project with a repository. Payload: `{}`. */
+export const REPOSITORY_POLL = 'repository.poll';
+
+/**
+ * M7: daily at 02:30 in APP_TIME_ZONE, archives the Done and Canceled tasks whose project's
+ * archive days have passed (archive.ts archiveDueTasks). Payload: `{}` (`now` overrides the clock).
+ */
+export const TASKS_ARCHIVE_DUE = 'tasks.archive-due';
+
 /** Payload of jobs that only take an optional clock override. */
 const ClockPayload = z.object({
   /** ISO timestamp to treat as "now". Omitted in production: the worker uses the current time. */
   now: z.iso.datetime({ offset: true }).optional(),
 });
+
+const Time = z.iso.datetime({ offset: true });
+
+/** A request as @zamu/git-providers describes it (RequestInfo), carried by repository.event. */
+export const RequestInfoPayload = z.object({
+  number: z.number().int().positive(),
+  title: z.string(),
+  body: z.string(),
+  state: z.enum(['open', 'draft', 'merged', 'closed']),
+  headBranch: z.string().min(1),
+  baseBranch: z.string().min(1),
+  author: z.string().nullable(),
+  mergedBy: z.string().nullable(),
+  webUrl: z.string().min(1),
+  openedAt: Time,
+  mergedAt: Time.nullable(),
+  closedAt: Time.nullable(),
+  updatedAt: Time,
+});
+
+/** The webhook action of a request event (RequestAction in @zamu/git-providers). */
+export const RequestActionPayload = z.enum([
+  'opened',
+  'reopened',
+  'ready',
+  'converted_to_draft',
+  'edited',
+  'synchronized',
+  'closed',
+  'merged',
+]);
 
 /** Payload schema per job name. Parse with parseJobPayload in the worker before running a job. */
 export const jobPayloadSchemas = {
@@ -44,6 +98,14 @@ export const jobPayloadSchemas = {
   [CYCLES_END_DUE]: ClockPayload,
   [BACKLOG_REFRESH]: z.object({ sourceId: z.uuid(), trigger: BacklogTrigger }),
   [BACKLOG_POLL]: ClockPayload,
+  [REPOSITORY_EVENT]: z.object({
+    linkId: z.uuid(),
+    request: RequestInfoPayload,
+    action: RequestActionPayload.optional(),
+  }),
+  [REPOSITORY_SYNC]: z.object({ linkId: z.uuid() }),
+  [REPOSITORY_POLL]: ClockPayload,
+  [TASKS_ARCHIVE_DUE]: ClockPayload,
 } as const;
 
 export type JobName = keyof typeof jobPayloadSchemas;
@@ -67,23 +129,39 @@ export interface JobSchedule {
 /** Minute past each hour of the backlog.poll schedule (status pages show the next poll). */
 export const BACKLOG_POLL_CRON_MINUTE = 15;
 
-/** Recurring jobs. The worker passes each to boss.schedule(name, cron, data, { tz }). */
-export const JOB_SCHEDULES: Partial<Record<JobName, JobSchedule>> = {
-  // Daily at 03:00 UTC.
-  [INVITATIONS_EXPIRE]: { cron: '0 3 * * *', tz: 'UTC', data: {} },
-  // Hourly, on the hour. "Today" comes from APP_TIME_ZONE in the handler's context, so a cycle ends
-  // within the hour after midnight there (zones with a half-hour offset: within 30 minutes later).
-  [CYCLES_END_DUE]: { cron: '0 * * * *', tz: 'UTC', data: {} },
-  // Hourly at :15, away from the cycle job on the hour.
-  [BACKLOG_POLL]: { cron: `${BACKLOG_POLL_CRON_MINUTE} * * * *`, tz: 'UTC', data: {} },
-};
+/** Minute past each hour of the repository.poll schedule (the Repository page shows the next check). */
+export const REPOSITORY_POLL_CRON_MINUTE = 45;
+
+/**
+ * Recurring jobs with the archive job at 02:30 in `timeZone` (APP_TIME_ZONE; default UTC). The
+ * worker passes each to boss.schedule(name, cron, data, { tz }).
+ */
+export function jobSchedules(timeZone = 'UTC'): Partial<Record<JobName, JobSchedule>> {
+  return {
+    // Daily at 03:00 UTC.
+    [INVITATIONS_EXPIRE]: { cron: '0 3 * * *', tz: 'UTC', data: {} },
+    // Hourly, on the hour. "Today" comes from APP_TIME_ZONE in the handler's context, so a cycle ends
+    // within the hour after midnight there (zones with a half-hour offset: within 30 minutes later).
+    [CYCLES_END_DUE]: { cron: '0 * * * *', tz: 'UTC', data: {} },
+    // Hourly at :15, away from the cycle job on the hour.
+    [BACKLOG_POLL]: { cron: `${BACKLOG_POLL_CRON_MINUTE} * * * *`, tz: 'UTC', data: {} },
+    // Hourly at :45, away from the Backlog.md poll.
+    [REPOSITORY_POLL]: { cron: `${REPOSITORY_POLL_CRON_MINUTE} * * * *`, tz: 'UTC', data: {} },
+    // Daily at 02:30 where the workspace lives; the handler counts days in the same zone.
+    [TASKS_ARCHIVE_DUE]: { cron: '30 2 * * *', tz: timeZone, data: {} },
+  };
+}
+
+/** jobSchedules() with UTC. The worker should call jobSchedules(APP_TIME_ZONE) instead. */
+export const JOB_SCHEDULES: Partial<Record<JobName, JobSchedule>> = jobSchedules();
 
 /**
  * Queue options per job name, passed to createQueue. backlog.refresh is `stately`: per source
- * (singletonKey) at most one queued and one running job.
+ * (singletonKey) at most one queued and one running job. repository.sync likewise per link.
  */
 export const JOB_QUEUE_OPTIONS: Partial<Record<JobName, Omit<Queue, 'name'>>> = {
   [BACKLOG_REFRESH]: { policy: 'stately' },
+  [REPOSITORY_SYNC]: { policy: 'stately' },
 };
 
 export function isJobName(name: string): name is JobName {

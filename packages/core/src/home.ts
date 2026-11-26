@@ -3,13 +3,17 @@
 // the "M5-05 Home data" brief of the M5 plan.
 //
 // Grouping. A tab's groups are HOME_GROUPS_BY_TAB[tab]; one SQL CASE puts each candidate task in
-// the first group it qualifies for, so a task shows once. Only open tasks that are not hidden, in
-// readable projects and matching the filters, are candidates.
+// the first group it qualifies for, so a task shows once. Only open tasks that are not hidden and
+// not archived (M7), in readable projects and matching the filters, are candidates; M7 adds one
+// branch of Done tasks for mergedOpen.
 //   Mine: review (In review and waiting on me: I am the responsible human of its agent assignee,
-//     else its creator), mentions (an unanswered comment mentions me), then, for my tasks only
-//     (assigned to me, or created by me and unassigned), blocked, overdue and assigned. My agents'
-//     other work shows on the Agents tab, not in Mine (frame 099).
-//   Everyone: review (every task In review), blocked, overdue, dueThisWeek (today to Sunday).
+//     else its creator), mergedOpen (M7: a merge moved it to Done while a criterion or done item is
+//     open, and it waits on me by the review rule), checkAgain (M7: its check-again day is today
+//     or past), mentions (an unanswered comment mentions me), then, for my tasks only (assigned to
+//     me, or created by me and unassigned; checkAgain too), blocked, overdue and assigned. My
+//     agents' other work shows on the Agents tab, not in Mine (frame 099).
+//   Everyone: review (every task In review), mergedOpen (every such task), blocked, overdue,
+//     dueThisWeek (today to Sunday).
 //   Agents: waiting: In review tasks an agent holds, and unanswered agent comments that mention a
 //     person of the workspace.
 // Blocked means at least one blocker that is open and not hidden. Overdue means due before today.
@@ -19,8 +23,9 @@
 // Query budget per getHome: readableProjects (plus one label lookup with the label filter), one
 // ranked query for the tab's groups (each group's uncapped total and first HOME_GROUP_ITEM_LIMIT
 // items), a fixed set of batch lookups for the rows (users, milestones, cycles, labels, blockers,
-// blocks, subtask progress, criteria and done-item counts, mirrors), one count query per other tab, the deadlines query and, on
-// Agents, the cards, today's counts and recent actions. No query runs per row.
+// blocks, subtask progress, criteria and done-item counts, mirrors, M7 the linked requests), one
+// count query per other tab, the deadlines query and, on Agents, the cards, today's counts and
+// recent actions. No query runs per row.
 //
 // Plans: candidates come from index-backed branches (task assignee, project and status, project
 // and due date, comment_mention user, task_dependency), stay narrow while they are ranked, and the
@@ -48,6 +53,7 @@ import {
   type HomeTab,
   type HomeTaskRef,
   OPEN_TASK_STATUSES,
+  type PullRequestRef,
   priorityFromValue,
   priorityToValue,
   type RelatedTask,
@@ -77,6 +83,7 @@ import { mentionExcerpt } from './dashboard';
 import { parseInput } from './errors';
 import { loadUsers, mirroredProjectIds, readableProjects, toDate, type UserRow, userRef } from './internal';
 import { mentionedUserIds } from './mentions';
+import { type RequestSummary, requestSummariesOf } from './tasks';
 
 type HomeContext = DbContext & ClockContext;
 
@@ -90,7 +97,7 @@ const IN_REVIEW_CHANGE = JSON.stringify([{ field: 'status', to: 'in_review' }]);
 const IN_PROGRESS_CHANGE = JSON.stringify([{ field: 'status', to: 'in_progress' }]);
 
 /** Groups that count towards the Mine tab and the sidebar. */
-const MINE_COUNTED = ['review', 'mentions', 'blocked', 'overdue'] as const;
+const MINE_COUNTED = ['review', 'mergedOpen', 'checkAgain', 'mentions', 'blocked', 'overdue'] as const;
 
 interface Params {
   projectIds: string[];
@@ -127,11 +134,33 @@ const uuids = (values: string[]) => sql`${sql.param(values)}::uuid[]`;
  * per query, which switches JIT on for queries that run in milliseconds.
  */
 function visibleOpen(alias: string, params: Params, labels: 'join' | 'probe' = 'join'): SQL {
+  return visibleWith(alias, params, labels, sql`${sql.raw(alias)}.status in (${OPEN_STATUSES_SQL})`);
+}
+
+/**
+ * M7: a Done task under `alias` in the merged-with-open-items group: a merge closed it, it is not
+ * archived, and a criterion or done item is still open (task_item(task_id, kind, position) index).
+ * Visible and filtered like visibleOpen. The candidates come from the partial index on
+ * merged_done_at.
+ */
+function mergedOpen(alias: string, params: Params): SQL {
+  const t = sql.raw(alias);
+  return visibleWith(
+    alias,
+    params,
+    'join',
+    sql`${t}.merged_done_at is not null and ${t}.status = 'done'
+      and exists (select 1 from task_item oi where oi.task_id = ${t}.id and oi.state = 'open')`,
+  );
+}
+
+function visibleWith(alias: string, params: Params, labels: 'join' | 'probe', status: SQL): SQL {
   const t = sql.raw(alias);
   const parts: SQL[] = [
     sql`${t}.project_id = any(${uuids(params.projectIds)})`,
     sql`${t}.hidden_at is null`,
-    sql`${t}.status in (${OPEN_STATUSES_SQL})`,
+    sql`${t}.archived_at is null`,
+    status,
   ];
   if (params.priorities) parts.push(sql`${t}.priority = any(${sql.param(params.priorities)}::smallint[])`);
   if (params.labelIds) {
@@ -187,7 +216,7 @@ const unanswered = (alias: string, person: SQL) => {
 /** Task columns a candidate branch returns: what classification and ordering read. */
 const CANDIDATE_COLUMNS = sql.raw(
   `t.id, t.project_id, t.status, t.priority, t.assignee_id, t.created_by_id, t.created_on_behalf_of_id, ` +
-    `t.due_date, t.updated_at`,
+    `t.due_date, t.updated_at, t.check_again_on, t.merged_done_at`,
 );
 
 /**
@@ -229,6 +258,7 @@ function classified(params: Params, tab: HomeTab): SQL {
     select x.*,
       case when x.g = ${G.mentions} or (x.g = ${G.waiting} and x.reason_kind = 'mention') then x.comment_at
         when x.g in (${G.review}, ${G.waiting}) then x.updated_at
+        when x.g = ${G.mergedOpen} then x.merged_done_at
       end as sort_at
     from (${inner}) x
     where x.g is not null`;
@@ -268,6 +298,9 @@ function mineSource(params: Params): SQL {
       null::text as reason_kind,
       case
         when t.status = 'in_review' and ${WAITING_ON} = ${meId} then ${G.review}
+        when t.status = 'done' and t.merged_done_at is not null and ${WAITING_ON} = ${meId} then ${G.mergedOpen}
+        when t.status not in (${OPEN_STATUSES_SQL}) then null
+        when ${mine} and t.check_again_on <= ${params.today}::date then ${G.checkAgain}
         when mn.id is not null then ${G.mentions}
         when ${mine} and bk.yes is not null then ${G.blocked}
         when ${mine} and t.due_date < ${params.today}::date then ${G.overdue}
@@ -281,6 +314,10 @@ function mineSource(params: Params): SQL {
         where ${open} and t.assignee_id is null and t.created_by_id = ${meId}`,
       sql`select ${CANDIDATE_COLUMNS} from task t where ${open} and t.status = 'in_review'
         and (t.created_by_id = ${meId} or t.created_on_behalf_of_id = ${meId})`,
+      // M7: Done tasks merged with open items that wait on me (the review rule's person).
+      sql`select ${CANDIDATE_COLUMNS} from task t where ${mergedOpen('t', params)}
+        and (t.assignee_id in (${myAgents(me)}) or t.created_by_id = ${meId}
+          or t.created_on_behalf_of_id = ${meId})`,
       candidateById(sql`mn`, 'mn.task_id', params),
     ])}
     left join "user" ua on ua.id = t.assignee_id
@@ -303,12 +340,15 @@ function everyoneSource(params: Params): SQL {
       null::text as relation, null::text as reason_kind,
       case
         when t.status = 'in_review' then ${G.review}
+        when t.status = 'done' and t.merged_done_at is not null then ${G.mergedOpen}
+        when t.status not in (${OPEN_STATUSES_SQL}) then null
         when bl.task_id is not null then ${G.blocked}
         when t.due_date < ${params.today}::date then ${G.overdue}
         when t.due_date <= ${weekEnd}::date then ${G.dueThisWeek}
       end as g
     from ${candidates([
       sql`select ${CANDIDATE_COLUMNS} from task t where ${open} and t.status = 'in_review'`,
+      sql`select ${CANDIDATE_COLUMNS} from task t where ${mergedOpen('t', params)}`,
       candidateById(sql`bl`, 'bl.task_id', params),
       sql`select ${CANDIDATE_COLUMNS} from task t where ${open} and t.due_date <= ${weekEnd}::date`,
     ])}
@@ -361,11 +401,13 @@ function waitingSource(params: Params): SQL {
 }
 
 /**
- * Order inside a group. overdue, assigned, dueThisWeek: due date first (none last). Then priority
- * (highest first) except on waiting. blocked: then due date. Then newest first: the comment time
- * for mentions, the last update for reviews. Then last update and id.
+ * Order inside a group. overdue, assigned, dueThisWeek: due date first (none last); checkAgain:
+ * the check-again day first (longest waiting first). Then priority (highest first) except on
+ * waiting. blocked: then due date. Then newest first: the comment time for mentions, the last
+ * update for reviews, the merge for mergedOpen. Then last update and id.
  */
-const GROUP_ORDER = sql`case when c.g in (${G.overdue}, ${G.assigned}, ${G.dueThisWeek}) then c.due_date end asc nulls last,
+const GROUP_ORDER = sql`case when c.g in (${G.overdue}, ${G.assigned}, ${G.dueThisWeek}) then c.due_date
+    when c.g = ${G.checkAgain} then c.check_again_on end asc nulls last,
   case when c.g <> ${G.waiting} then c.priority end desc nulls last,
   case when c.g = ${G.blocked} then c.due_date end asc nulls last,
   c.sort_at desc nulls last, c.updated_at desc, c.id desc`;
@@ -386,12 +428,15 @@ async function rankedRows(db: Db, params: Params, tab: HomeTab): Promise<Row[]> 
         t.milestone_id as "milestoneId", t.cycle_id as "cycleId", t.cycle_added_at as "cycleAddedAt",
         t.rank, t.backlog_id as "backlogId", t.due_date::text as "dueDate", t.created_at as "createdAt",
         t.updated_at as "updatedAt", t.final_summary is not null as "hasFinalSummary",
+        t.check_again_on::text as "checkAgainOn", t.check_again_reason as "checkAgainReason",
+        t.merged_done_at as "mergedDoneAt",
         p.id as "projectId", p.key as "projectKey", p.name as "projectName",
         pt.number as "parentNumber", pt.key_suffix as "parentKeySuffix",
         rv.actor_id as "reviewActorId", rv.on_behalf_of_id as "reviewOnBehalfOfId",
         case
           when r.g = ${G.review} or (r.g = ${G.waiting} and r.reason_kind = 'review')
             then coalesce(rv.created_at, t.updated_at)
+          when r.g = ${G.mergedOpen} then t.merged_done_at
           else r.comment_at
         end as "reasonAt"
       from (
@@ -504,6 +549,8 @@ interface Details {
   /** M6: criteria and done-item counts per task, from one grouped query (workItemProgressOf). */
   workItems: Awaited<ReturnType<typeof workItemProgressOf>>;
   mirrored: Set<string>;
+  /** M7: the linked requests per task (newest, merged last, count), from one query. */
+  requests: Map<string, RequestSummary>;
 }
 
 async function loadDetails(db: Db, rows: Row[], today: string): Promise<Details> {
@@ -511,35 +558,36 @@ async function loadDetails(db: Db, rows: Row[], today: string): Promise<Details>
   const milestoneIds = [...new Set(rows.map((row) => str(row.milestoneId)).filter((id) => id !== null))];
   const cycleIds = [...new Set(rows.map((row) => str(row.cycleId)).filter((id) => id !== null))];
   const none = Promise.resolve([] as Row[]);
-  const [milestones, cycles, labels, blockers, blocks, subtasks, workItems, mirrored] = await Promise.all([
-    milestoneIds.length === 0
-      ? none
-      : db.execute<Row>(
-          sql`select id, name, status, target_date::text as "targetDate" from milestone
+  const [milestones, cycles, labels, blockers, blocks, subtasks, workItems, mirrored, requests] =
+    await Promise.all([
+      milestoneIds.length === 0
+        ? none
+        : db.execute<Row>(
+            sql`select id, name, status, target_date::text as "targetDate" from milestone
             where id = any(${uuids(milestoneIds)})`,
-          'objects',
-        ),
-    cycleIds.length === 0
-      ? none
-      : db.execute<Row>(
-          sql`select id, number, name, starts_on::text as "startsOn", ends_on::text as "endsOn",
+            'objects',
+          ),
+      cycleIds.length === 0
+        ? none
+        : db.execute<Row>(
+            sql`select id, number, name, starts_on::text as "startsOn", ends_on::text as "endsOn",
               completed_at as "completedAt"
             from cycle where id = any(${uuids(cycleIds)})`,
-          'objects',
-        ),
-    taskIds.length === 0
-      ? none
-      : db.execute<Row>(
-          sql`select tl.task_id as "taskId", l.id, l.name, l.color, l.source
+            'objects',
+          ),
+      taskIds.length === 0
+        ? none
+        : db.execute<Row>(
+            sql`select tl.task_id as "taskId", l.id, l.name, l.color, l.source
             from task_label tl join label l on l.id = tl.label_id
             where tl.task_id = any(${uuids(taskIds)})
             order by lower(l.name), l.id`,
-          'objects',
-        ),
-    taskIds.length === 0
-      ? none
-      : db.execute<Row>(
-          sql`select d.task_id as "taskId", b.number, b.key_suffix as "keySuffix", b.title, b.status,
+            'objects',
+          ),
+      taskIds.length === 0
+        ? none
+        : db.execute<Row>(
+            sql`select d.task_id as "taskId", b.number, b.key_suffix as "keySuffix", b.title, b.status,
               b.assignee_id as "assigneeId", p.key as "projectKey"
             from task_dependency d
             join task b on b.id = d.blocker_id
@@ -547,34 +595,35 @@ async function loadDetails(db: Db, rows: Row[], today: string): Promise<Details>
             where d.task_id = any(${uuids(taskIds)}) and b.status in (${OPEN_STATUSES_SQL})
               and b.hidden_at is null
             order by p.key, b.number, b.key_suffix nulls first`,
-          'objects',
-        ),
-    taskIds.length === 0
-      ? none
-      : db.execute<Row>(
-          sql`select d.blocker_id as "taskId", count(*) as n
+            'objects',
+          ),
+      taskIds.length === 0
+        ? none
+        : db.execute<Row>(
+            sql`select d.blocker_id as "taskId", count(*) as n
             from task_dependency d join task w on w.id = d.task_id
             where d.blocker_id = any(${uuids(taskIds)}) and w.status in (${OPEN_STATUSES_SQL})
               and w.hidden_at is null
             group by d.blocker_id`,
-          'objects',
-        ),
-    taskIds.length === 0
-      ? none
-      : db.execute<Row>(
-          sql`select s.parent_id as "taskId", count(*) filter (where s.status = 'done') as done,
+            'objects',
+          ),
+      taskIds.length === 0
+        ? none
+        : db.execute<Row>(
+            sql`select s.parent_id as "taskId", count(*) filter (where s.status = 'done') as done,
               count(*) filter (where s.status <> 'canceled') as total
             from task s
             where s.parent_id = any(${uuids(taskIds)}) and s.hidden_at is null
             group by s.parent_id`,
-          'objects',
-        ),
-    workItemProgressOf(db, taskIds),
-    mirroredProjectIds(
-      db,
-      rows.map((row) => String(row.projectId)),
-    ),
-  ]);
+            'objects',
+          ),
+      workItemProgressOf(db, taskIds),
+      mirroredProjectIds(
+        db,
+        rows.map((row) => String(row.projectId)),
+      ),
+      requestSummariesOf(db, taskIds),
+    ]);
 
   const userIds = new Set<string | null>();
   for (const row of rows) {
@@ -653,7 +702,24 @@ async function loadDetails(db: Db, rows: Row[], today: string): Promise<Details>
     ),
     workItems,
     mirrored,
+    requests,
   };
+}
+
+/** M7: the row's check-again day and reason; null when none. */
+function checkAgainOfRow(row: Row): { on: string; reason: string } | null {
+  const on = calendarDate(row.checkAgainOn);
+  return on === null || row.checkAgainReason === null || row.checkAgainReason === undefined
+    ? null
+    : { on, reason: String(row.checkAgainReason) };
+}
+
+/** M7: open items of a Done task a merge closed; null unless it is in the merged-with-open-items state. */
+function mergedOpenOfRow(row: Row, details: Details): { openCriteria: number; openDoneItems: number } | null {
+  if (row.status !== 'done' || row.mergedDoneAt === null || row.mergedDoneAt === undefined) return null;
+  const progress = progressFor(details.workItems, String(row.taskId));
+  const open = { openCriteria: progress.criteria.open, openDoneItems: progress.done.open };
+  return open.openCriteria + open.openDoneItems > 0 ? open : null;
 }
 
 function listItemOf(row: Row, details: Details): z.input<typeof TaskListItem> {
@@ -691,6 +757,10 @@ function listItemOf(row: Row, details: Details): z.input<typeof TaskListItem> {
     criteriaProgress: workItems.criteria,
     doneProgress: workItems.done,
     hasFinalSummary: Boolean(row.hasFinalSummary),
+    checkAgain: checkAgainOfRow(row),
+    archivedAt: null,
+    pullRequest: details.requests.get(taskId)?.newest ?? null,
+    pullRequestCount: details.requests.get(taskId)?.count ?? 0,
     createdAt: timestamp(row.createdAt),
     updatedAt: timestamp(row.updatedAt),
   } as z.input<typeof TaskListItem>;
@@ -767,6 +837,30 @@ function reasonOf(
       };
     case 'assigned':
       return { kind: 'assigned' };
+    case 'mergedOpen': {
+      const open = mergedOpenOfRow(row, details) ?? { openCriteria: 0, openDoneItems: 0 };
+      const summary = details.requests.get(String(row.taskId));
+      const merged = summary?.merged ?? null;
+      const pullRequest: PullRequestRef | null = merged
+        ? { provider: merged.provider, number: merged.number, title: merged.title, url: merged.url }
+        : null;
+      return {
+        kind: 'mergedOpen',
+        pullRequest,
+        mergedBy: merged ? (summary?.mergedBy ?? null) : null,
+        ...open,
+        at: timestamp(row.reasonAt),
+      };
+    }
+    case 'checkAgain': {
+      const check = checkAgainOfRow(row) as { on: string; reason: string };
+      return {
+        kind: 'checkAgain',
+        on: check.on,
+        reason: check.reason,
+        daysAgo: Math.max(0, calendarDaysBetween(check.on, today)),
+      };
+    }
   }
 }
 
@@ -797,6 +891,13 @@ function pillsOf(
     pills.push({ kind: 'cycle', cycle: { number: cycle.number, name: cycle.name } });
   if (row.question) pills.push({ kind: 'question' });
   if (item.assignee === null) pills.push({ kind: 'unassigned' });
+  // M7: a merged task with open items, and a check-again day that came, outside their own groups.
+  const merged = group === 'mergedOpen' ? null : mergedOpenOfRow(row, details);
+  if (merged) pills.push({ kind: 'mergedOpen', openItems: merged.openCriteria + merged.openDoneItems });
+  const check = checkAgainOfRow(row);
+  const open = (OPEN_TASK_STATUSES as readonly string[]).includes(String(row.status));
+  if (check && open && check.on <= today && group !== 'checkAgain')
+    pills.push({ kind: 'checkAgain', on: check.on });
   return pills;
 }
 
@@ -1218,23 +1319,16 @@ export async function getHome(
 }
 
 /**
- * The Mine counts of needs your review, mentions, blocked and overdue, and their sum: the sidebar
- * count. Each task counts once, in its first group, as on Home.
+ * The Mine counts of needs your review, merged with open items and check again (M7), mentions,
+ * blocked and overdue, and their sum: the sidebar count. Each task counts once, in its first
+ * group, as on Home.
  */
 export async function getHomeCounts(ctx: HomeContext, actor: Actor): Promise<HomeCounts> {
   const params = await paramsFor(ctx, actor, parseInput(GetHomeInput, {}));
   const totals = await groupTotals(ctx.db, params, 'mine');
-  const [review, mentions, blocked, overdue] = MINE_COUNTED.map((key) => totals.get(key) ?? 0) as [
-    number,
-    number,
-    number,
-    number,
-  ];
-  return HomeCounts.parse({
-    review,
-    mentions,
-    blocked,
-    overdue,
-    total: review + mentions + blocked + overdue,
-  });
+  const counts = Object.fromEntries(MINE_COUNTED.map((key) => [key, totals.get(key) ?? 0])) as Record<
+    (typeof MINE_COUNTED)[number],
+    number
+  >;
+  return HomeCounts.parse({ ...counts, total: mineTotal(totals) });
 }
