@@ -67,6 +67,13 @@ import { PROBLEM_STATUS, ProblemData } from './problem';
 /** Every path in the contract starts with this prefix. Mount the OpenAPI handler without a prefix. */
 export const API_PREFIX = '/api/v1';
 
+/**
+ * Request header naming the workspace by slug (current or old). The web app sets it on every call;
+ * a session without it uses the workspace the person used last. An API key is refused with 403
+ * WORKSPACE_MISMATCH when the header names another workspace than the key's. 0.10, PM-39.
+ */
+export const WORKSPACE_HEADER = 'x-zamu-workspace';
+
 /** Data of the TASK_CHANGED error: the task as it is now, so the client can roll back to it. */
 export const TaskChangedProblemData = ProblemData.extend({ task: Task });
 export type TaskChangedProblemData = z.output<typeof TaskChangedProblemData>;
@@ -112,6 +119,11 @@ export const apiErrors = {
   // M6
   /** An agent moving a task to In review or Done with open criteria or done items (409, openItems). */
   OPEN_ITEMS: { status: PROBLEM_STATUS.OPEN_ITEMS, data: ProblemData },
+  // 0.10: multiple workspaces
+  /** Signed in, but not a member of the workspace the request names (403). */
+  NOT_A_MEMBER: { status: PROBLEM_STATUS.NOT_A_MEMBER, data: ProblemData },
+  /** An API key with a workspace header naming another workspace (403). */
+  WORKSPACE_MISMATCH: { status: PROBLEM_STATUS.WORKSPACE_MISMATCH, data: ProblemData },
 };
 
 const base = oc.errors(apiErrors);

@@ -36,6 +36,7 @@ import {
   TaskStatus,
   Theme,
   UserId,
+  WorkspaceSlugInput,
 } from './primitives';
 import { MAX_REPOSITORY_URL_LENGTH, parseRepositoryUrl, REPOSITORY_URL_HINT } from './repository';
 
@@ -1010,6 +1011,53 @@ export const WorkspaceFields = z.object({
     .max(MAX_WORKSPACE_NAME_LENGTH, AUTH_FIELD_MESSAGES.workspaceNameTooLong),
 });
 export type WorkspaceFields = z.input<typeof WorkspaceFields>;
+
+// ---------------------------------------------------------------------------
+// Workspaces (0.10, PM-39; server functions in the web app, not /api/v1)
+// ---------------------------------------------------------------------------
+// Each one acts on the workspace the request names, except create. Core checks the role, the
+// creation policy, reserved and taken slugs, and the last owner.
+
+/** A workspace name: what the switcher and the setup form show. */
+export const WorkspaceName = z
+  .string()
+  .trim()
+  .min(1, AUTH_FIELD_MESSAGES.workspaceName)
+  .max(MAX_WORKSPACE_NAME_LENGTH, AUTH_FIELD_MESSAGES.workspaceNameTooLong);
+
+/** New workspace dialog. Without a slug, core suggests one from the name (suggestWorkspaceSlug). */
+export const CreateWorkspaceInput = z.object({
+  name: WorkspaceName,
+  slug: WorkspaceSlugInput.optional(),
+});
+export type CreateWorkspaceInput = z.output<typeof CreateWorkspaceInput>;
+
+/**
+ * General settings: rename the workspace or change its slug (owners and admins). The old slug
+ * becomes an alias, so links made with it keep working.
+ */
+export const UpdateWorkspaceInput = z
+  .object({
+    name: WorkspaceName.optional(),
+    slug: WorkspaceSlugInput.optional(),
+  })
+  .refine(requireOneOf(['name', 'slug']), { message: 'Change the name or the slug' });
+export type UpdateWorkspaceInput = z.output<typeof UpdateWorkspaceInput>;
+
+/** Leave the workspace. Refused for its last owner (LAST_OWNER). */
+export const LeaveWorkspaceInput = z.object({});
+export type LeaveWorkspaceInput = z.output<typeof LeaveWorkspaceInput>;
+
+export const DELETE_WORKSPACE_CONFIRM_MESSAGE = 'Type the workspace slug to confirm.';
+
+/**
+ * Delete the workspace (owners). `confirmSlug` is the slug typed again, any case; core compares it
+ * with the current slug.
+ */
+export const DeleteWorkspaceInput = z.object({
+  confirmSlug: z.string().trim().toLowerCase().min(1, DELETE_WORKSPACE_CONFIRM_MESSAGE),
+});
+export type DeleteWorkspaceInput = z.output<typeof DeleteWorkspaceInput>;
 
 /** Input of the setup server function: both steps of the first-run form. */
 export const SetupInput = AccountFields.extend(WorkspaceFields.shape);

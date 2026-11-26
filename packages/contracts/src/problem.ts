@@ -49,6 +49,20 @@ export const PROBLEM_CODES = [
    * body lists them in `openItems`; people are never refused.
    */
   'OPEN_ITEMS',
+  // 0.10: multiple workspaces. The first two come from /api/v1; the rest from the web app's
+  // workspace server functions.
+  /** Signed in, but not a member of the workspace the request names (403). */
+  'NOT_A_MEMBER',
+  /** An API key sent with a workspace header that names another workspace than the key's (403). */
+  'WORKSPACE_MISMATCH',
+  /** The creation policy (WORKSPACE_CREATION=owners) does not let this person create a workspace (403). */
+  'WORKSPACE_CREATION_OFF',
+  /** A slug another workspace uses, or holds as an old slug (409). */
+  'SLUG_TAKEN',
+  /** A slug from WORKSPACE_SLUG_RESERVED (400). */
+  'SLUG_RESERVED',
+  /** Leaving, removing or demoting the last owner of a workspace (409). */
+  'LAST_OWNER',
 ] as const;
 export const ProblemCode = z.enum(PROBLEM_CODES);
 export type ProblemCode = z.infer<typeof ProblemCode>;
@@ -74,6 +88,12 @@ export const PROBLEM_STATUS: Record<ProblemCode, number> = {
   SUBTASK_DEPTH: 409,
   NOT_SAME_PROJECT: 422,
   OPEN_ITEMS: 409,
+  NOT_A_MEMBER: 403,
+  WORKSPACE_MISMATCH: 403,
+  WORKSPACE_CREATION_OFF: 403,
+  SLUG_TAKEN: 409,
+  SLUG_RESERVED: 400,
+  LAST_OWNER: 409,
 };
 
 export const PROBLEM_TITLES: Record<ProblemCode, string> = {
@@ -97,6 +117,12 @@ export const PROBLEM_TITLES: Record<ProblemCode, string> = {
   SUBTASK_DEPTH: 'Subtasks go one level deep',
   NOT_SAME_PROJECT: 'Tasks are in different projects',
   OPEN_ITEMS: 'Task has open items',
+  NOT_A_MEMBER: 'Not a member of this workspace',
+  WORKSPACE_MISMATCH: 'Key belongs to another workspace',
+  WORKSPACE_CREATION_OFF: 'Workspace creation is limited to owners',
+  SLUG_TAKEN: 'Slug is taken',
+  SLUG_RESERVED: 'Slug is reserved',
+  LAST_OWNER: 'Workspace needs an owner',
 };
 
 /** The codes of the Backlog.md mirror rules, for clients that treat them alike. */

@@ -146,6 +146,133 @@ export function suggestProjectKey(name: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Workspace slugs (0.10, PM-39)
+// ---------------------------------------------------------------------------
+
+/** Shortest and longest workspace slug. */
+export const WORKSPACE_SLUG_MIN_LENGTH = 2;
+export const WORKSPACE_SLUG_MAX_LENGTH = 40;
+
+/**
+ * Lowercase letters, digits and single hyphens, starting with a letter and not ending with a hyphen.
+ * The database checks the same rule on workspace_slug_alias.
+ */
+export const WORKSPACE_SLUG_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+
+/**
+ * Slugs no workspace may take: they are, or may become, top-level paths of the web app. Core
+ * refuses them with SLUG_RESERVED.
+ */
+export const WORKSPACE_SLUG_RESERVED = [
+  'api',
+  'w',
+  'new',
+  'settings',
+  'admin',
+  'setup',
+  'signin',
+  'invite',
+  'welcome',
+  'help',
+  'docs',
+  'static',
+  'assets',
+] as const;
+export type ReservedWorkspaceSlug = (typeof WORKSPACE_SLUG_RESERVED)[number];
+
+export function isReservedWorkspaceSlug(slug: string): slug is ReservedWorkspaceSlug {
+  return (WORKSPACE_SLUG_RESERVED as readonly string[]).includes(slug);
+}
+
+export const WORKSPACE_SLUG_MESSAGES = {
+  length: `Use ${WORKSPACE_SLUG_MIN_LENGTH} to ${WORKSPACE_SLUG_MAX_LENGTH} characters.`,
+  start: 'Start with a letter.',
+  characters: 'Use lowercase letters, digits and hyphens.',
+  hyphens: 'Use single hyphens between letters or digits, not at the end.',
+  reserved: 'This address is reserved. Pick another.',
+} as const;
+
+/**
+ * The format part of the slug rule, with one message per broken rule so a form can say what to fix.
+ * Reserved words pass here; WorkspaceSlug refuses them too.
+ */
+const WorkspaceSlugFormat = z
+  .string()
+  .min(WORKSPACE_SLUG_MIN_LENGTH, WORKSPACE_SLUG_MESSAGES.length)
+  .max(WORKSPACE_SLUG_MAX_LENGTH, WORKSPACE_SLUG_MESSAGES.length)
+  .regex(/^[a-z]/, WORKSPACE_SLUG_MESSAGES.start)
+  .regex(/^[a-z0-9-]*$/, WORKSPACE_SLUG_MESSAGES.characters)
+  .regex(WORKSPACE_SLUG_PATTERN, WORKSPACE_SLUG_MESSAGES.hyphens);
+
+/**
+ * A workspace slug as stored and shown, e.g. `acme`: the format rule and not a reserved word.
+ * Strict: no case folding or trimming.
+ */
+export const WorkspaceSlug = WorkspaceSlugFormat.refine((value) => !isReservedWorkspaceSlug(value), {
+  message: WORKSPACE_SLUG_MESSAGES.reserved,
+});
+export type WorkspaceSlug = z.infer<typeof WorkspaceSlug>;
+
+/**
+ * A slug as typed in the New workspace dialog or General settings: trimmed and lower-cased, then
+ * checked against the format rule. Reserved words pass, so core answers them with SLUG_RESERVED
+ * (400) as it answers a slug in use with SLUG_TAKEN (409); `isReservedWorkspaceSlug` lets a form
+ * say so before it submits.
+ */
+export const WorkspaceSlugInput = z.string().trim().toLowerCase().pipe(WorkspaceSlugFormat);
+
+/** Suffix that makes a too-short or reserved suggestion a slug of its own: `admin-workspace`. */
+const SLUG_FALLBACK_SUFFIX = '-workspace';
+
+/**
+ * Suggests a slug from a workspace name, as the New workspace dialog does while you type: accents
+ * dropped, lower-cased, every run of other characters turned into one hyphen ("Acme Corp." gives
+ * `acme-corp`). A name that starts with a digit gets `w-`; a result that is too short or reserved
+ * gets `-workspace`. Always returns a valid WorkspaceSlug; core appends a number while it is taken
+ * (workspaceSlugWithNumber).
+ */
+export function suggestWorkspaceSlug(name: string): string {
+  let slug = name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (slug === '') slug = 'workspace';
+  else if (!/^[a-z]/.test(slug)) slug = `w-${slug}`;
+  slug = trimSlug(slug, WORKSPACE_SLUG_MAX_LENGTH);
+  if (slug.length < WORKSPACE_SLUG_MIN_LENGTH || isReservedWorkspaceSlug(slug)) {
+    slug = `${trimSlug(slug, WORKSPACE_SLUG_MAX_LENGTH - SLUG_FALLBACK_SUFFIX.length)}${SLUG_FALLBACK_SUFFIX}`;
+  }
+  return slug;
+}
+
+/**
+ * The nth candidate for a suggested slug: the slug itself for 1, else the slug cut short enough to
+ * end in `-<n>` within the length limit (`acme-2`). Pass a valid slug and n >= 1.
+ */
+export function workspaceSlugWithNumber(slug: string, n: number): string {
+  if (n <= 1) return slug;
+  const suffix = `-${n}`;
+  return `${trimSlug(slug, WORKSPACE_SLUG_MAX_LENGTH - suffix.length)}${suffix}`;
+}
+
+/**
+ * Who may create a workspace, from the WORKSPACE_CREATION setting: any person (`everyone`, the
+ * default), or only people who own a workspace already (`owners`). Agents never do. Core refuses the
+ * others with WORKSPACE_CREATION_OFF.
+ */
+export const WORKSPACE_CREATION_POLICIES = ['everyone', 'owners'] as const;
+export const WorkspaceCreationPolicy = z.enum(WORKSPACE_CREATION_POLICIES);
+export type WorkspaceCreationPolicy = z.infer<typeof WorkspaceCreationPolicy>;
+export const DEFAULT_WORKSPACE_CREATION = 'everyone' satisfies WorkspaceCreationPolicy;
+
+/** Cuts a slug to `length` characters without leaving a trailing hyphen. */
+function trimSlug(slug: string, length: number): string {
+  return slug.slice(0, length).replace(/-+$/, '');
+}
+
+// ---------------------------------------------------------------------------
 // Task keys
 // ---------------------------------------------------------------------------
 

@@ -24,6 +24,7 @@ import type {
   TimelineItem,
   UserRef,
   WorkItem,
+  Workspace,
 } from '../entities';
 
 // Valid sample values for every entity schema, typed as server-side inputs (Dates allowed).
@@ -313,6 +314,24 @@ export const meFixture = {
   role: 'member',
   auth: { method: 'api_key', scope: { projects: 'all', access: 'read' } },
 } satisfies z.input<typeof Me>;
+
+// ---------------------------------------------------------------------------
+// 0.10: two workspaces, each with a project PAY
+// ---------------------------------------------------------------------------
+
+export const acmeWorkspaceFixture = {
+  id: '0190a1b2-0000-7000-8000-00000000e0a1',
+  name: 'Acme',
+  slug: 'acme',
+  role: 'owner',
+} satisfies z.input<typeof Workspace>;
+
+export const globexWorkspaceFixture = {
+  id: '0190a1b2-0000-7000-8000-00000000e0b2',
+  name: 'Globex',
+  slug: 'globex',
+  role: 'member',
+} satisfies z.input<typeof Workspace>;
 
 // ---------------------------------------------------------------------------
 // M5: labels, due dates, blockers, subtasks and Home
