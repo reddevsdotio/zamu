@@ -155,6 +155,63 @@ const ASSIGNED: HomeItem = {
   pills: [],
 };
 
+// M7: a merge closed it with criteria open (frames 064, 065), and a check-again day that has come.
+// The M7 tests fix the clock at TODAY (local noon), so "yesterday" and "today" don't follow the real one.
+const TODAY = new Date(2026, 10, 2, 12);
+const localIso = (day: number, hour = 9) => new Date(2026, 10, day, hour).toISOString();
+const MERGED: HomeItem = {
+  task: task('PAY-150', 'Payout report export', {
+    status: 'done',
+    assignee: asAssignee(ANA),
+    criteriaProgress: { settled: 4, open: 2, waived: 0, total: 6 },
+  }),
+  reason: {
+    kind: 'mergedOpen',
+    pullRequest: {
+      provider: 'github',
+      number: 479,
+      title: 'Payout report export',
+      url: 'https://github.com/northwind/payments/pull/479',
+    },
+    openCriteria: 2,
+    openDoneItems: 0,
+    at: localIso(1),
+  },
+  relation: 'assignee',
+  pills: [],
+};
+const MERGED_ITEMS: HomeItem = {
+  task: task('WEB-31', 'Rate-limit the public search endpoint', { status: 'done' }),
+  reason: {
+    kind: 'mergedOpen',
+    pullRequest: {
+      provider: 'gitlab',
+      number: 88,
+      title: 'Rate limit',
+      url: 'https://gitlab.com/northwind/web/-/merge_requests/88',
+    },
+    openCriteria: 1,
+    openDoneItems: 2,
+    at: new Date(2026, 9, 30, 9).toISOString(),
+  },
+  relation: null,
+  pills: [],
+};
+const CHECK_AGAIN: HomeItem = {
+  task: task('PAY-131', 'Rotate the bank API certificate', {
+    assignee: asAssignee(ANA),
+    checkAgain: { on: '2026-11-02', reason: 'The bank issues the new certificate on Nov 1.' },
+  }),
+  reason: {
+    kind: 'checkAgain',
+    on: '2026-11-02',
+    reason: 'The bank issues the new certificate on Nov 1.',
+    daysAgo: 0,
+  },
+  relation: 'assignee',
+  pills: [],
+};
+
 function group(key: HomeGroup['key'], items: HomeItem[], total = items.length): HomeGroup {
   return { key, total, items };
 }
@@ -188,6 +245,8 @@ interface FakeOptions {
   noProjects?: boolean;
   /** Mine with nothing waiting (frame 102). */
   clear?: boolean;
+  /** M7: rows in "Merged with open criteria" and "Check again". */
+  m7?: boolean;
 }
 
 function homeFor(tab: HomeTab, options: FakeOptions): Home {
@@ -195,6 +254,8 @@ function homeFor(tab: HomeTab, options: FakeOptions): Home {
     mine: options.clear
       ? [
           group('review', []),
+          group('mergedOpen', []),
+          group('checkAgain', []),
           group('mentions', []),
           group('blocked', []),
           group('overdue', []),
@@ -202,6 +263,8 @@ function homeFor(tab: HomeTab, options: FakeOptions): Home {
         ]
       : [
           group('review', [REVIEW]),
+          group('mergedOpen', options.m7 ? [MERGED] : []),
+          group('checkAgain', options.m7 ? [CHECK_AGAIN] : []),
           group('mentions', [MENTION]),
           group('blocked', [BLOCKED]),
           group('overdue', []),
@@ -209,6 +272,7 @@ function homeFor(tab: HomeTab, options: FakeOptions): Home {
         ],
     everyone: [
       group('review', [{ ...REVIEW, relation: null }]),
+      group('mergedOpen', options.m7 ? [{ ...MERGED, relation: null }, MERGED_ITEMS] : []),
       group('blocked', [{ ...BLOCKED, relation: null }]),
       group('overdue', []),
       group('dueThisWeek', []),
@@ -518,6 +582,58 @@ describe('Home', () => {
     );
     await waitFor(() => expect(router.state.location.search).toEqual({}));
     expect(screen.queryByRole('toolbar', { name: 'Filters' })).toBeNull();
+  });
+
+  describe('M7 groups', () => {
+    beforeEach(() => {
+      // Only Date, and moving: timers stay real for React Query and user-event.
+      vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+      vi.setSystemTime(TODAY);
+      api.current = createFake({ m7: true });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('shows Merged with open criteria and Check again on Mine, after review', async () => {
+      renderHome();
+      await screen.findByText('Payout report export');
+      expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual([
+        'Needs your review1Agents and teammates asked you to look',
+        'Merged with open criteria1Done through a merge. Check the criteria, waive them or reopen the task.',
+        'Check again1The day you set has come.',
+        'Mentions1Unanswered',
+        'Blocked1Your tasks waiting on another task',
+        'Assigned to you34By due date, then priority',
+      ]);
+      expect(row('PAY-150')).toHaveTextContent('Merged with 2 open criteria');
+      expect(row('PAY-150')).toHaveTextContent('#479 merged yesterday');
+      expect(row('PAY-131')).toHaveTextContent('Check again: today');
+      expect(row('PAY-131')).toHaveTextContent('The bank issues the new certificate on Nov 1.');
+      // The check-again chip is a reminder, never the overdue colour.
+      expect(row('PAY-131').querySelector('[data-state="ready"]')).not.toBeNull();
+      // J walks the new groups in their order.
+      const user = userEvent.setup();
+      await user.keyboard('jj');
+      await waitFor(() => expect(row('PAY-150')).toHaveAttribute('data-focused', 'true'));
+      await user.keyboard('j');
+      await waitFor(() => expect(row('PAY-131')).toHaveAttribute('data-focused', 'true'));
+    });
+
+    it('shows Merged with open criteria on Everyone, with open items and the GitLab reference', async () => {
+      renderHome('/w/acme?tab=everyone');
+      await screen.findByText('Rate-limit the public search endpoint');
+      expect(
+        screen.getByRole('heading', {
+          level: 2,
+          name: 'Merged with open criteria2Done through a merge, with criteria still open.',
+        }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { level: 2, name: /^Check again/ })).toBeNull();
+      expect(row('WEB-31')).toHaveTextContent('Merged with 3 open items');
+      expect(row('WEB-31')).toHaveTextContent('!88 merged 3 days ago');
+      expect(row('PAY-150')).toHaveTextContent('Merged with 2 open criteria');
+    });
   });
 
   it('filters the rows with the page search', async () => {

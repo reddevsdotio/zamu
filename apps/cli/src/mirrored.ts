@@ -2,7 +2,7 @@
 // command; zamu adds what it can look up (the task's key, the default branch, the project's cycle)
 // so the message says where to make the change and what still works here. With --json the problem
 // is printed as the server sent it. The same hook prints an OPEN_ITEMS refusal (M6) with the flags
-// that settle each open item.
+// that settle each open item, and a TASK_ARCHIVED refusal (M7) with the command that restores the task.
 import { isMirroredProblemCode, ProjectList, Task } from '@zamu/contracts';
 import type { CommandContext } from './context';
 import { type CliError, type MirroredContext, mirroredLines, openItemsLines } from './errors';
@@ -24,6 +24,10 @@ export async function describeFailure(context: CommandContext, failure: CliError
       ...(key ? { taskKey: key } : {}),
       ...(context.target?.status ? { status: context.target.status } : {}),
     });
+    return;
+  }
+  if (failure.problem.code === 'TASK_ARCHIVED') {
+    failure.lines = await archivedLines(context, failure);
     return;
   }
   if (!isMirroredProblemCode(failure.problem.code)) return;
@@ -51,4 +55,36 @@ export async function describeFailure(context: CommandContext, failure: CliError
   }
   if (!extra.taskKey && context.target?.task) extra.taskKey = context.target.task.key.trim().toUpperCase();
   failure.lines = mirroredLines(failure.problem, extra);
+}
+
+/**
+ * "zamu: PAY-12 is archived. Restore it first: zamu tasks restore PAY-12". The task is read once
+ * for its app key (the command may have named a Backlog.md id) and whether it mirrors Backlog.md,
+ * where the file's folder decides instead. Without the task, the key as typed.
+ */
+async function archivedLines(context: CommandContext, failure: CliError): Promise<string[]> {
+  const ref = context.target?.task;
+  let key = ref?.key.trim().toUpperCase();
+  let mirrored = false;
+  if (ref) {
+    try {
+      const client = await context.client();
+      const task = Task.parse(await client.tasks.get(ref));
+      key = task.key;
+      mirrored = (task.locked?.length ?? 0) > 0;
+    } catch {
+      // Keep the key as typed.
+    }
+  }
+  if (!key) {
+    const detail = (failure.problem.detail ?? failure.problem.title).trim();
+    return [`zamu: ${detail}`, '  Restore it first: zamu tasks restore KEY'];
+  }
+  if (mirrored) {
+    return [
+      `zamu: ${key} is archived: its Backlog.md file is under archive/tasks/.`,
+      '  Move the file back to tasks/ and push to restore it.',
+    ];
+  }
+  return [`zamu: ${key} is archived. Restore it first: zamu tasks restore ${key}`];
 }

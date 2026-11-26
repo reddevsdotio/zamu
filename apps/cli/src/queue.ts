@@ -1,9 +1,10 @@
 // The offline queue (M6). When the server doesn't answer (down, restarting, unreachable, or no answer
 // within client.ts's 5 seconds), a few writes on an existing task are stored in
 // $XDG_STATE_HOME/zamu/queue.json and sent at the start of the next command that reaches the server:
-// checking, unchecking, waiving and unwaiving items, a status change, a work note and a comment. They
-// either apply whatever else happened to the task meanwhile, or (the status change) carry the status
-// zamu last saw as a precondition. Everything else fails as before, so nothing that depends on the
+// checking, unchecking, waiving and unwaiving items, a status change, a check-again day, a work note
+// and a comment, and (M7) archiving, restoring, and linking or unlinking a request. They either apply
+// whatever else happened to the task meanwhile, or (the status change) carry the status zamu last saw
+// as a precondition. Everything else fails as before, so nothing that depends on the
 // task's current shape is ever sent blind.
 //
 // Sub-agents on one machine run zamu at the same time, so every change to the file happens under a
@@ -239,7 +240,12 @@ async function rememberedStatus(
 /** The tasks in a procedure's result, for rememberStatuses. */
 function seenTasks(procedure: string, result: unknown): SeenTask[] {
   if (!result || typeof result !== 'object') return [];
-  if (procedure === 'tasks.list' || procedure === 'tasks.bulk') {
+  if (
+    procedure === 'tasks.list' ||
+    procedure === 'tasks.bulk' ||
+    procedure === 'tasks.archive' ||
+    procedure === 'tasks.restore'
+  ) {
     const items = (result as { items?: unknown }).items;
     return Array.isArray(items) ? items.filter(isSeenTask) : [];
   }
@@ -271,6 +277,17 @@ const ITEM_OPERATIONS = {
 } as const satisfies Record<string, readonly [string, string, string]>;
 
 const REFERENCE_FIELDS = new Set(['key', 'project']);
+
+/** Update fields that queue besides the item operations and the status (M7: the check-again day). */
+const QUEUEABLE_FIELDS = new Set(['status', 'checkAgain']);
+
+/** The procedures that are queueable whatever their input (M7): they work on tasks that exist. */
+const TASK_WRITES = new Set<string>([
+  'tasks.archive',
+  'tasks.restore',
+  'pullRequests.link',
+  'pullRequests.unlink',
+]);
 
 /** The zamu flag behind an update field that can't be queued, for the error. */
 const FIELD_FLAGS: Record<string, string> = {
@@ -311,12 +328,22 @@ function excerpt(text: string, max = 50): string {
   return [...line].length <= max ? line : `${[...line].slice(0, max - 1).join('')}…`;
 }
 
+/** The keys of an archive or restore input, as sent. */
+function inputKeys(input: Record<string, unknown>): string[] {
+  return Array.isArray(input.keys) ? input.keys.filter((key): key is string => typeof key === 'string') : [];
+}
+
 /** One line for zamu queue: "check criteria 1, 2, move to In review", "note "Migration written"". */
 export function summarize(procedure: CliQueueProcedure, input: Record<string, unknown>): string {
   if (procedure === 'comments.create') {
     const body = typeof input.body === 'string' ? input.body : '';
     return `${input.kind === 'note' ? 'note' : 'comment'} "${excerpt(body)}"`;
   }
+  if (procedure === 'tasks.archive' || procedure === 'tasks.restore') {
+    return `${procedure === 'tasks.archive' ? 'archive' : 'restore'} ${inputKeys(input).join(', ')}`;
+  }
+  if (procedure === 'pullRequests.link') return `link request ${String(input.url ?? '')}`;
+  if (procedure === 'pullRequests.unlink') return `unlink request ${String(input.number ?? '')}`;
   const parts: string[] = [];
   for (const [field, [verb, one, many]] of Object.entries(ITEM_OPERATIONS)) {
     const numbers = itemNumbers(input[field]);
@@ -324,24 +351,40 @@ export function summarize(procedure: CliQueueProcedure, input: Record<string, un
   }
   const status = TaskStatus.safeParse(input.status);
   if (status.success) parts.push(`move to ${statusLabel(status.data)}`);
+  if (input.checkAgain === null) parts.push('clear the check-again day');
+  else if (input.checkAgain && typeof input.checkAgain === 'object') {
+    const { on } = input.checkAgain as { on?: unknown };
+    parts.push(`check again ${String(on ?? '')}`);
+  }
   return parts.join(', ');
 }
 
 /**
- * Whether a write can wait for the server: a note or comment, or an update of an existing task that
- * only checks, unchecks, waives or unwaives items and changes the status. Otherwise the flags that
- * keep it from being queued.
+ * Whether a write can wait for the server: a note or comment; an update of an existing task that
+ * only checks, unchecks, waives or unwaives items, changes the status or sets the check-again day;
+ * and (M7) archiving, restoring, linking or unlinking a request, but not a dry run. Otherwise the
+ * flags that keep it from being queued.
  */
 export function queueability(procedure: string, input: unknown): Queueability | null {
-  if (procedure !== 'tasks.update' && procedure !== 'comments.create') return null;
+  if (procedure !== 'tasks.update' && procedure !== 'comments.create' && !TASK_WRITES.has(procedure)) {
+    return null;
+  }
   if (!input || typeof input !== 'object') return { queueable: false, flags: [] };
   const fields = input as Record<string, unknown>;
-  if (procedure === 'comments.create') {
-    return { queueable: true, summary: summarize(procedure, fields), status: null };
+  if (procedure === 'comments.create' || TASK_WRITES.has(procedure)) {
+    // A dry run only answers with a preview: there is nothing to send later.
+    if (procedure === 'pullRequests.link' && fields.dryRun === true)
+      return { queueable: false, flags: ['--dry-run'] };
+    return { queueable: true, summary: summarize(procedure as CliQueueProcedure, fields), status: null };
   }
   const flags: string[] = [];
   for (const [name, value] of Object.entries(fields)) {
-    if (value === undefined || REFERENCE_FIELDS.has(name) || name in ITEM_OPERATIONS || name === 'status')
+    if (
+      value === undefined ||
+      REFERENCE_FIELDS.has(name) ||
+      name in ITEM_OPERATIONS ||
+      QUEUEABLE_FIELDS.has(name)
+    )
       continue;
     const flag = FIELD_FLAGS[name] ?? name;
     if (!flags.includes(flag)) flags.push(flag);
@@ -349,7 +392,7 @@ export function queueability(procedure: string, input: unknown): Queueability | 
   if (flags.length) return { queueable: false, flags };
   const status = fields.status === undefined ? null : TaskStatus.safeParse(fields.status);
   if (status && !status.success) return { queueable: false, flags: ['--status'] };
-  return { queueable: true, summary: summarize(procedure, fields), status: status?.data ?? null };
+  return { queueable: true, summary: summarize('tasks.update', fields), status: status?.data ?? null };
 }
 
 // ---------------------------------------------------------------------------
@@ -446,8 +489,9 @@ async function append(
   status: TaskStatus | null,
 ): Promise<CliQueueEntry> {
   const { io, url, workspaceId } = session;
-  const taskKey = String(input.key ?? '').toUpperCase();
-  const project = inputProject(input);
+  // Archive and restore name several tasks: the first stands for them (the summary lists them all).
+  const taskKey = String(input.key ?? inputKeys(input)[0] ?? '').toUpperCase();
+  const project = inputProject({ ...input, key: taskKey });
   return withLock(queuePath(io), async () => {
     const entries = await readQueue(io, { repair: true });
     let lastSeenStatus: TaskStatus | null = null;
@@ -505,7 +549,8 @@ function notQueuedHint(flags: string[]): string {
   const named = flags.length ? `${flags.join(', ')} can't wait for the server` : "this write can't wait";
   return (
     `Nothing was queued: ${named}. Run the command again once the server answers. Checks, waivers, ` +
-    'status changes, notes and comments on their own are queued.'
+    'status changes, check-again days, notes and comments on their own are queued, and so are ' +
+    'archiving, restoring and linking or unlinking a request.'
   );
 }
 
@@ -560,10 +605,7 @@ async function send(client: ApiClient, session: QueueSession, entry: CliQueueEnt
     entry.procedure === 'tasks.update' && entry.input.status !== undefined && entry.lastSeenStatus !== null;
   const input = guarded ? { ...entry.input, ifStatus: entry.lastSeenStatus } : entry.input;
   try {
-    const result =
-      entry.procedure === 'tasks.update'
-        ? await client.tasks.update(input as Parameters<ApiClient['tasks']['update']>[0])
-        : await client.comments.create(input as Parameters<ApiClient['comments']['create']>[0]);
+    const result = await callProcedure(client, entry.procedure.split('.'), [input]);
     await rememberStatuses(io, bucket, seenTasks(entry.procedure, result));
     io.stderr(`Sent: ${label}\n`);
     return 'done';

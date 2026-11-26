@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { INVITATIONS_EXPIRE, JOB_NAMES } from '@zamu/core';
+import {
+  INVITATIONS_EXPIRE,
+  JOB_NAMES,
+  REPOSITORY_EVENT,
+  REPOSITORY_POLL,
+  REPOSITORY_SYNC,
+  TASKS_ARCHIVE_DUE,
+} from '@zamu/core';
 import { invitation, organization, user } from '@zamu/db';
 import { createTestDatabase, type TestDatabase } from '@zamu/db/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -44,6 +51,7 @@ describe('startWorker', () => {
       logger,
       pollingIntervalSeconds: 0.5,
       shutdownTimeoutMs: 2_000,
+      timeZone: 'Europe/Paris',
     });
 
     expect(messages()).toContain('worker ready');
@@ -54,6 +62,37 @@ describe('startWorker', () => {
     expect(schedule).toMatchObject({ name: INVITATIONS_EXPIRE, cron: '0 3 * * *', timezone: 'UTC' });
     const [next] = worker.boss.previewSchedule('0 3 * * *', { tz: 'UTC', count: 1 });
     expect(next?.toISOString()).toMatch(/T03:00:00\.000Z$/);
+  });
+
+  it('M7: registers the repository and archive jobs; the archive runs at 02:30 in APP_TIME_ZONE', async () => {
+    if (!worker) throw new Error('worker not started');
+    for (const name of [REPOSITORY_EVENT, REPOSITORY_SYNC, REPOSITORY_POLL, TASKS_ARCHIVE_DUE]) {
+      expect(JOB_NAMES).toContain(name);
+      expect(await worker.boss.getQueue(name)).not.toBeNull();
+    }
+    // repository.sync runs one check per link at a time.
+    expect(await worker.boss.getQueue(REPOSITORY_SYNC)).toMatchObject({ policy: 'stately' });
+    // Event and sync jobs are queued by the webhook, the poll and Check now, never on a schedule.
+    expect(await worker.boss.getSchedule(REPOSITORY_EVENT)).toBeNull();
+    expect(await worker.boss.getSchedule(REPOSITORY_SYNC)).toBeNull();
+
+    const poll = await worker.boss.getSchedule(REPOSITORY_POLL);
+    expect(poll).toMatchObject({ name: REPOSITORY_POLL, cron: '45 * * * *', timezone: 'UTC' });
+    const archive = await worker.boss.getSchedule(TASKS_ARCHIVE_DUE);
+    expect(archive).toMatchObject({ name: TASKS_ARCHIVE_DUE, cron: '30 2 * * *', timezone: 'Europe/Paris' });
+    // 02:30 in Paris on a winter day is 01:30 UTC; on a summer day 00:30 UTC.
+    const [winter] = worker.boss.previewSchedule('30 2 * * *', {
+      tz: 'Europe/Paris',
+      count: 1,
+      from: new Date('2026-01-15T00:00:00Z'),
+    });
+    expect(winter?.toISOString()).toBe('2026-01-15T01:30:00.000Z');
+    const [summer] = worker.boss.previewSchedule('30 2 * * *', {
+      tz: 'Europe/Paris',
+      count: 1,
+      from: new Date('2026-07-15T00:00:00Z'),
+    });
+    expect(summer?.toISOString()).toBe('2026-07-15T00:30:00.000Z');
   });
 
   it('runs invitations.expire end to end and stores the output', async () => {

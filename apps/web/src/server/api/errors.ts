@@ -11,6 +11,15 @@ import {
   TaskChanged,
 } from '@zamu/core';
 
+/**
+ * REQUEST_OTHER_REPOSITORY names the project's repository so clients can say which one to use.
+ * Read from the error's `repository` field, whichever core class carries it.
+ */
+function repositoryOf(error: unknown): string | undefined {
+  const value = (error as { repository?: unknown }).repository;
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
 function withRequestId(data: unknown, requestId: string | undefined): ProblemData {
   const parsed = ProblemData.safeParse(data);
   const base = parsed.success ? parsed.data : {};
@@ -23,7 +32,9 @@ function withRequestId(data: unknown, requestId: string | undefined): ProblemDat
  * hint; the M5 codes LABEL_EXISTS, LABEL_MIRRORED, DEPENDENCY_LOOP and SUBTASK_DEPTH 409, and
  * NOT_SAME_PROJECT 422, with the field problems in issues and `loop` for DEPENDENCY_LOOP; M6
  * OPEN_ITEMS 409 with `openItems`; 0.10 WORKSPACE_CREATION_OFF 403, SLUG_TAKEN 409, SLUG_RESERVED 400
- * and LAST_OWNER 409, which only the web app's workspace server functions raise today).
+ * and LAST_OWNER 409, which only the web app's workspace server functions raise today; M7
+ * TASK_ARCHIVED 409, REQUEST_OTHER_REPOSITORY 422 with `repository`, NOT_A_REQUEST 422 and
+ * REQUEST_NOT_FOUND 404).
  * oRPC errors (input validation 400, our own 401, and the actor's 403 NOT_A_MEMBER and
  * WORKSPACE_MISMATCH from base.ts) keep their code and status and gain the request id.
  * Anything else is logged and becomes a 500 without internal details.
@@ -43,6 +54,10 @@ export function toApiError(error: unknown, requestId?: string): ORPCError<string
         ...(error instanceof DependencyLoop ? { loop: error.loop } : {}),
         // OPEN_ITEMS lists what is still open so the CLI can print the flags that settle it.
         ...(error instanceof OpenItems ? { openItems: error.openItems } : {}),
+        // REQUEST_OTHER_REPOSITORY: the repository the project links.
+        ...(code === 'REQUEST_OTHER_REPOSITORY' && repositoryOf(error)
+          ? { repository: repositoryOf(error) }
+          : {}),
         // TASK_MIRRORED, MILESTONE_MIRRORED, PROJECT_MIRRORED: the file and what to do instead.
         ...mirroredExtensions(error),
       },

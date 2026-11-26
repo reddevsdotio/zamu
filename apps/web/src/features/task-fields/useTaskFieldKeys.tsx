@@ -7,6 +7,7 @@ import { copyText, localToday, useHotkeys } from '~/ui';
 import { AssigneePicker } from './AssigneePicker';
 import { useFieldChange } from './apply';
 import { BlockerPicker } from './BlockerPicker';
+import { CheckAgainPicker } from './CheckAgainPicker';
 import { DuePicker } from './DuePicker';
 import { LabelPicker } from './LabelPicker';
 import { ParentPicker } from './ParentPicker';
@@ -28,7 +29,8 @@ import {
 import { showFieldToast } from './toast';
 
 // The keys of "A selected or open task" (shortcuts.md): S, P, A, I, L, Shift+D, Shift+M, Shift+C,
-// Shift+B, Shift+S (one task only), ⌘C and ⌘⇧C, for the focused or selected tasks. Each opens its
+// Shift+B, Shift+S (one task only), Shift+W (M7, the check-again day, one task), ⌘C and ⌘⇧C, for the
+// focused or selected tasks. Each opens its
 // picker over the element the screen gives, or the matching palette step when there is none. The same
 // actions are registered in the command palette (section "task", with the "PAY-142" or "3 selected"
 // context pill).
@@ -45,6 +47,7 @@ export const FIELD_PICKERS: Record<TaskFieldKey, (props: FieldPickerProps) => Re
   blockedBy: BlockerPicker,
   subtasks: SubtaskPicker,
   parent: ParentPicker,
+  checkAgain: CheckAgainPicker,
 };
 
 const FIELD_ORDER: readonly TaskFieldKey[] = [
@@ -58,7 +61,14 @@ const FIELD_ORDER: readonly TaskFieldKey[] = [
   'blockedBy',
   'subtasks',
   'parent',
+  'checkAgain',
 ];
+
+/**
+ * Fields without a palette step: the check-again reason is typed in its picker, so the key opens the
+ * picker over the screen's anchor, and without one it says where to set it.
+ */
+const PICKER_ONLY: ReadonlySet<TaskFieldKey> = new Set(['checkAgain']);
 
 export type FieldAnchors =
   | RefObject<Element | null>
@@ -103,6 +113,8 @@ function signatureOf(target: FieldTarget): string {
     target.assignee?.id ?? '',
     (target.labels ?? []).map((label) => label.name).join('|'),
     (target.locked ?? []).join('|'),
+    target.archivedAt ?? '',
+    target.checkAgain ? `${target.checkAgain.on}|${target.checkAgain.reason}` : '',
   ].join(':');
 }
 
@@ -170,6 +182,10 @@ export function useTaskFieldKeys({
         showFieldToast({ text: READ_ONLY_TEXT, tone: 'error' });
         return;
       }
+      if (PICKER_ONLY.has(field)) {
+        showFieldToast({ text: 'Open the task to set its check-again day.', tone: 'error' });
+        return;
+      }
       void fieldStep(api, field, stepContext()).then(
         (step) => openPalette({ kind: 'step', step }),
         () => showFieldToast({ text: "Couldn't load the choices. Try again.", tone: 'error' }),
@@ -234,6 +250,7 @@ export function useTaskFieldKeys({
       'Shift+b': key('blockedBy'),
       // A subtask needs one parent: with several tasks selected Shift+S does nothing (conflict 7).
       'Shift+s': key('subtasks'),
+      'Shift+w': key('checkAgain'),
       'Mod+c': {
         allowInInputs: false,
         preventDefault: false,
@@ -253,20 +270,22 @@ export function useTaskFieldKeys({
     if (!active || !withCommands) return [];
     const context = contextOf(list);
     const many = list.length > 1;
-    const fieldCommands = FIELD_ORDER.filter(showsField).map((field): Command => {
-      const meta = FIELD_COMMANDS[field];
-      const refusal = fieldRefusal(list, field);
-      return {
-        id: `task.${field}`,
-        title: meta.title,
-        section: 'task',
-        keywords: meta.keywords,
-        ...(meta.shortcut ? { shortcut: meta.shortcut } : {}),
-        context,
-        ...(refusal ? { disabledReason: refusal } : {}),
-        run: () => fieldStep(api, field, stepContext()),
-      };
-    });
+    const fieldCommands = FIELD_ORDER.filter((field) => showsField(field) && !PICKER_ONLY.has(field)).map(
+      (field): Command => {
+        const meta = FIELD_COMMANDS[field];
+        const refusal = fieldRefusal(list, field);
+        return {
+          id: `task.${field}`,
+          title: meta.title,
+          section: 'task',
+          keywords: meta.keywords,
+          ...(meta.shortcut ? { shortcut: meta.shortcut } : {}),
+          context,
+          ...(refusal ? { disabledReason: refusal } : {}),
+          run: () => fieldStep(api, field, stepContext()),
+        };
+      },
+    );
     const assignRefusal = fieldRefusal(list, 'assignee');
     return [
       ...fieldCommands,

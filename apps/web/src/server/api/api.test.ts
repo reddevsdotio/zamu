@@ -149,6 +149,7 @@ describe('OpenAPI document', () => {
       '/api/v1/milestones/{id}',
       '/api/v1/projects',
       '/api/v1/projects/{project}',
+      '/api/v1/projects/{project}/archive-preview',
       '/api/v1/projects/{project}/backlog',
       '/api/v1/projects/{project}/backlog/export',
       '/api/v1/projects/{project}/backlog/refresh',
@@ -156,16 +157,23 @@ describe('OpenAPI document', () => {
       '/api/v1/projects/{project}/labels',
       '/api/v1/projects/{project}/labels/{id}',
       '/api/v1/projects/{project}/milestones',
+      '/api/v1/projects/{project}/repository',
+      '/api/v1/projects/{project}/repository/sync',
+      '/api/v1/projects/{project}/repository/webhook-secret',
       '/api/v1/tasks',
+      '/api/v1/tasks/archive',
       '/api/v1/tasks/bulk',
+      '/api/v1/tasks/restore',
       '/api/v1/tasks/{key}',
       '/api/v1/tasks/{key}/activity',
       '/api/v1/tasks/{key}/comments',
+      '/api/v1/tasks/{key}/pull-requests',
+      '/api/v1/tasks/{key}/pull-requests/{number}',
       '/api/v1/tasks/{key}/timeline',
     ]);
     // Every operation has an id, a summary and a tag; ids are unique.
     const operations = Object.values(result.body.paths).flatMap((item) => Object.values(item as object));
-    expect(operations).toHaveLength(39);
+    expect(operations).toHaveLength(48);
     const ids = operations.map((op: { operationId: string }) => op.operationId);
     expect(new Set(ids).size).toBe(ids.length);
     for (const op of operations) {
@@ -1624,6 +1632,8 @@ describe('M5: labels, due dates, blockers and subtasks', () => {
     expect(mine.body).toMatchObject({ tab: 'mine', generatedAt: expect.any(String), agents: [] });
     expect(mine.body.groups.map((group: { key: string }) => group.key)).toEqual([
       'review',
+      'mergedOpen',
+      'checkAgain',
       'mentions',
       'blocked',
       'overdue',
@@ -1646,6 +1656,7 @@ describe('M5: labels, due dates, blockers and subtasks', () => {
     expect(everyone.status).toBe(200);
     expect(everyone.body.groups.map((group: { key: string }) => group.key)).toEqual([
       'review',
+      'mergedOpen',
       'blocked',
       'overdue',
       'dueThisWeek',

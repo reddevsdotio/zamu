@@ -3,12 +3,14 @@ import type {
   Activity,
   ApiKeyCreated,
   ApiKeySummary,
+  ArchivePreview,
   BacklogExport,
   Comment,
   Cycle,
   CycleDetail,
   CycleRollover,
   Home,
+  HomeItem,
   Invitation,
   LabelWithUsage,
   Me,
@@ -17,6 +19,8 @@ import type {
   MilestoneWithProgress,
   Project,
   ProjectWithCounts,
+  PullRequestLink,
+  RepositorySettings,
   Task,
   TaskListItem,
   TaskListPage,
@@ -475,6 +479,8 @@ export const homeMineFixture = {
         },
       ],
     },
+    { key: 'mergedOpen', total: 0, items: [] },
+    { key: 'checkAgain', total: 0, items: [] },
     {
       key: 'mentions',
       total: 1,
@@ -692,3 +698,221 @@ export const backlogExportFixture = {
   ],
   removedPrefixes: ['tasks/', 'completed/', 'milestones/'],
 } satisfies z.input<typeof BacklogExport>;
+
+// ---------------------------------------------------------------------------
+// M7: pull requests, archive and check-again days
+// ---------------------------------------------------------------------------
+
+/** PR #482 of the Northwind payments repository, linked to PAY-142 by its work branch. */
+export const pullRequestLinkFixture = {
+  provider: 'github',
+  number: 482,
+  title: 'Retry failed webhook deliveries',
+  url: 'https://github.com/northwind/payments/pull/482',
+  state: 'open',
+  headBranch: 'feat/webhook-retries',
+  baseBranch: 'main',
+  author: 'claude-dev',
+  mergedBy: null,
+  how: 'branch',
+  linkedBy: null,
+  linkedAt: at('2026-11-20T09:05:00.000Z'),
+  openedAt: at('2026-11-20T09:00:00.000Z'),
+  mergedAt: null,
+  closedAt: null,
+  updatedAt: at('2026-11-21T10:00:00.000Z'),
+} satisfies z.input<typeof PullRequestLink>;
+
+/** A draft linked by hand by Ana. */
+export const handLinkedPullRequestFixture = {
+  ...pullRequestLinkFixture,
+  number: 479,
+  title: 'Draft: backoff table',
+  url: 'https://github.com/northwind/payments/pull/479',
+  state: 'draft',
+  headBranch: 'spike/backoff',
+  how: 'hand',
+  linkedBy: ana,
+} satisfies z.input<typeof PullRequestLink>;
+
+/** PAY-142 started on a branch, with two requests and a check-again day. */
+export const m7TaskFixture = {
+  ...taskFixture,
+  status: 'in_review',
+  workBranch: 'feat/webhook-retries',
+  pullRequests: [pullRequestLinkFixture, handLinkedPullRequestFixture],
+  checkAgain: { on: '2026-12-01', reason: "Wait for the bank's answer on retries" },
+  closedAt: null,
+  archivedAt: null,
+  archivedBy: null,
+  mergedOpen: null,
+} satisfies z.input<typeof Task>;
+
+/** PAY-142 after the merge closed it with one criterion open, then archived by Ana. */
+export const archivedTaskFixture = {
+  ...m7TaskFixture,
+  status: 'done',
+  pullRequests: [
+    { ...pullRequestLinkFixture, state: 'merged', mergedBy: 'ana', mergedAt: at('2026-11-22T12:00:00.000Z') },
+  ],
+  checkAgain: null,
+  closedAt: at('2026-11-22T12:00:05.000Z'),
+  archivedAt: at('2026-11-24T08:00:00.000Z'),
+  archivedBy: ana,
+  mergedOpen: { at: at('2026-11-22T12:00:05.000Z'), openCriteria: 1, openDoneItems: 0 },
+} satisfies z.input<typeof Task>;
+
+export const m7ListItemFixture = {
+  ...taskListItemFixture,
+  status: 'in_review',
+  checkAgain: m7TaskFixture.checkAgain,
+  archivedAt: null,
+  pullRequest: {
+    provider: 'github',
+    number: 482,
+    title: pullRequestLinkFixture.title,
+    url: pullRequestLinkFixture.url,
+    state: 'open',
+  },
+  pullRequestCount: 2,
+} satisfies z.input<typeof TaskListItem>;
+
+/** GitHub moving PAY-142 to In review when #482 was opened. */
+export const gitActivityFixture = {
+  id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4b07',
+  type: 'task.updated',
+  taskKey: 'PAY-142',
+  actor: null,
+  onBehalfOf: null,
+  changes: [{ field: 'status', from: 'in_progress', to: 'in_review' }],
+  origin: 'git',
+  originRef: pullRequestLinkFixture.url,
+  cause: {
+    kind: 'pull_request',
+    provider: 'github',
+    number: 482,
+    title: pullRequestLinkFixture.title,
+    url: pullRequestLinkFixture.url,
+    event: 'opened',
+    by: 'claude-dev',
+  },
+  system: { kind: 'git', provider: 'github' },
+  createdAt: at('2026-11-20T09:00:10.000Z'),
+} satisfies z.input<typeof Activity>;
+
+/** The nightly job archiving PAY-142 14 days after it closed. */
+export const archiveActivityFixture = {
+  id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4b18',
+  type: 'task.archived',
+  taskKey: 'PAY-142',
+  actor: null,
+  onBehalfOf: null,
+  changes: [],
+  origin: 'app',
+  originRef: null,
+  cause: { kind: 'archive', afterDays: 14 },
+  system: { kind: 'zamu' },
+  createdAt: at('2026-12-06T01:30:00.000Z'),
+} satisfies z.input<typeof Activity>;
+
+/** Ana linking #479 by hand. */
+export const pullRequestLinkedActivityFixture = {
+  ...activityFixture,
+  id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4b29',
+  type: 'task.pull_request_linked',
+  actor: ana,
+  onBehalfOf: null,
+  changes: [
+    {
+      field: 'pullRequest',
+      from: null,
+      to: {
+        provider: 'github',
+        number: 479,
+        title: 'Draft: backoff table',
+        url: handLinkedPullRequestFixture.url,
+        how: 'hand',
+      },
+    },
+  ],
+  cause: null,
+  system: null,
+} satisfies z.input<typeof Activity>;
+
+/** Home rows of the two M7 groups. */
+export const mergedOpenHomeItemFixture = {
+  task: { ...m7ListItemFixture, key: 'PAY-131', status: 'done', checkAgain: null },
+  reason: {
+    kind: 'mergedOpen',
+    pullRequest: {
+      provider: 'github',
+      number: 470,
+      title: 'Ledger export',
+      url: 'https://github.com/northwind/payments/pull/470',
+    },
+    openCriteria: 2,
+    openDoneItems: 0,
+    at: at('2026-11-25T16:00:00.000Z'),
+  },
+  relation: 'assignee',
+  pills: [],
+} satisfies z.input<typeof HomeItem>;
+
+export const checkAgainHomeItemFixture = {
+  task: {
+    ...m7ListItemFixture,
+    key: 'PAY-118',
+    status: 'in_progress',
+    checkAgain: { on: '2026-11-26', reason: 'Bank answers by Thursday' },
+  },
+  reason: { kind: 'checkAgain', on: '2026-11-26', reason: 'Bank answers by Thursday', daysAgo: 0 },
+  relation: 'assignee',
+  pills: [{ kind: 'blocked' }],
+} satisfies z.input<typeof HomeItem>;
+
+/** PAY's repository settings: healthy, through a GitHub connection, closing on merge. */
+export const repositorySettingsFixture = {
+  project: payRef,
+  repository: 'https://github.com/northwind/payments',
+  provider: 'github',
+  connection: {
+    id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4b3a',
+    name: 'Northwind GitHub',
+    provider: 'github',
+    host: 'github.com',
+    status: 'working',
+  },
+  defaultBranch: 'main',
+  closeOnMerge: true,
+  mirrored: false,
+  webhook: {
+    url: 'https://zamu.example.com/api/webhooks/repository/wh_4kQz9vX2',
+    secretSet: true,
+    lastAt: at('2026-11-26T08:40:00.000Z'),
+    lastStatus: 'ok',
+    coveredByBacklog: false,
+  },
+  sync: {
+    lastAt: at('2026-11-26T08:45:03.000Z'),
+    error: null,
+    nextAt: at('2026-11-26T09:45:00.000Z'),
+  },
+  canEdit: true,
+} satisfies z.input<typeof RepositorySettings>;
+
+/** A project without a repository: the "No repository" state. */
+export const noRepositorySettingsFixture = {
+  ...repositorySettingsFixture,
+  repository: null,
+  provider: null,
+  connection: null,
+  defaultBranch: null,
+  webhook: null,
+  sync: { lastAt: null, error: null, nextAt: null },
+} satisfies z.input<typeof RepositorySettings>;
+
+export const archivePreviewFixture = {
+  project: 'PAY',
+  days: 14,
+  count: 37,
+} satisfies z.input<typeof ArchivePreview>;

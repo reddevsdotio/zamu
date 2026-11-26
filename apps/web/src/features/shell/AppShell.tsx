@@ -14,6 +14,7 @@ import { rememberProjectView } from '~/features/tasks/list-memory';
 import { QuickCreateDialog } from '~/features/tasks/QuickCreateDialog';
 import { ThemeErrorToast, useThemeChoice } from '~/features/theme/ThemeChoice';
 import { useSystemTheme } from '~/features/theme/theme';
+import { ArchiveKeys } from '~/features/views/archive';
 import { FinishingHost } from '~/features/work-record/FinishingHost';
 import { NewWorkspaceDialogHost } from '~/features/workspaces/NewWorkspaceHost';
 import { WorkspaceNoticeToast } from '~/features/workspaces/notice';
@@ -65,7 +66,8 @@ export interface AppShellProps {
  * Signed-in shell (M5, frames 003–010): the sidebar, the ⌘K palette, the global keys of shortcuts.md
  * (⌘K, C, /, G then H P L B M Y, [, ?) and the dialogs they open (quick create, New project, New from
  * Backlog.md, the shortcut list). Pages render inside the content area. Quick create refuses projects
- * whose tasks come from Backlog.md, with the New button's tooltip text.
+ * whose tasks come from Backlog.md, with the New button's tooltip text. M7: Shift+E archives the
+ * selection of whichever list, board or Home is mounted (ArchiveKeys).
  */
 export function AppShell({ user, children }: AppShellProps) {
   const api = useApi();
@@ -93,6 +95,7 @@ export function AppShell({ user, children }: AppShellProps) {
               <QuickCreateDialog />
               <TaskFieldToast />
               <PeekHost />
+              <ArchiveKeys />
               <FinishingHost />
               <NewProjectDialogHost />
               <FromBacklogHost />

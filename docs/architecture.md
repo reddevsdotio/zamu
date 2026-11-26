@@ -23,11 +23,11 @@ background job through them, and gives the reasons behind the main choices.
 
 ### Apps
 
-- `apps/web` is the only HTTP server. It renders the pages with server-side rendering and serves four
-  groups of routes: `/api/v1` (the oRPC contract, as REST with an OpenAPI document and as oRPC's RPC
-  protocol), `/api/auth` (Better Auth), `/api/webhooks/backlog/{id}` (push notifications from git hosts)
-  and `/api/healthz`. Every page lives under `/w/$workspace/`, the workspace's slug. Settings screens also
-  call TanStack Start server functions.
+- `apps/web` is the only HTTP server. It renders the pages with server-side rendering and serves five groups
+  of routes: `/api/v1` (the oRPC contract, as REST with an OpenAPI document and as oRPC's RPC protocol),
+  `/api/auth` (Better Auth), `/api/webhooks/backlog/{id}` (push notifications from git hosts),
+  `/api/webhooks/repository/{id}` (pull and merge request events) and `/api/healthz`. Every page lives under
+  `/w/$workspace/`, the workspace's slug. Settings screens also call TanStack Start server functions.
 - `apps/worker` runs pg-boss. It creates the queues, registers one handler per job name, schedules the
   recurring jobs and stops cleanly on SIGTERM. It runs TypeScript through `tsx`, with no build step.
 - `apps/cli` is the `zamu` command. It talks to `/api/v1` over plain REST with an API key, prints tables or
@@ -42,7 +42,8 @@ background job through them, and gives the reasons behind the main choices.
 - `packages/contracts`: Zod schemas for every entity and input, the oRPC contract, the error codes, and the
   `zamu.v1.*` shapes of the CLI's `--json` output. Everything else imports its types from here.
 - `packages/core`: the services (workspaces, projects, tasks and their work record, comments and notes,
-  milestones, cycles, labels, Home, members, keys, git connections, Backlog.md). Each takes a context
+  milestones, cycles, labels, Home, members, keys, git connections, Backlog.md, repository links and pull
+  requests, the archive). Each takes a context
   (database, clock, time zone, git settings, job queue), the actor and a parsed input. `authz.ts` decides who
   may do what, and every service calls it first. `criteria.ts` applies the operations on criteria and done
   items and holds the finishing rule: an agent can't move a task to In review or Done while an item is open.
@@ -53,8 +54,10 @@ background job through them, and gives the reasons behind the main choices.
   an agent acts for. Better Auth's endpoints that create, change or delete workspaces and memberships are
   blocked under `/api/auth`; core does that work, so its rules always apply.
 - `packages/git-providers`: read-only clients for GitHub, GitLab and Gitea/Forgejo behind one `GitProvider`
-  interface (repository lookup, file trees, file contents, open pull or merge requests that touch a folder),
-  plus webhook signature checks and a host check that refuses private and cloud metadata addresses.
+  interface (repository lookup, file trees, file contents, open pull or merge requests that touch a folder,
+  one request by number, the requests updated since a time), plus `parseRequestUrl`, webhook signature
+  checks that also parse request events, and a host check that refuses private and cloud metadata
+  addresses. Every call is a `GET`.
 - `packages/backlog-md`: a pure parser and writer for a Backlog.md folder. It takes file contents and
   returns typed tasks, milestones and errors, and turns tasks and milestones back into file contents
   (`write.ts`), with no I/O.
@@ -85,6 +88,23 @@ A task's work record is spread over a few tables, all in `packages/db/src/schema
 Every change to an item writes an activity row with the item's number and text, so history reads right after
 a reorder. Mirrored tasks get the same rows from their file, with `source = backlog`, and every write to them
 is refused.
+
+### Where pull requests, the archive and check-again days live
+
+| Data                                 | Where                                                                  |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| A project's repository link          | `repository_link`: connection, default branch, webhook, check state    |
+| Requests Zamu has seen               | `pull_request`, one row per project and number; `Closes:` keys too     |
+| Which tasks a request links, and why | `task_pull_request`: `via_branch`, `via_description`, `via_hand`       |
+| A link removed by hand               | `task_pull_request.removed_at`, so branch and description skip it      |
+| The branch a task was started from   | `task.work_branch`                                                     |
+| When a task closed                   | `task.closed_at`, set on entering Done or Canceled                     |
+| Archived                             | `task.archived_at`, `archived_by_id` (null for the job and Backlog.md) |
+| Merged with open items               | `task.merged_done_at`, cleared when the task leaves Done               |
+| Check again                          | `task.check_again_on` and `check_again_reason`, set together           |
+| The archive setting                  | `project.archive_after_days`, null for off                             |
+
+The schema is in `packages/db/src/schema/pull-requests.ts` and `app.ts`.
 
 ## How data moves
 
@@ -153,12 +173,16 @@ doesn't answer within 5 seconds, the CLI keeps a few writes on an existing task 
 
 Core declares the jobs in `packages/core/src/jobs.ts`, and their handlers in `job-handlers.ts`:
 
-| Job                  | Runs             | What it does                                                |
-| -------------------- | ---------------- | ----------------------------------------------------------- |
-| `invitations.expire` | daily, 03:00 UTC | marks expired invitations                                   |
-| `cycles.end-due`     | hourly           | ends overdue cycles in `APP_TIME_ZONE`, moves open tasks on |
-| `backlog.poll`       | hourly           | queues a refresh for each Backlog.md mirror                 |
-| `backlog.refresh`    | on demand        | reads one mirror and applies the difference                 |
+| Job                  | Runs                            | What it does                                                  |
+| -------------------- | ------------------------------- | ------------------------------------------------------------- |
+| `invitations.expire` | daily, 03:00 UTC                | marks expired invitations                                     |
+| `cycles.end-due`     | hourly                          | ends overdue cycles in `APP_TIME_ZONE`, moves open tasks on   |
+| `backlog.poll`       | hourly                          | queues a refresh for each Backlog.md mirror                   |
+| `backlog.refresh`    | on demand                       | reads one mirror and applies the difference                   |
+| `repository.event`   | on demand                       | applies one request event a webhook delivered                 |
+| `repository.poll`    | hourly at :45                   | queues a `repository.sync` for each project with a repository |
+| `repository.sync`    | on demand                       | reads the requests updated since the last check, applies each |
+| `tasks.archive-due`  | daily, 02:30 in `APP_TIME_ZONE` | archives closed tasks past their project's days               |
 
 A refresh starts from setup, a push webhook, the hourly poll, Refresh now in the web app, or
 `zamu backlog refresh`.
@@ -178,6 +202,37 @@ enqueue; the worker does the scheduling and the work.
 4. Fields that come from the files are read-only in Zamu, the work record included; comments and cycles
    stay editable. A one-time import is the other mode: it reads the files once, and from then on Zamu owns
    the tasks.
+
+### Pull requests
+
+1. A git host posts a request event to `/api/webhooks/repository/{id}`. The route reads the raw body once;
+   `receiveRepositoryWebhook` in `packages/core/src/pull-requests.ts` checks the signature with the link's
+   decrypted secret, records the delivery on `repository_link`, and enqueues `repository.event` with the
+   parsed request. A mirrored project's Backlog.md webhook hands its request events to the same path.
+2. Every hour `repository.poll` queues a `repository.sync` per link. `syncRepository` in `repository.ts`
+   lists the requests updated since the last check and refreshes the default branch.
+3. Both, and links made by hand, end in one function, `applyRequest`. It stores the request (an event older
+   than the stored `host_updated_at` is dropped), recomputes the links by work branch and by `Closes:` keys,
+   writes link and unlink history, and moves tasks through `setStatusFromSource` in `tasks.ts`: opened or
+   ready to In review, merged into the default branch to Done when the link closes on merge.
+4. Nothing moves for events before `moves_from`, which is set when the link is made and when its
+   connection changes, so the first check only records what exists. Mirrored projects never move.
+
+Moves made by a request are activity rows with no actor, `origin = 'git'`, the request URL in `origin_ref`,
+and a `cause` (`{ kind: 'pull_request', provider, number, event, ... }`); the timeline turns them into a
+`system` actor that names the host. The nightly archive writes rows with no actor, origin `app` and an
+archive cause.
+
+The work branch comes from `x-zamu-branch`. A CLI write that sets the status to In progress or In review
+records it on the task (`workBranchFor` in `tasks.ts`) and links the open requests Zamu knows for it.
+
+### The archive
+
+`packages/core/src/archive.ts` archives and restores by hand and runs the nightly job. An archived task is
+read-only: every write path calls `assertTaskWritable`, which refuses with `TASK_ARCHIVED`. Lists, boards,
+Home, the dashboard, project counts and pickers filter on `archived_at is null`; milestone, cycle and
+subtask progress keep counting archived tasks. For a mirrored project the Backlog.md refresh sets and clears
+`archived_at` from the file's folder (`archive/tasks/`), and the export writes archived tasks there.
 
 ### Zamu as the source
 
@@ -234,6 +289,10 @@ sync would inherit those conflicts, so one side owns the tasks at a time. A proj
 default branch read-only, or Zamu owns it (after an import or the switch) and the folder in the repository
 is at most a copy that `zamu backlog export` writes and nobody reads back.
 
+**Read from git hosts, never write.** Zamu links and moves tasks from what the host reports, and changes
+nothing on the host: no comments, statuses, labels or webhooks. The adapters can only send `GET`, so a token
+with read scopes is enough and a bug can't touch a repository. Admins create the webhook themselves.
+
 **The finishing rule binds agents only.** The server refuses an agent that moves a task to In review or Done
 with open items, and tells it which flags settle them. People get a dialog that lets them move the task
 anyway. The rule lives in core, so the API, the CLI and bulk changes apply it the same way.
@@ -251,4 +310,5 @@ the current schema.
 - [API](api.md) for routes, authentication and error bodies.
 - [Agents](agents.md) for API keys and running `zamu` in an agent's environment.
 - [Backlog.md](backlog-md.md) for connections, mirrors, imports, webhooks, the switch and the export.
+- [Repositories](repositories.md) for repository links, pull requests and their webhooks.
 - [AGENTS.md](../AGENTS.md) for commands and conventions.

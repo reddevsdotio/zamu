@@ -330,7 +330,7 @@ describe('zamu tasks update with the work-record flags', () => {
       1,
       'BAD_REQUEST',
     );
-    expect(noWaive.detail).toBe('--reason goes with --waive-ac N or --waive-dod N.');
+    expect(noWaive.detail).toBe('--reason goes with --check-again DAY, --waive-ac N or --waive-dod N.');
     const bad = await agent(['tasks', 'update', task.key, '--check-ac', 'two', '--json'], { fetch });
     expect(bad.code).toBe(1);
     expect(parseCliOutput(JSON.parse(bad.stdout), 'error').data.detail).toContain('Use item numbers from 1');
@@ -499,8 +499,9 @@ describe('zamu tasks show with a work record', () => {
     expect(out).toMatch(
       /claude-dev for Ana Ruiz added a note {2}[0-9a-f-]{36} {2}build-box · feat\/payout-retries\n {4}Backoff tested\n/,
     );
-    expect(out).toContain(
-      'claude-dev for Ana Ruiz moved it from Todo to In progress, wrote the plan  build-box · feat/payout-retries',
+    // From M7 the start also records the work branch.
+    expect(out).toMatch(
+      /claude-dev for Ana Ruiz moved it from Todo to In progress, wrote the plan(, started it on branch feat\/payout-retries)? {2}build-box · feat\/payout-retries\n/,
     );
     expect(out).toContain('checked criterion 1 "Retries back off"');
     expect(out).toContain('waived criterion 2 "Load test": Replaced by a replay');
@@ -693,7 +694,7 @@ describe('zamu backlog export', () => {
       'BAD_REQUEST',
     );
     expect(dirty.detail).toBe(
-      'backlog has uncommitted changes in tasks/, completed/, milestones/. Commit or discard them first, or pass --force to overwrite them.',
+      'backlog has uncommitted changes in tasks/, archive/tasks/, completed/, milestones/. Commit or discard them first, or pass --force to overwrite them.',
     );
     gitIn(repo, ['add', '-A']);
     gitIn(repo, ['commit', '-q', '-m', 'export']);
@@ -722,7 +723,9 @@ describe('zamu backlog export', () => {
     const { requests, fetch } = recording();
     const refused = await agent(['backlog', 'export', '--project', 'PAY'], { cwd: repo, fetch });
     expect(refused.code).toBe(1);
-    expect(refused.stderr).toContain('backlog has uncommitted changes in tasks/, completed/, milestones/.');
+    expect(refused.stderr).toContain(
+      'backlog has uncommitted changes in tasks/, archive/tasks/, completed/, milestones/.',
+    );
     expect(refused.stderr).toContain(`\n   M "backlog/${exported}"\n`);
     expect(requests).toHaveLength(0);
     expect(await readFile(join(repo, 'backlog', exported as string), 'utf8')).toBe('hand edit\n');

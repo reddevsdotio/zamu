@@ -1,6 +1,8 @@
 // The pg-boss worker: starts pg-boss (creating or migrating its schema), creates the queues core
 // declares, registers a handler per job name, schedules core's recurring jobs and stops cleanly.
-import { createJobQueue, ensureQueues, JOB_NAMES, JOB_SCHEDULES } from '@zamu/core';
+// M7: the repository jobs (repository.event, repository.sync, the hourly repository.poll) and the
+// nightly tasks.archive-due, scheduled at 02:30 in APP_TIME_ZONE.
+import { createJobQueue, ensureQueues, JOB_NAMES, jobSchedules } from '@zamu/core';
 import { createDb, type Db, type DbHandle } from '@zamu/db';
 import { PgBoss } from 'pg-boss';
 import { createLogger, type Logger } from './logger';
@@ -15,7 +17,7 @@ export interface WorkerOptions {
   shutdownTimeoutMs?: number;
   /** How often each queue is polled for new jobs. Default 2 s (pg-boss's default). */
   pollingIntervalSeconds?: number;
-  /** APP_TIME_ZONE for core jobs (cycle ends). Default UTC. */
+  /** APP_TIME_ZONE for core jobs (cycle ends, the nightly archive and its schedule). Default UTC. */
   timeZone?: string;
   /** APP_ENCRYPTION_KEY and the git host settings for the Backlog.md jobs (see readWorkerConfig). */
   git?: RunJobContext['git'];
@@ -94,7 +96,7 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
       );
     }
 
-    await syncSchedules(boss, logger);
+    await syncSchedules(boss, logger, timeZone);
   } catch (error) {
     await stop().catch((stopError: unknown) => logger.error('worker stop failed', { error: stopError }));
     throw error;
@@ -104,10 +106,13 @@ export async function startWorker(options: WorkerOptions): Promise<Worker> {
   return { boss, db, pool, stop };
 }
 
-/** Schedules every entry of core's JOB_SCHEDULES and removes schedules core no longer declares. */
-async function syncSchedules(boss: PgBoss, logger: Logger): Promise<void> {
+/**
+ * Schedules every entry of core's jobSchedules(timeZone) and removes schedules core no longer
+ * declares. Restarting with another APP_TIME_ZONE moves the zone-bound schedules (the archive).
+ */
+async function syncSchedules(boss: PgBoss, logger: Logger, timeZone: string | undefined): Promise<void> {
   const wanted = new Map(
-    Object.entries(JOB_SCHEDULES).flatMap(([name, schedule]) =>
+    Object.entries(jobSchedules(timeZone)).flatMap(([name, schedule]) =>
       schedule ? [[name, schedule] as const] : [],
     ),
   );

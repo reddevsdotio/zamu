@@ -34,7 +34,7 @@ zamu picks the login whose workspace has this repository's project. zamu workspa
 Rules:
 - Search before you create a task. Two tasks for one piece of work split its history.
 - Check an item only when you have proven it. Waive an item that no longer applies, with a reason.
-- Stop at In review. A person moves the task to Done.
+- Stop at In review. A person, or the merge of the task's pull request, moves the task to Done.
 - Zamu refuses an agent that moves a task to In review or Done while a criterion or done item is
   open (exit code 1, OPEN_ITEMS). The message lists each open item and the flags that settle it.
 - If the server can't be reached, zamu may queue a write and exit with code 7. Name every queued
@@ -78,10 +78,11 @@ makes a subtask, and --blocked-by KEY records that it waits on another task.
 
 const WORKING = `# Working on a task
 
-1. Start it and write the plan in one command:
+1. Start it and write the plan in one command, from the git branch you will work on:
      zamu tasks update KEY --status in_progress --plan - < plan.md
    The plan says how the work will be done: the steps, the files, the risks. It is Markdown.
-   Replace it with --plan when it changes.
+   Replace it with --plan when it changes. zamu records the branch, so the pull request opened from
+   it links to the task by itself.
 
 2. Add a note after each step that changes something: what you did, what you found, what failed.
      zamu notes add KEY "Migration written and tested on a copy of the data"
@@ -105,6 +106,14 @@ const WORKING = `# Working on a task
 6. Comments are for people: questions, decisions, blockers. @name mentions someone.
      zamu comments add KEY "@ana Should refunds retry too?"
 
+7. A pull request for several tasks links the others through its description: put a line such as
+   "Closes: KEY-1, KEY-2" in it. zamu pr link KEY URL links a request by hand.
+
+8. When the task waits on something outside your control, set a day to look again instead of
+   leaving it In progress:
+     zamu tasks update KEY --check-again 2026-12-03 --reason "Waiting for the bank's answer"
+   --no-check-again clears it.
+
 When you are blocked, say on what in a note or a comment.
 `;
 
@@ -123,6 +132,8 @@ const FINISHING = `# Finishing a task
 4. Move the task to In review, not Done. A person reviews it and moves it to Done.
    One command can check the last items, write the summary and move the task:
      zamu tasks update KEY --check-ac 6 --final-summary - --status in_review < summary.md
+   When the project closes on merge (zamu projects show), stop at In review: merging the pull
+   request moves the task to Done.
 
 5. If zamu answers OPEN_ITEMS (exit code 1), items are still open. The message lists each one with
    the flag that checks it and the flag that waives it. Settle them and move the task again. Never

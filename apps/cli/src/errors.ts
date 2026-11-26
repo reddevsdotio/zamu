@@ -1,7 +1,7 @@
 // Every failure the CLI reports becomes a CliError: a Problem (printed as zamu.v1.error with --json)
 // plus the process exit code. Scripts and agents branch on the exit code, so it is part of the
 // stable interface:
-//   0 ok, 1 usage (OPEN_ITEMS included), 2 auth, 3 not found, 4 forbidden, 5 server,
+//   0 ok, 1 usage (OPEN_ITEMS and TASK_ARCHIVED included), 2 auth, 3 not found, 4 forbidden, 5 server,
 //   6 Backlog.md conflict, 7 queued while the server was unreachable (queue.ts).
 import { ORPCError } from '@orpc/client';
 import {
@@ -93,6 +93,14 @@ export function inputError(error: ZodError, detail = 'Invalid arguments'): CliEr
 }
 
 const PROBLEM_CODE_SET = new Set<string>(PROBLEM_CODES);
+
+/** What a request address looks like on each host (NOT_A_REQUEST). */
+export const REQUEST_URL_HINTS = [
+  'Use the address of the request as the host shows it:',
+  '  GitHub   https://github.com/northwind/payments/pull/482',
+  '  GitLab   https://gitlab.example.com/northwind/payments/-/merge_requests/12',
+  '  Forgejo  https://forgejo.example.com/northwind/payments/pulls/12',
+];
 
 /** Problem codes that exit with EXIT.conflict. */
 const BACKLOG_CONFLICT_CODES = new Set<string>([
@@ -243,6 +251,11 @@ export function toCliError(error: unknown, url?: string): CliError {
       code === 'OPEN_ITEMS' && Array.isArray(data?.openItems)
         ? (data.openItems as NonNullable<Problem['openItems']>)
         : undefined;
+    // REQUEST_OTHER_REPOSITORY names the project's own repository (M7).
+    const repository =
+      code === 'REQUEST_OTHER_REPOSITORY' && typeof data?.repository === 'string'
+        ? data.repository
+        : undefined;
     const body: Problem = {
       ...problem(code, error.message || undefined, {
         ...(requestId ? { requestId } : {}),
@@ -252,6 +265,7 @@ export function toCliError(error: unknown, url?: string): CliError {
       }),
       ...(loop ? { loop } : {}),
       ...(openItems ? { openItems } : {}),
+      ...(repository ? { repository } : {}),
       status: status >= 400 && status <= 599 ? status : 500,
     };
     if (BACKLOG_CONFLICT_CODES.has(code)) {
@@ -277,6 +291,15 @@ export function toCliError(error: unknown, url?: string): CliError {
           'zamu login --key <key> stores a key for that workspace.',
       );
     }
+    // M7: requests are linked from the project's own repository, by their web address.
+    if (code === 'REQUEST_OTHER_REPOSITORY') {
+      hints.unshift(
+        repository
+          ? `The project links ${repository}: link a request of that repository.`
+          : "Link a request of the project's own repository.",
+      );
+    }
+    if (code === 'NOT_A_REQUEST') hints.unshift(...REQUEST_URL_HINTS);
     if (code === 'NOT_A_MEMBER') {
       hints.unshift('zamu workspaces lists your logins; ask an owner of that workspace for an invitation.');
     }

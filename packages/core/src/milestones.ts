@@ -82,7 +82,8 @@ async function milestoneProgress(db: DbOrTx, ids: string[]): Promise<Map<string,
       canceled: countWhere(sql`${task.status} = 'canceled'`),
     })
     .from(task)
-    // Hidden tasks (file gone from Backlog.md) do not count.
+    // Hidden tasks (file gone from Backlog.md) do not count. M7: archived tasks do, so archiving
+    // never lowers a progress bar.
     .where(and(inArray(task.milestoneId, ids), isNull(task.hiddenAt)))
     .groupBy(task.milestoneId);
   for (const { milestoneId, ...progress } of rows) if (milestoneId) result.set(milestoneId, progress);

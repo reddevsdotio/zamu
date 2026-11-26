@@ -256,3 +256,97 @@ describe('GitHub open pull requests (M6)', () => {
     });
   });
 });
+
+describe('GitHub pull requests (M7)', () => {
+  const merged = {
+    number: 479,
+    title: 'Add refunds endpoint',
+    body: 'Closes: PAY-9',
+    state: 'merged',
+    headBranch: 'task/pay-479',
+    baseBranch: 'main',
+    author: 'claude-dev',
+    mergedBy: 'ana-dev',
+    webUrl: 'https://github.com/northwind/payments/pull/479',
+    openedAt: '2026-11-21T11:00:00.000Z',
+    mergedAt: '2026-11-24T18:05:00.000Z',
+    closedAt: '2026-11-24T18:05:00.000Z',
+    updatedAt: '2026-11-24T18:05:01.000Z',
+  };
+
+  it('reads one pull request in each state, and null for a number that is not one', async () => {
+    const { provider, server } = github('requests');
+    await expect(provider.getRequest?.('northwind/payments', 479)).resolves.toEqual(merged);
+    await expect(provider.getRequest?.('northwind/payments', 481)).resolves.toMatchObject({
+      state: 'draft',
+      body: '',
+      mergedBy: null,
+      mergedAt: null,
+      closedAt: null,
+    });
+    // Reopened: GitHub may keep the old closed_at; an open request has none.
+    await expect(provider.getRequest?.('northwind/payments', 478)).resolves.toMatchObject({
+      state: 'open',
+      headBranch: 'feature/statements',
+      baseBranch: 'release/2.4',
+      closedAt: null,
+    });
+    await expect(provider.getRequest?.('northwind/payments', 12)).resolves.toBeNull();
+    expect(server.calls.map((call) => new URL(call.url).pathname)).toEqual([
+      '/repos/northwind/payments/pulls/479',
+      '/repos/northwind/payments/pulls/481',
+      '/repos/northwind/payments/pulls/478',
+      '/repos/northwind/payments/pulls/12',
+    ]);
+  });
+
+  it('does not call the API for a number that cannot exist', async () => {
+    const { provider, server } = github('requests');
+    await expect(provider.getRequest?.('northwind/payments', 0)).resolves.toBeNull();
+    await expect(provider.getRequest?.('northwind/payments', 1.5)).resolves.toBeNull();
+    await expect(provider.getRequest?.('northwind', 1)).rejects.toBeInstanceOf(GitNotFound);
+    expect(server.calls).toHaveLength(0);
+  });
+
+  it('lists the most recently updated pull requests in one page, cut at the time given', async () => {
+    const all = github('requests');
+    const list = await all.provider.listRequestsUpdatedSince?.('northwind/payments', null, 100);
+    expect(list?.map((request) => [request.number, request.state])).toEqual([
+      [482, 'open'],
+      [481, 'draft'],
+      [479, 'merged'],
+      [477, 'closed'],
+      [470, 'merged'],
+    ]);
+    // List entries carry no merged_by, and a deleted account has no login.
+    expect(list?.[2]).toEqual({ ...merged, mergedBy: null });
+    expect(list?.[3]).toMatchObject({ author: null, closedAt: '2026-11-22T09:30:00.000Z' });
+    expect(list?.[0]?.body).toBe('Retries declined cards once.\n\nCloses: PAY-12, PAY-14');
+    // One page even though the Link header offers another.
+    expect(all.server.calls).toHaveLength(1);
+
+    const since = github('requests');
+    const recent = await since.provider.listRequestsUpdatedSince?.(
+      'northwind/payments',
+      new Date('2026-11-24T18:05:01.000Z'),
+      100,
+    );
+    expect(recent?.map((request) => request.number)).toEqual([482, 481, 479]);
+
+    const limited = github('requests');
+    const two = await limited.provider.listRequestsUpdatedSince?.('northwind/payments', null, 2);
+    expect(two?.map((request) => request.number)).toEqual([482, 481]);
+    expect(new URL(limited.server.calls[0]?.url ?? '').searchParams.get('per_page')).toBe('2');
+  });
+
+  it('sends only GET requests, and a rejected token stays out of the error', async () => {
+    const { provider, server } = github('requests');
+    await provider.getRequest?.('northwind/payments', 479);
+    await provider.listRequestsUpdatedSince?.('northwind/payments', null, 100);
+    const error = await provider.getRequest?.('northwind/payments', 480).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(GitUnauthorized);
+    expect(String(error)).not.toContain(FIXTURE_TOKEN);
+    expect(JSON.stringify(error)).not.toContain(FIXTURE_TOKEN);
+    expect(server.calls.map((call) => call.method)).toEqual(['GET', 'GET', 'GET']);
+  });
+});

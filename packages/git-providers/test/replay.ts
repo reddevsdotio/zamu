@@ -23,6 +23,7 @@ export interface Fixture {
 }
 
 export interface Call {
+  method: string;
   url: string;
   headers: Record<string, string>;
   redirect: RequestInit['redirect'];
@@ -61,7 +62,7 @@ export function replay(...fixtures: Fixture[]) {
     new Headers(init?.headers).forEach((value, name) => {
       headers[name] = value;
     });
-    calls.push({ url, headers, redirect: init?.redirect });
+    calls.push({ method: method.toUpperCase(), url, headers, redirect: init?.redirect });
     const wanted = key(method, url);
     const index = exchanges.findIndex(
       (exchange, i) => !used.has(i) && key(exchange.request.method ?? 'GET', exchange.request.url) === wanted,

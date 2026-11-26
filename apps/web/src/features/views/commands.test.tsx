@@ -63,6 +63,8 @@ describe('view commands', () => {
       'Filter by label…',
       'Filter by due date…',
       'Filter blocked tasks…',
+      'Filter by check-again day…',
+      'Filter archived tasks…',
       'Clear filters',
     ]);
     await user.click(screen.getByRole('button', { name: 'Switch to board' }));

@@ -46,6 +46,13 @@ export function describeChange(subject: string, patch: TaskPatch | BulkTaskPatch
         : `Cleared the due date of ${subject}`,
     );
   }
+  if (full.checkAgain !== undefined) {
+    parts.push(
+      full.checkAgain
+        ? `${subject} waits until ${formatShortDate(full.checkAgain.on, today)}`
+        : `Cleared the check-again day of ${subject}`,
+    );
+  }
   if (full.labels !== undefined) parts.push(`Changed the labels of ${subject}`);
   if (patch.addLabels?.length) {
     parts.push(`Added ${listWords(patch.addLabels.map((label) => label.name))} to ${subject}`);

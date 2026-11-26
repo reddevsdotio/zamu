@@ -1,5 +1,5 @@
 import type { Activity, ActivityChange, Priority, TaskStatus } from '@zamu/contracts';
-import { PRIORITY_LABELS, STATUS_LABELS } from '~/ui';
+import { PRIORITY_LABELS, requestRef, STATUS_LABELS } from '~/ui';
 
 // Display helpers for the task screens: short times, activity sentences and Markdown checkbox lists.
 
@@ -247,6 +247,21 @@ function describeChange(change: ActivityChange): string {
     case 'parent':
       if (change.to) return `made this a subtask of ${change.to.key}`;
       return change.from ? `moved this out of ${change.from.key}` : 'made this a top-level task';
+    // M7
+    case 'workBranch':
+      return change.to ? `started work on ${change.to}` : 'cleared the work branch';
+    case 'checkAgain':
+      if (!change.to) return 'cleared the check-again day';
+      return change.from && change.from.on !== change.to.on
+        ? `moved check again to ${formatCalendarDay(change.to.on)}`
+        : change.from
+          ? 'changed why it waits'
+          : `set check again to ${formatCalendarDay(change.to.on)}`;
+    case 'pullRequest': {
+      const request = change.to ?? change.from;
+      const ref = request ? requestRef(request.provider, request.number) : 'a pull request';
+      return change.to ? `linked ${ref}` : `unlinked ${ref}`;
+    }
     default:
       return describeWorkChanges([change]);
   }
@@ -268,7 +283,10 @@ type WorkChange = Exclude<
       | 'labels'
       | 'dueDate'
       | 'blockedBy'
-      | 'parent';
+      | 'parent'
+      | 'workBranch'
+      | 'checkAgain'
+      | 'pullRequest';
   }
 >;
 
@@ -364,7 +382,9 @@ export function describeWorkChanges(changes: readonly WorkChange[]): string {
 }
 
 /** Every change as a phrase, work-record changes of one kind grouped: "checked criteria 3 and 4". */
-function describeChanges(changes: readonly ActivityChange[]): string[] {
+function describeChanges(all: readonly ActivityChange[]): string[] {
+  // M7: the work branch rides along with a status change, and the line's source tag already names it.
+  const changes = all.length > 1 ? all.filter((change) => change.field !== 'workBranch') : all;
   const phrases: string[] = [];
   const groups = new Map<string, WorkChange[]>();
   const order: (ActivityChange | string)[] = [];
@@ -392,6 +412,8 @@ const cycleName = (cycle: { number: number }) => `Cycle ${cycle.number}`;
 /** The verb phrase after the actor: "moved this to In progress", "created this task". */
 export function describeActivity(activity: Pick<Activity, 'type' | 'changes'>): string {
   if (activity.type === 'task.created') return 'created this task';
+  if (activity.type === 'task.archived') return 'archived this';
+  if (activity.type === 'task.unarchived') return 'restored this';
   if (activity.type === 'cycle.ended') {
     const change = activity.changes.find((item) => item.field === 'cycle');
     if (change?.field === 'cycle' && change.from) {

@@ -29,14 +29,19 @@ export function collectNumbers(value: string, previous: number[] = []): number[]
   return [...previous, ...parseItemNumbers(value)];
 }
 
-/** --waive-ac, --waive-dod and --reason in the order they were typed. */
+/**
+ * --waive-ac, --waive-dod, --reason and (M7) --check-again and --no-check-again in the order they
+ * were typed. --reason pairs with the waives and the check-again day around it.
+ */
 export type WaiveToken =
   | { type: 'waive'; kind: WorkItemKind; number: number }
-  | { type: 'reason'; text: string };
+  | { type: 'reason'; text: string }
+  | { type: 'checkAgain'; day: string }
+  | { type: 'noCheckAgain' };
 
 /**
- * Collectors for --waive-ac N, --waive-dod N and --reason, sharing one list so the order survives
- * parsing. Create one per command invocation.
+ * Collectors for --waive-ac N, --waive-dod N, --reason, --check-again DAY and --no-check-again,
+ * sharing one list so the order survives parsing. Create one per command invocation.
  */
 export function waiveCollector() {
   const tokens: WaiveToken[] = [];
@@ -52,46 +57,80 @@ export function waiveCollector() {
       tokens.push({ type: 'reason', text: value });
       return tokens;
     },
+    checkAgain: (value: string): WaiveToken[] => {
+      tokens.push({ type: 'checkAgain', day: value.trim() });
+      return tokens;
+    },
+    /** Commander calls a negated flag's parser without a value. */
+    noCheckAgain: (): WaiveToken[] => {
+      tokens.push({ type: 'noCheckAgain' });
+      return tokens;
+    },
   };
 }
 
 export interface ResolvedWaives {
   criteria: { number: number; reason: string }[];
   done: { number: number; reason: string }[];
+  /**
+   * M7: the check-again day with its reason (--check-again), or null to clear it
+   * (--no-check-again). Absent when neither flag was given.
+   */
+  checkAgain?: { on: string; reason: string } | null;
+}
+
+type Pending = Extract<WaiveToken, { type: 'waive' } | { type: 'checkAgain' }>;
+
+/** The flag a pending waive or check-again day came from, for the missing-reason error. */
+function pendingFlag(token: Pending): string {
+  if (token.type === 'checkAgain') return `--check-again ${token.day}`;
+  return `${token.kind === 'criterion' ? '--waive-ac' : '--waive-dod'} ${token.number}`;
 }
 
 /**
- * Pairs waives with reasons. A --reason applies to the waives typed before it that have none yet;
- * waives after the last --reason take that last reason. So `--waive-ac 5 --reason "..."`,
- * `--reason "..." --waive-ac 5` and `--waive-ac 4 --waive-ac 5 --reason "..."` all work.
+ * Pairs waives and the check-again day with reasons. A --reason applies to the waives and the day
+ * typed before it that have none yet; those after the last --reason take that last reason. So
+ * `--waive-ac 5 --reason "..."`, `--reason "..." --waive-ac 5`, `--waive-ac 4 --waive-ac 5 --reason
+ * "..."` and `--check-again 2026-12-03 --reason "..."` all work. A day without a reason, both
+ * --check-again and --no-check-again, or a second day are usage errors, before any request.
  */
 export function resolveWaives(tokens: readonly WaiveToken[]): ResolvedWaives {
   const result: ResolvedWaives = { criteria: [], done: [] };
-  const waives = tokens.filter((token) => token.type === 'waive');
-  if (waives.length === 0) {
-    if (tokens.length) throw usageError('--reason goes with --waive-ac N or --waive-dod N.');
+  const days = tokens.filter((token) => token.type === 'checkAgain');
+  const clears = tokens.some((token) => token.type === 'noCheckAgain');
+  if (days.length && clears) throw usageError('Use either --check-again or --no-check-again, not both.');
+  if (days.length > 1) throw usageError('Give --check-again once: a task has one check-again day.');
+  if (clears) result.checkAgain = null;
+  const items = tokens.filter(
+    (token): token is Pending => token.type === 'waive' || token.type === 'checkAgain',
+  );
+  if (items.length === 0) {
+    if (tokens.some((token) => token.type === 'reason')) {
+      throw usageError('--reason goes with --check-again DAY, --waive-ac N or --waive-dod N.');
+    }
     return result;
   }
-  let pending: Extract<WaiveToken, { type: 'waive' }>[] = [];
+  let pending: Pending[] = [];
   let last: string | undefined;
   const settle = (reason: string) => {
-    for (const waive of pending) {
-      (waive.kind === 'criterion' ? result.criteria : result.done).push({ number: waive.number, reason });
+    for (const item of pending) {
+      if (item.type === 'checkAgain') result.checkAgain = { on: item.day, reason };
+      else (item.kind === 'criterion' ? result.criteria : result.done).push({ number: item.number, reason });
     }
     pending = [];
   };
   for (const token of tokens) {
-    if (token.type === 'waive') pending.push(token);
-    else {
+    if (token.type === 'waive' || token.type === 'checkAgain') pending.push(token);
+    else if (token.type === 'reason') {
       settle(token.text);
       last = token.text;
     }
   }
   if (pending.length) {
     if (last === undefined) {
-      const first = pending[0] as (typeof pending)[number];
-      const flag = first.kind === 'criterion' ? '--waive-ac' : '--waive-dod';
-      throw usageError(`${flag} ${first.number} needs a reason: add --reason "why it no longer applies".`);
+      const first = pending[0] as Pending;
+      const why = first.type === 'checkAgain' ? 'what you are waiting for' : 'why it no longer applies';
+      throw usageError(`${pendingFlag(first)} needs a reason: add --reason "${why}".`);
     }
     settle(last);
   }

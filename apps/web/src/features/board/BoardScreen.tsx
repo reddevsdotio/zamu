@@ -32,6 +32,7 @@ import { useOptionalQuickCreate } from '~/features/shell/quick-create';
 import { confirmFinishing, finishingRequest, useFieldChange, useTaskFieldKeys } from '~/features/task-fields';
 import { toCycleRef, toMilestoneRef } from '~/features/task-fields/planning';
 import { showFieldToast } from '~/features/task-fields/toast';
+import { useNow } from '~/features/tasks/clock';
 import { describeError } from '~/features/tasks/errors';
 import { formatAge } from '~/features/tasks/format';
 import { rememberListSearch, rememberProjectView } from '~/features/tasks/list-memory';
@@ -55,7 +56,10 @@ import {
   useTaskSelection,
   useUrlTaskFilter,
   useViewCommands,
+  waitingLook,
+  withoutHiddenWaiting,
 } from '~/features/views';
+import { ArchivedNote, TaskCheckAgainChip, TaskRequestMarker } from '~/features/views/markers';
 import { useApi, useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
 import {
   Banner,
@@ -103,6 +107,9 @@ import { SubtaskRows } from './Subtasks';
 // column, Shift+J / Shift+K reorder (manual order only). The task keys (S, P, A, L, …) act on the
 // selection or the focused card. Undo goes through the shared field toast: one Undo, one ⌘Z.
 // Mirrored projects: a card whose status comes from Backlog.md can't change column; the board says so.
+// M7 (frame 101): cards carry the check-again chip and, when switched on, the request marker; tasks
+// waiting for their day are dimmed (the default) or left out with "2 waiting, hidden" at the column's
+// end; Shift+E archives the selection or the focused card (views/archive.tsx, mounted by the shell).
 
 export interface BoardScreenProps {
   projectKey: string;
@@ -256,7 +263,7 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
   );
 
   const counts = statusMode ? statusData.counts : groupedData.counts;
-  const columns = useMemo<BoardColumnModel[]>(() => {
+  const allColumns = useMemo<BoardColumnModel[]>(() => {
     if (statusMode) {
       const known = statusData.counts;
       return statuses
@@ -308,6 +315,20 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
     groupBy,
     groupContext,
   ]);
+  // M7: "Waiting tasks: Hidden" leaves out tasks whose check-again day is ahead; a column's Show brings
+  // them back for this visit. Nothing is hidden until the browser's day is known (useNow).
+  const now = useNow();
+  const checkToday = now == null ? null : localToday(new Date(now));
+  const [shownWaiting, setShownWaiting] = useState<ReadonlySet<string>>(() => new Set());
+  const columns = useMemo<BoardColumnModel[]>(
+    () =>
+      allColumns.map((column) => {
+        if (shownWaiting.has(column.id)) return column;
+        const { tasks, hidden } = withoutHiddenWaiting(column.cards, options, checkToday);
+        return hidden ? { ...column, cards: [...tasks], hiddenWaiting: hidden } : column;
+      }),
+    [allColumns, options, checkToday, shownWaiting],
+  );
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
   const openColumns = useMemo(() => columns.filter((column) => !column.folded), [columns]);
@@ -839,6 +860,14 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
       const due = shows('due') && card.dueDate ? { dueDate: card.dueDate, status: card.status, today } : null;
       // The criteria marker (off by default): the kit draws it after subtasks, before the due date.
       const criteria = shows('criteria') ? (card.criteriaProgress ?? null) : null;
+      // M7: the request marker (off by default), the check-again chip, and the day an archived card left.
+      const request = <TaskRequestMarker task={card} display={options} />;
+      const checkAgain = <TaskCheckAgainChip task={card} display={options} today={checkToday} compact />;
+      const archived = card.archivedAt ? <ArchivedNote archivedAt={card.archivedAt} now={now} /> : null;
+      const hasM7 =
+        archived != null ||
+        (options.properties.pullRequest && card.pullRequest != null) ||
+        (options.properties.checkAgain && card.checkAgain != null);
       return (
         <>
           <BoardCardContent
@@ -870,8 +899,15 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
             }
             parentRef={parentRef ? parentRef.filter(Boolean).join(' ') : null}
             extra={
-              times.length ? (
-                <span className="text-xs whitespace-nowrap text-fg-3">{times.join(' · ')}</span>
+              times.length || hasM7 ? (
+                <>
+                  {request}
+                  {checkAgain}
+                  {archived}
+                  {times.length ? (
+                    <span className="text-xs whitespace-nowrap text-fg-3">{times.join(' · ')}</span>
+                  ) : null}
+                </>
               ) : null
             }
           />
@@ -905,6 +941,8 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
       parentTitle,
       expanded,
       today,
+      checkToday,
+      now,
       usesMilestones,
       usesCycles,
       groupBy,
@@ -919,6 +957,10 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
     [subtaskCards],
   );
   const isSelected = selection.isSelected;
+  const isDimmed = useCallback(
+    (card: TaskListItem) => waitingLook(options, card, checkToday) === 'dimmed',
+    [options, checkToday],
+  );
 
   const cell: CellProps = {
     cursor: selection.focusedKey,
@@ -926,6 +968,7 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
     onAction: onCardAction,
     renderCard,
     isChild,
+    isDimmed,
     reorderable: manual && statusMode,
     onDragStart: onCardDragStart,
     onDragEnd: onCardDragEnd,
@@ -1045,6 +1088,8 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
       onDragOver,
       dropTarget: drag && drag.over !== drag.home ? drag.over : null,
       emptyText,
+      onShowWaiting: (column: BoardColumnModel) =>
+        setShownWaiting((previous) => new Set(previous).add(column.id)),
     };
     return lanes ? (
       <BoardLanes

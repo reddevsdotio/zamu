@@ -18,7 +18,9 @@ import { labelsQuery } from '~/features/labels/queries';
 import { membersQuery, meQuery } from '~/features/tasks/queries';
 import { useApi } from '~/lib/workspace';
 import {
+  ArchiveGlyph,
   Avatar,
+  ClockGlyph,
   CycleGlyph,
   isMilestoneFilled,
   LabelDot,
@@ -31,7 +33,16 @@ import {
   StatusGlyph,
   UnassignedAvatar,
 } from '~/ui';
-import { ASSIGNEE_NONE, type CycleFilterValue, type FilterField, type TaskFilter } from './filters';
+import {
+  ASSIGNEE_NONE,
+  type CycleFilterValue,
+  type FilterField,
+  TASK_ARCHIVED_FILTERS,
+  TASK_CHECK_AGAIN_FILTERS,
+  type TaskArchivedFilter,
+  type TaskCheckAgainFilter,
+  type TaskFilter,
+} from './filters';
 
 // What the filter menu and the chips offer for each field: the options, how a field's value reads
 // as option ids, and the words of its chip. Built from the project's members, labels, milestones and
@@ -120,6 +131,24 @@ const DUE_ITEMS: PickerMenuItem[] = (['overdue', 'soon', 'set', 'none'] as const
   ...(due === 'soon' ? { sub: 'today or in 2 days' } : {}),
 }));
 
+/** M7: "Check again is waiting", "Check again is ready to check" (frame 101). */
+const CHECK_AGAIN_ITEMS: PickerMenuItem[] = [
+  { id: 'waiting', label: 'Waiting', sub: 'the day is still ahead', lead: <ClockGlyph /> },
+  { id: 'ready', label: 'Ready to check', sub: 'the day has come', lead: <ClockGlyph /> },
+];
+
+/** M7: "Archived is shown" (frame 083): the archived tasks only, or with the rest. */
+const ARCHIVED_ITEMS: PickerMenuItem[] = [
+  { id: 'only', label: 'Shown', sub: 'archived tasks only', lead: <ArchiveGlyph /> },
+  { id: 'include', label: 'Shown with the rest', lead: <ArchiveGlyph /> },
+];
+
+/** Chip values of the M7 fields, lower case after "is" (frame 101: "Check again is ready to check"). */
+const CHIP_WORDS: Partial<Record<FilterField, Record<string, string>>> = {
+  checkAgain: { waiting: 'waiting', ready: 'ready to check' },
+  archived: { only: 'shown', include: 'shown with the rest' },
+};
+
 const BLOCKED_ITEMS: PickerMenuItem[] = [
   { id: 'true', label: 'Blocked', sub: 'waits on an open task' },
   { id: 'false', label: 'Not blocked' },
@@ -128,7 +157,18 @@ const BLOCKED_ITEMS: PickerMenuItem[] = [
 /** Builds the field configs from plain data. useProjectFilterFields wraps it for a project. */
 export function buildFilterFields(input: BuildFilterFieldsInput): FilterFieldConfig[] {
   const {
-    fields = ['status', 'priority', 'assignee', 'label', 'due', 'blocked', 'milestone', 'cycle'],
+    fields = [
+      'status',
+      'priority',
+      'assignee',
+      'label',
+      'due',
+      'blocked',
+      'milestone',
+      'cycle',
+      'checkAgain',
+      'archived',
+    ],
     scopeName,
     members = [],
     labels = [],
@@ -219,6 +259,23 @@ export function buildFilterFields(input: BuildFilterFieldsInput): FilterFieldCon
       placeholder: 'Blocked…',
       options: BLOCKED_ITEMS,
     },
+    checkAgain: {
+      field: 'checkAgain',
+      label: 'Check again',
+      plural: 'values',
+      multiple: false,
+      placeholder: 'Check again…',
+      kbd: '⇧W',
+      options: CHECK_AGAIN_ITEMS,
+    },
+    archived: {
+      field: 'archived',
+      label: 'Archived',
+      plural: 'values',
+      multiple: false,
+      placeholder: 'Archived…',
+      options: ARCHIVED_ITEMS,
+    },
   };
   if (milestones) {
     byField.milestone = {
@@ -286,6 +343,10 @@ export function fieldValues(filter: TaskFilter, field: FilterField): string[] {
       return filter.blocked === undefined ? [] : [String(filter.blocked)];
     case 'cycle':
       return (filter.cycle ?? []).map(String);
+    case 'checkAgain':
+      return filter.checkAgain ? [filter.checkAgain] : [];
+    case 'archived':
+      return filter.archived ? [filter.archived] : [];
     default:
       return [...(filter[field] ?? [])];
   }
@@ -308,6 +369,18 @@ export function withFieldValues(filter: TaskFilter, field: FilterField, ids: rea
     }
     case 'blocked':
       return { ...rest, blocked: ids[ids.length - 1] === 'true' };
+    case 'checkAgain': {
+      const value = ids[ids.length - 1];
+      return value && (TASK_CHECK_AGAIN_FILTERS as readonly string[]).includes(value)
+        ? { ...rest, checkAgain: value as TaskCheckAgainFilter }
+        : rest;
+    }
+    case 'archived': {
+      const value = ids[ids.length - 1];
+      return value && (TASK_ARCHIVED_FILTERS as readonly string[]).includes(value)
+        ? { ...rest, archived: value as TaskArchivedFilter }
+        : rest;
+    }
     case 'cycle':
       return {
         ...rest,
@@ -325,6 +398,8 @@ export function chipText(config: FilterFieldConfig, ids: readonly string[]): { o
   if (ids.length === 1) {
     const id = ids[0] as string;
     if (config.field === 'blocked') return { op: 'is', value: id === 'true' ? 'yes' : 'no' };
+    const words = CHIP_WORDS[config.field]?.[id];
+    if (words) return { op: 'is', value: words };
     const option = config.options.find((item) => item.id === id);
     return { op: 'is', value: option?.label ?? unknownValue(config.field) };
   }

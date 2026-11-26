@@ -31,6 +31,7 @@ import { Route as AppWWorkspaceDashboardRouteImport } from './routes/_app/w/$wor
 import { Route as AppWWorkspaceMyTasksRouteImport } from './routes/_app/w/$workspace/my-tasks'
 import { Route as AppWWorkspaceSettingsRouteRouteImport } from './routes/_app/w/$workspace/settings/route'
 import { Route as ApiWebhooksBacklogWebhookIdRouteImport } from './routes/api/webhooks/backlog/$webhookId'
+import { Route as ApiWebhooksRepositoryWebhookIdRouteImport } from './routes/api/webhooks/repository/$webhookId'
 import { Route as AppWWorkspaceProjectsIndexRouteImport } from './routes/_app/w/$workspace/projects/index'
 import { Route as AppWWorkspaceSettingsIndexRouteImport } from './routes/_app/w/$workspace/settings/index'
 import { Route as AppWWorkspaceSettingsApiKeysRouteImport } from './routes/_app/w/$workspace/settings/api-keys'
@@ -48,9 +49,11 @@ import { Route as AppWWorkspacePProjectKeyCyclesCycleNumberRouteImport } from '.
 import { Route as AppWWorkspacePProjectKeyMilestonesIndexRouteImport } from './routes/_app/w/$workspace/p/$projectKey/milestones/index'
 import { Route as AppWWorkspacePProjectKeyMilestonesMilestoneIdRouteImport } from './routes/_app/w/$workspace/p/$projectKey/milestones/$milestoneId'
 import { Route as AppWWorkspacePProjectKeySettingsIndexRouteImport } from './routes/_app/w/$workspace/p/$projectKey/settings/index'
+import { Route as AppWWorkspacePProjectKeySettingsArchiveRouteImport } from './routes/_app/w/$workspace/p/$projectKey/settings/archive'
 import { Route as AppWWorkspacePProjectKeySettingsBacklogRouteImport } from './routes/_app/w/$workspace/p/$projectKey/settings/backlog'
 import { Route as AppWWorkspacePProjectKeySettingsDefaultsRouteImport } from './routes/_app/w/$workspace/p/$projectKey/settings/defaults'
 import { Route as AppWWorkspacePProjectKeySettingsLabelsRouteImport } from './routes/_app/w/$workspace/p/$projectKey/settings/labels'
+import { Route as AppWWorkspacePProjectKeySettingsRepositoryRouteImport } from './routes/_app/w/$workspace/p/$projectKey/settings/repository'
 
 const _uiRoute = _uiRouteImport.update({
   id: '/__ui',
@@ -163,6 +166,12 @@ const ApiWebhooksBacklogWebhookIdRoute =
     path: '/api/webhooks/backlog/$webhookId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiWebhooksRepositoryWebhookIdRoute =
+  ApiWebhooksRepositoryWebhookIdRouteImport.update({
+    id: '/api/webhooks/repository/$webhookId',
+    path: '/api/webhooks/repository/$webhookId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AppWWorkspaceProjectsIndexRoute =
   AppWWorkspaceProjectsIndexRouteImport.update({
     id: '/projects/',
@@ -265,6 +274,12 @@ const AppWWorkspacePProjectKeySettingsIndexRoute =
     path: '/',
     getParentRoute: () => AppWWorkspacePProjectKeySettingsRouteRoute,
   } as any)
+const AppWWorkspacePProjectKeySettingsArchiveRoute =
+  AppWWorkspacePProjectKeySettingsArchiveRouteImport.update({
+    id: '/archive',
+    path: '/archive',
+    getParentRoute: () => AppWWorkspacePProjectKeySettingsRouteRoute,
+  } as any)
 const AppWWorkspacePProjectKeySettingsBacklogRoute =
   AppWWorkspacePProjectKeySettingsBacklogRouteImport.update({
     id: '/backlog',
@@ -281,6 +296,12 @@ const AppWWorkspacePProjectKeySettingsLabelsRoute =
   AppWWorkspacePProjectKeySettingsLabelsRouteImport.update({
     id: '/labels',
     path: '/labels',
+    getParentRoute: () => AppWWorkspacePProjectKeySettingsRouteRoute,
+  } as any)
+const AppWWorkspacePProjectKeySettingsRepositoryRoute =
+  AppWWorkspacePProjectKeySettingsRepositoryRouteImport.update({
+    id: '/repository',
+    path: '/repository',
     getParentRoute: () => AppWWorkspacePProjectKeySettingsRouteRoute,
   } as any)
 
@@ -305,6 +326,7 @@ export interface FileRoutesByFullPath {
   '/w/$workspace/dashboard': typeof AppWWorkspaceDashboardRoute
   '/w/$workspace/my-tasks': typeof AppWWorkspaceMyTasksRoute
   '/api/webhooks/backlog/$webhookId': typeof ApiWebhooksBacklogWebhookIdRoute
+  '/api/webhooks/repository/$webhookId': typeof ApiWebhooksRepositoryWebhookIdRoute
   '/w/$workspace/': typeof AppWWorkspaceIndexRoute
   '/w/$workspace/settings/api-keys': typeof AppWWorkspaceSettingsApiKeysRoute
   '/w/$workspace/settings/appearance': typeof AppWWorkspaceSettingsAppearanceRoute
@@ -320,9 +342,11 @@ export interface FileRoutesByFullPath {
   '/w/$workspace/p/$projectKey/': typeof AppWWorkspacePProjectKeyIndexRoute
   '/w/$workspace/p/$projectKey/cycles/$cycleNumber': typeof AppWWorkspacePProjectKeyCyclesCycleNumberRoute
   '/w/$workspace/p/$projectKey/milestones/$milestoneId': typeof AppWWorkspacePProjectKeyMilestonesMilestoneIdRoute
+  '/w/$workspace/p/$projectKey/settings/archive': typeof AppWWorkspacePProjectKeySettingsArchiveRoute
   '/w/$workspace/p/$projectKey/settings/backlog': typeof AppWWorkspacePProjectKeySettingsBacklogRoute
   '/w/$workspace/p/$projectKey/settings/defaults': typeof AppWWorkspacePProjectKeySettingsDefaultsRoute
   '/w/$workspace/p/$projectKey/settings/labels': typeof AppWWorkspacePProjectKeySettingsLabelsRoute
+  '/w/$workspace/p/$projectKey/settings/repository': typeof AppWWorkspacePProjectKeySettingsRepositoryRoute
   '/w/$workspace/p/$projectKey/cycles/': typeof AppWWorkspacePProjectKeyCyclesIndexRoute
   '/w/$workspace/p/$projectKey/milestones/': typeof AppWWorkspacePProjectKeyMilestonesIndexRoute
   '/w/$workspace/p/$projectKey/settings/': typeof AppWWorkspacePProjectKeySettingsIndexRoute
@@ -346,6 +370,7 @@ export interface FileRoutesByTo {
   '/w/$workspace/dashboard': typeof AppWWorkspaceDashboardRoute
   '/w/$workspace/my-tasks': typeof AppWWorkspaceMyTasksRoute
   '/api/webhooks/backlog/$webhookId': typeof ApiWebhooksBacklogWebhookIdRoute
+  '/api/webhooks/repository/$webhookId': typeof ApiWebhooksRepositoryWebhookIdRoute
   '/w/$workspace': typeof AppWWorkspaceIndexRoute
   '/w/$workspace/settings/api-keys': typeof AppWWorkspaceSettingsApiKeysRoute
   '/w/$workspace/settings/appearance': typeof AppWWorkspaceSettingsAppearanceRoute
@@ -360,9 +385,11 @@ export interface FileRoutesByTo {
   '/w/$workspace/p/$projectKey': typeof AppWWorkspacePProjectKeyIndexRoute
   '/w/$workspace/p/$projectKey/cycles/$cycleNumber': typeof AppWWorkspacePProjectKeyCyclesCycleNumberRoute
   '/w/$workspace/p/$projectKey/milestones/$milestoneId': typeof AppWWorkspacePProjectKeyMilestonesMilestoneIdRoute
+  '/w/$workspace/p/$projectKey/settings/archive': typeof AppWWorkspacePProjectKeySettingsArchiveRoute
   '/w/$workspace/p/$projectKey/settings/backlog': typeof AppWWorkspacePProjectKeySettingsBacklogRoute
   '/w/$workspace/p/$projectKey/settings/defaults': typeof AppWWorkspacePProjectKeySettingsDefaultsRoute
   '/w/$workspace/p/$projectKey/settings/labels': typeof AppWWorkspacePProjectKeySettingsLabelsRoute
+  '/w/$workspace/p/$projectKey/settings/repository': typeof AppWWorkspacePProjectKeySettingsRepositoryRoute
   '/w/$workspace/p/$projectKey/cycles': typeof AppWWorkspacePProjectKeyCyclesIndexRoute
   '/w/$workspace/p/$projectKey/milestones': typeof AppWWorkspacePProjectKeyMilestonesIndexRoute
   '/w/$workspace/p/$projectKey/settings': typeof AppWWorkspacePProjectKeySettingsIndexRoute
@@ -390,6 +417,7 @@ export interface FileRoutesById {
   '/_app/w/$workspace/dashboard': typeof AppWWorkspaceDashboardRoute
   '/_app/w/$workspace/my-tasks': typeof AppWWorkspaceMyTasksRoute
   '/api/webhooks/backlog/$webhookId': typeof ApiWebhooksBacklogWebhookIdRoute
+  '/api/webhooks/repository/$webhookId': typeof ApiWebhooksRepositoryWebhookIdRoute
   '/_app/w/$workspace/': typeof AppWWorkspaceIndexRoute
   '/_app/w/$workspace/settings/api-keys': typeof AppWWorkspaceSettingsApiKeysRoute
   '/_app/w/$workspace/settings/appearance': typeof AppWWorkspaceSettingsAppearanceRoute
@@ -405,9 +433,11 @@ export interface FileRoutesById {
   '/_app/w/$workspace/p/$projectKey/': typeof AppWWorkspacePProjectKeyIndexRoute
   '/_app/w/$workspace/p/$projectKey/cycles/$cycleNumber': typeof AppWWorkspacePProjectKeyCyclesCycleNumberRoute
   '/_app/w/$workspace/p/$projectKey/milestones/$milestoneId': typeof AppWWorkspacePProjectKeyMilestonesMilestoneIdRoute
+  '/_app/w/$workspace/p/$projectKey/settings/archive': typeof AppWWorkspacePProjectKeySettingsArchiveRoute
   '/_app/w/$workspace/p/$projectKey/settings/backlog': typeof AppWWorkspacePProjectKeySettingsBacklogRoute
   '/_app/w/$workspace/p/$projectKey/settings/defaults': typeof AppWWorkspacePProjectKeySettingsDefaultsRoute
   '/_app/w/$workspace/p/$projectKey/settings/labels': typeof AppWWorkspacePProjectKeySettingsLabelsRoute
+  '/_app/w/$workspace/p/$projectKey/settings/repository': typeof AppWWorkspacePProjectKeySettingsRepositoryRoute
   '/_app/w/$workspace/p/$projectKey/cycles/': typeof AppWWorkspacePProjectKeyCyclesIndexRoute
   '/_app/w/$workspace/p/$projectKey/milestones/': typeof AppWWorkspacePProjectKeyMilestonesIndexRoute
   '/_app/w/$workspace/p/$projectKey/settings/': typeof AppWWorkspacePProjectKeySettingsIndexRoute
@@ -435,6 +465,7 @@ export interface FileRouteTypes {
     | '/w/$workspace/dashboard'
     | '/w/$workspace/my-tasks'
     | '/api/webhooks/backlog/$webhookId'
+    | '/api/webhooks/repository/$webhookId'
     | '/w/$workspace/'
     | '/w/$workspace/settings/api-keys'
     | '/w/$workspace/settings/appearance'
@@ -450,9 +481,11 @@ export interface FileRouteTypes {
     | '/w/$workspace/p/$projectKey/'
     | '/w/$workspace/p/$projectKey/cycles/$cycleNumber'
     | '/w/$workspace/p/$projectKey/milestones/$milestoneId'
+    | '/w/$workspace/p/$projectKey/settings/archive'
     | '/w/$workspace/p/$projectKey/settings/backlog'
     | '/w/$workspace/p/$projectKey/settings/defaults'
     | '/w/$workspace/p/$projectKey/settings/labels'
+    | '/w/$workspace/p/$projectKey/settings/repository'
     | '/w/$workspace/p/$projectKey/cycles/'
     | '/w/$workspace/p/$projectKey/milestones/'
     | '/w/$workspace/p/$projectKey/settings/'
@@ -476,6 +509,7 @@ export interface FileRouteTypes {
     | '/w/$workspace/dashboard'
     | '/w/$workspace/my-tasks'
     | '/api/webhooks/backlog/$webhookId'
+    | '/api/webhooks/repository/$webhookId'
     | '/w/$workspace'
     | '/w/$workspace/settings/api-keys'
     | '/w/$workspace/settings/appearance'
@@ -490,9 +524,11 @@ export interface FileRouteTypes {
     | '/w/$workspace/p/$projectKey'
     | '/w/$workspace/p/$projectKey/cycles/$cycleNumber'
     | '/w/$workspace/p/$projectKey/milestones/$milestoneId'
+    | '/w/$workspace/p/$projectKey/settings/archive'
     | '/w/$workspace/p/$projectKey/settings/backlog'
     | '/w/$workspace/p/$projectKey/settings/defaults'
     | '/w/$workspace/p/$projectKey/settings/labels'
+    | '/w/$workspace/p/$projectKey/settings/repository'
     | '/w/$workspace/p/$projectKey/cycles'
     | '/w/$workspace/p/$projectKey/milestones'
     | '/w/$workspace/p/$projectKey/settings'
@@ -519,6 +555,7 @@ export interface FileRouteTypes {
     | '/_app/w/$workspace/dashboard'
     | '/_app/w/$workspace/my-tasks'
     | '/api/webhooks/backlog/$webhookId'
+    | '/api/webhooks/repository/$webhookId'
     | '/_app/w/$workspace/'
     | '/_app/w/$workspace/settings/api-keys'
     | '/_app/w/$workspace/settings/appearance'
@@ -534,9 +571,11 @@ export interface FileRouteTypes {
     | '/_app/w/$workspace/p/$projectKey/'
     | '/_app/w/$workspace/p/$projectKey/cycles/$cycleNumber'
     | '/_app/w/$workspace/p/$projectKey/milestones/$milestoneId'
+    | '/_app/w/$workspace/p/$projectKey/settings/archive'
     | '/_app/w/$workspace/p/$projectKey/settings/backlog'
     | '/_app/w/$workspace/p/$projectKey/settings/defaults'
     | '/_app/w/$workspace/p/$projectKey/settings/labels'
+    | '/_app/w/$workspace/p/$projectKey/settings/repository'
     | '/_app/w/$workspace/p/$projectKey/cycles/'
     | '/_app/w/$workspace/p/$projectKey/milestones/'
     | '/_app/w/$workspace/p/$projectKey/settings/'
@@ -552,6 +591,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiV1SplatRoute: typeof ApiV1SplatRoute
   ApiWebhooksBacklogWebhookIdRoute: typeof ApiWebhooksBacklogWebhookIdRoute
+  ApiWebhooksRepositoryWebhookIdRoute: typeof ApiWebhooksRepositoryWebhookIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -710,6 +750,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhooksBacklogWebhookIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/webhooks/repository/$webhookId': {
+      id: '/api/webhooks/repository/$webhookId'
+      path: '/api/webhooks/repository/$webhookId'
+      fullPath: '/api/webhooks/repository/$webhookId'
+      preLoaderRoute: typeof ApiWebhooksRepositoryWebhookIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/w/$workspace/projects/': {
       id: '/_app/w/$workspace/projects/'
       path: '/projects'
@@ -829,6 +876,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWWorkspacePProjectKeySettingsIndexRouteImport
       parentRoute: typeof AppWWorkspacePProjectKeySettingsRouteRoute
     }
+    '/_app/w/$workspace/p/$projectKey/settings/archive': {
+      id: '/_app/w/$workspace/p/$projectKey/settings/archive'
+      path: '/archive'
+      fullPath: '/w/$workspace/p/$projectKey/settings/archive'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeySettingsArchiveRouteImport
+      parentRoute: typeof AppWWorkspacePProjectKeySettingsRouteRoute
+    }
     '/_app/w/$workspace/p/$projectKey/settings/backlog': {
       id: '/_app/w/$workspace/p/$projectKey/settings/backlog'
       path: '/backlog'
@@ -848,6 +902,13 @@ declare module '@tanstack/react-router' {
       path: '/labels'
       fullPath: '/w/$workspace/p/$projectKey/settings/labels'
       preLoaderRoute: typeof AppWWorkspacePProjectKeySettingsLabelsRouteImport
+      parentRoute: typeof AppWWorkspacePProjectKeySettingsRouteRoute
+    }
+    '/_app/w/$workspace/p/$projectKey/settings/repository': {
+      id: '/_app/w/$workspace/p/$projectKey/settings/repository'
+      path: '/repository'
+      fullPath: '/w/$workspace/p/$projectKey/settings/repository'
+      preLoaderRoute: typeof AppWWorkspacePProjectKeySettingsRepositoryRouteImport
       parentRoute: typeof AppWWorkspacePProjectKeySettingsRouteRoute
     }
   }
@@ -881,20 +942,26 @@ const AppWWorkspaceSettingsRouteRouteWithChildren =
   )
 
 interface AppWWorkspacePProjectKeySettingsRouteRouteChildren {
+  AppWWorkspacePProjectKeySettingsArchiveRoute: typeof AppWWorkspacePProjectKeySettingsArchiveRoute
   AppWWorkspacePProjectKeySettingsBacklogRoute: typeof AppWWorkspacePProjectKeySettingsBacklogRoute
   AppWWorkspacePProjectKeySettingsDefaultsRoute: typeof AppWWorkspacePProjectKeySettingsDefaultsRoute
   AppWWorkspacePProjectKeySettingsLabelsRoute: typeof AppWWorkspacePProjectKeySettingsLabelsRoute
+  AppWWorkspacePProjectKeySettingsRepositoryRoute: typeof AppWWorkspacePProjectKeySettingsRepositoryRoute
   AppWWorkspacePProjectKeySettingsIndexRoute: typeof AppWWorkspacePProjectKeySettingsIndexRoute
 }
 
 const AppWWorkspacePProjectKeySettingsRouteRouteChildren: AppWWorkspacePProjectKeySettingsRouteRouteChildren =
   {
+    AppWWorkspacePProjectKeySettingsArchiveRoute:
+      AppWWorkspacePProjectKeySettingsArchiveRoute,
     AppWWorkspacePProjectKeySettingsBacklogRoute:
       AppWWorkspacePProjectKeySettingsBacklogRoute,
     AppWWorkspacePProjectKeySettingsDefaultsRoute:
       AppWWorkspacePProjectKeySettingsDefaultsRoute,
     AppWWorkspacePProjectKeySettingsLabelsRoute:
       AppWWorkspacePProjectKeySettingsLabelsRoute,
+    AppWWorkspacePProjectKeySettingsRepositoryRoute:
+      AppWWorkspacePProjectKeySettingsRepositoryRoute,
     AppWWorkspacePProjectKeySettingsIndexRoute:
       AppWWorkspacePProjectKeySettingsIndexRoute,
   }
@@ -981,6 +1048,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiV1SplatRoute: ApiV1SplatRoute,
   ApiWebhooksBacklogWebhookIdRoute: ApiWebhooksBacklogWebhookIdRoute,
+  ApiWebhooksRepositoryWebhookIdRoute: ApiWebhooksRepositoryWebhookIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

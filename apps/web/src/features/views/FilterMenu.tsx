@@ -336,9 +336,12 @@ export function FilterChips({ fields, filter, onChange, matchCount, total, class
   const count =
     matchCount === undefined
       ? null
-      : total === undefined
-        ? `${matchCount} ${matchCount === 1 ? 'task' : 'tasks'}`
-        : `${matchCount} of ${total} ${total === 1 ? 'task' : 'tasks'}`;
+      : filter.archived === 'only'
+        ? // M7 frame 083: the archived view counts what it shows.
+          `${matchCount} archived ${matchCount === 1 ? 'task' : 'tasks'}`
+        : total === undefined
+          ? `${matchCount} ${matchCount === 1 ? 'task' : 'tasks'}`
+          : `${matchCount} of ${total} ${total === 1 ? 'task' : 'tasks'}`;
   return (
     <div
       role="toolbar"

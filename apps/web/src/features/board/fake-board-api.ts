@@ -1,8 +1,10 @@
 import { ORPCError } from '@orpc/client';
 import {
+  type CheckAgain,
   type Member,
   type MilestoneRef,
   type ProjectWithCounts,
+  type PullRequestSummary,
   type StatusCounts,
   TASK_CHANGED,
   TASK_STATUSES,
@@ -16,7 +18,8 @@ import {
 
 // In-memory /api/v1 client for the board's component tests: board order (rank) or a `sort`, one status
 // per request (or all), topLevel and parent, cursor pagination, moves with position and the ifUpdatedAt
-// check (TASK_CHANGED with the current task). Calls the board does not use answer with an empty list.
+// check (TASK_CHANGED with the current task). M7: check-again days, the newest request, the archived
+// and checkAgain filters, and archive / restore. Calls the board does not use answer with an empty list.
 
 const ANA = { id: '00000000-0000-4000-8000-000000000001', name: 'Ana Ruiz', kind: 'person' as const };
 const TOMAS = { id: '00000000-0000-4000-8000-000000000002', name: 'Tomás Berg', kind: 'person' as const };
@@ -46,6 +49,12 @@ export interface FakeBoardOptions {
   criteria?: Record<string, WorkItemProgress>;
   /** Due dates per card key. */
   dueDates?: Record<string, string>;
+  /** M7: check-again days per card key. */
+  checkAgain?: Record<string, CheckAgain>;
+  /** M7: the newest request per card key. */
+  pullRequests?: Record<string, PullRequestSummary>;
+  /** M7: cards archived from the start, by key. */
+  archived?: readonly string[];
 }
 
 export function createFakeBoardApi({
@@ -56,6 +65,9 @@ export function createFakeBoardApi({
   subtasks,
   criteria = {},
   dueDates = {},
+  checkAgain = {},
+  pullRequests = {},
+  archived = [],
 }: FakeBoardOptions = {}) {
   const project = { id: '10000000-0000-4000-8000-000000000001', key: 'PAY', name: 'Payments' };
   const base = Date.parse('2026-10-20T10:00:00.000Z');
@@ -129,6 +141,9 @@ export function createFakeBoardApi({
   for (const task of tasks) {
     const dueDate = dueDates[task.key];
     if (dueDate) task.dueDate = dueDate;
+    const day = checkAgain[task.key];
+    if (day) task.checkAgain = day;
+    if (archived.includes(task.key)) task.archivedAt = '2026-11-12T10:00:00.000Z';
     // The full task (tasks.get) lists the criteria the counts stand for: checked, waived, then open.
     const progress = criteria[task.key];
     if (progress) {
@@ -148,7 +163,12 @@ export function createFakeBoardApi({
     }
   }
 
-  const calls = { update: [] as Input[], list: [] as Input[] };
+  const calls = {
+    update: [] as Input[],
+    list: [] as Input[],
+    archive: [] as string[][],
+    restore: [] as string[][],
+  };
   const control = {
     /** Make the next update of this key fail with TASK_CHANGED after moving it elsewhere. */
     changedBehindYourBack: null as null | { key: string; status: TaskStatus },
@@ -170,7 +190,13 @@ export function createFakeBoardApi({
       ...item
     } = task;
     const progress = criteria[task.key];
-    return { ...item, parentKey: parent?.key ?? null, ...(progress ? { criteriaProgress: progress } : {}) };
+    const request = pullRequests[task.key];
+    return {
+      ...item,
+      parentKey: parent?.key ?? null,
+      ...(progress ? { criteriaProgress: progress } : {}),
+      ...(request ? { pullRequest: request, pullRequestCount: 1 } : {}),
+    };
   };
   const PRIORITY_ORDER = ['none', 'low', 'medium', 'high', 'urgent'];
   const bySort = (sort: string) => (a: Task, b: Task) => {
@@ -260,8 +286,21 @@ export function createFakeBoardApi({
         const assignees = asList(input.assignee) as string[] | undefined;
         const cycles = asList(input.cycle) as (string | number)[] | undefined;
         const parentKey = input.parent as string | undefined;
+        const archivedFilter = (input.archived as string | undefined) ?? 'exclude';
+        const today = '2026-11-26';
         const matching = [...tasks]
           .sort(typeof input.sort === 'string' ? bySort(input.sort) : boardOrder)
+          .filter((task) =>
+            archivedFilter === 'only'
+              ? task.archivedAt != null
+              : archivedFilter === 'include' || task.archivedAt == null,
+          )
+          .filter((task) => {
+            const on = task.checkAgain?.on;
+            if (input.checkAgain === 'waiting') return on != null && on > today;
+            if (input.checkAgain === 'ready') return on != null && on <= today;
+            return true;
+          })
           .filter((task) => (parentKey ? task.parent?.key === parentKey : true))
           .filter((task) => (input.topLevel === true ? !task.parent : true))
           .filter(
@@ -289,6 +328,24 @@ export function createFakeBoardApi({
         };
       },
       get: async (input: Input): Promise<Task> => structuredClone(find(input.key)),
+      archive: async (input: { keys: string[] }) => {
+        calls.archive.push([...input.keys]);
+        const changed = input.keys.map(find);
+        for (const task of changed) {
+          task.archivedAt = new Date(clock).toISOString();
+          touch(task);
+        }
+        return { items: changed.map(toItem) };
+      },
+      restore: async (input: { keys: string[] }) => {
+        calls.restore.push([...input.keys]);
+        const changed = input.keys.map(find);
+        for (const task of changed) {
+          task.archivedAt = null;
+          touch(task);
+        }
+        return { items: changed.map(toItem) };
+      },
       update: async (input: Input): Promise<Task> => {
         calls.update.push(input);
         const task = find(input.key);

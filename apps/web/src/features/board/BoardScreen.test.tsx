@@ -17,6 +17,7 @@ import { TaskFieldToast } from '~/features/task-fields';
 import { resetFieldToastForTests } from '~/features/task-fields/toast';
 import { parseTaskListSearch } from '~/features/tasks/search';
 import { type DisplayOptions, displayStorageKey, taskNavStorageKey } from '~/features/views';
+import { ArchiveKeys } from '~/features/views/archive';
 import { resetDisplayOptionsForTests } from '~/features/views/useDisplayOptions';
 import { FinishingHost } from '~/features/work-record/FinishingHost';
 import { testWorkspace } from '~/lib/testing';
@@ -92,6 +93,7 @@ function renderBoard(
             <Outlet />
           )}
           <PeekProbe />
+          <ArchiveKeys />
           <TaskFieldToast />
           <FinishingHost />
         </PageSearchProvider>
@@ -144,6 +146,121 @@ beforeEach(() => {
 
 afterEach(() => {
   resetFieldToastForTests();
+});
+
+describe('board, M7', () => {
+  // The browser's day is fixed, so "waiting" and "today" never follow the real clock.
+  beforeEach(() => {
+    // Only Date, and moving: React Query and the board read Date.now() to tell new data from old.
+    vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+    vi.setSystemTime(new Date(2026, 10, 26, 12));
+    api.current = createFakeBoardApi({
+      checkAgain: {
+        'PAY-2': { on: '2026-12-03', reason: 'The bank answers on Dec 3' },
+        'PAY-3': { on: '2026-11-26', reason: 'Look at the logs again' },
+      },
+      pullRequests: {
+        'PAY-4': {
+          provider: 'github',
+          number: 482,
+          title: 'Retry failed payouts',
+          url: 'https://github.com/northwind/payments/pull/482',
+          state: 'open',
+        },
+      },
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const card = (key: string) => document.querySelector(`[data-card-key="${key}"]`) as HTMLElement;
+
+  it('dims waiting cards by default, never a card whose day has come, and shows the request marker once on', async () => {
+    const user = userEvent.setup();
+    renderBoard();
+    await screen.findByText('Card 4');
+    await waitFor(() => expect(card('PAY-2')).toHaveAttribute('data-waiting', 'true'));
+    expect(card('PAY-2')).toHaveTextContent('Until Dec 3');
+    expect(card('PAY-3')).not.toHaveAttribute('data-waiting');
+    expect(card('PAY-3')).toHaveTextContent('Check again: today');
+    // The request marker is off by default.
+    expect(card('PAY-4').querySelector('[data-part="request-marker"]')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Display options' });
+    await user.click(within(dialog).getByRole('button', { name: 'Pull request', pressed: false }));
+    await user.click(within(dialog).getByRole('button', { name: /Waiting tasks$/ }));
+    await user.click(await screen.findByRole('option', { name: 'Shown' }));
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(card('PAY-4')).toHaveTextContent('#482 open'));
+    expect(card('PAY-2')).not.toHaveAttribute('data-waiting');
+  });
+
+  it('hides waiting cards with a column footer, and Show brings them back', async () => {
+    setDisplay({ waiting: 'hidden' });
+    const user = userEvent.setup();
+    renderBoard();
+    await screen.findByText('Card 4');
+    await waitFor(() => expect(keysIn(/^Todo, 2 tasks$/)).toEqual(['PAY-3']));
+    const todo = column(/^Todo, 2 tasks$/);
+    expect(within(todo).getByText('1 waiting, hidden')).toBeInTheDocument();
+    await user.click(within(todo).getByRole('button', { name: 'Show the waiting tasks in Todo' }));
+    await waitFor(() => expect(keysIn(/^Todo, 2 tasks$/)).toEqual(['PAY-3', 'PAY-2']));
+    expect(within(todo).queryByText('1 waiting, hidden')).toBeNull();
+  });
+
+  it('archives three selected cards with Shift+E, and Undo and ⌘Z put them back', async () => {
+    const user = userEvent.setup();
+    renderBoard();
+    await screen.findByText('Card 4');
+    await user.keyboard('{Meta>}');
+    await user.click(card('PAY-2'));
+    await user.click(card('PAY-3'));
+    await user.click(card('PAY-4'));
+    await user.keyboard('{/Meta}');
+    await waitFor(() => expect(card('PAY-4')).toHaveAttribute('data-multi', 'true'));
+
+    await user.keyboard('{Shift>}E{/Shift}');
+    await waitFor(() => expect(api.current?.calls.archive).toHaveLength(1));
+    expect([...(api.current?.calls.archive[0] ?? [])].sort()).toEqual(['PAY-2', 'PAY-3', 'PAY-4']);
+    // Frame 085.
+    await waitFor(() => expect(toast()).toHaveTextContent('3 tasks archived'));
+    // Archived cards leave the board.
+    await waitFor(() => expect(card('PAY-2')).toBeNull());
+    expect(card('PAY-4')).toBeNull();
+
+    await user.click(within(toast() as HTMLElement).getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(api.current?.calls.restore).toHaveLength(1));
+    expect([...(api.current?.calls.restore[0] ?? [])].sort()).toEqual(['PAY-2', 'PAY-3', 'PAY-4']);
+    await waitFor(() => expect(card('PAY-2')).not.toBeNull());
+  });
+
+  it('undoes an archive with ⌘Z while the toast shows', async () => {
+    const user = userEvent.setup();
+    renderBoard();
+    await screen.findByText('Card 4');
+    await user.keyboard('j');
+    await waitFor(() => expect(focusedKey()).toBe('PAY-1'));
+    await user.keyboard('{Shift>}E{/Shift}');
+    await waitFor(() => expect(api.current?.calls.archive).toEqual([['PAY-1']]));
+    await waitFor(() => expect(toast()).toHaveTextContent('1 task archived'));
+    await waitFor(() => expect(card('PAY-1')).toBeNull());
+    await user.keyboard('{Control>}z{/Control}');
+    await waitFor(() => expect(api.current?.calls.restore).toEqual([['PAY-1']]));
+    await waitFor(() => expect(card('PAY-1')).not.toBeNull());
+  });
+
+  it('shows archived cards with their day under the Archived filter', async () => {
+    api.current = createFakeBoardApi({ archived: ['PAY-2'] });
+    renderBoard('/w/acme/p/PAY?view=board&archived=only');
+    await waitFor(() => expect(card('PAY-2')).not.toBeNull());
+    expect(card('PAY-2')).toHaveTextContent('Archived Nov 12');
+    expect(card('PAY-3')).toBeNull();
+    const chips = screen.getByRole('toolbar', { name: 'Filters' });
+    expect(within(chips).getByRole('button', { name: 'Archived is shown. Change' })).toBeInTheDocument();
+    expect(chips).toHaveTextContent('1 archived task');
+    expect(api.current?.calls.list.some((input) => input.archived === 'only')).toBe(true);
+  });
 });
 
 describe('board', () => {

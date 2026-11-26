@@ -28,6 +28,7 @@ export {
   normalizeHost,
 } from './hosts';
 export { isUnderFolder } from './paths';
+export { MAX_UPDATED_REQUESTS, parseRequestUrl } from './requests';
 export {
   type BlobRef,
   type CreateProviderOptions,
@@ -39,10 +40,18 @@ export {
   type OpenRequestList,
   PROVIDER_KINDS,
   type ProviderKind,
+  REQUEST_ACTIONS,
+  REQUEST_STATES,
   type RepositoryInfo,
+  type RequestAction,
+  type RequestInfo,
+  type RequestState,
+  type RequestUrl,
   type TreeEntry,
   type WebhookHeaders,
+  type WebhookPushOrOther,
   type WebhookRefusal,
+  type WebhookRequestEvent,
   type WebhookVerification,
   type Whoami,
 } from './types';

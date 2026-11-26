@@ -3,21 +3,32 @@ import {
   type Activity,
   type ActivityChange,
   type AssigneeRef,
+  BACKLOG_ACTOR_NAME,
+  type CheckAgain,
   type Comment,
   CYCLE_STATE_LABELS,
   type CycleState,
   type EntrySource,
+  GIT_ACTOR_NAMES,
+  type GitProvider,
   type Me,
+  type MergedOpen,
   MILESTONE_STATUS_LABELS,
   type MilestoneStatus,
   PRIORITY_LABELS,
   type Priority,
+  PULL_REQUEST_STATE_LABELS,
+  type PullRequestCauseEvent,
+  type PullRequestLink,
+  type PullRequestLinkHow,
+  type PullRequestState,
   TASK_STATUS_LABELS,
   type TaskStatus,
   type TimelineItem,
   type UserRef,
   type WorkItem,
   type WorkTextMeta,
+  ZAMU_ACTOR_NAME,
 } from '@zamu/contracts';
 
 export interface Style {
@@ -296,7 +307,91 @@ export function changeSentence(change: ActivityChange): string {
       return textChange('the plan', change);
     case 'finalSummary':
       return textChange('the final summary', change);
+    case 'workBranch':
+      if (change.to === null) return 'cleared the work branch';
+      return change.from === null ? `started it on branch ${change.to}` : `moved it to branch ${change.to}`;
+    case 'checkAgain':
+      if (change.to === null) return 'cleared the check-again day';
+      return `${change.from === null ? 'set' : 'changed'} check again to ${checkAgainLabel(change.to)}`;
+    case 'pullRequest':
+      if (change.to) {
+        return `linked ${requestRef(change.to.provider, change.to.number)} "${change.to.title}"${HOW_SUFFIX[change.to.how]}`;
+      }
+      return change.from
+        ? `unlinked ${requestRef(change.from.provider, change.from.number)} "${change.from.title}"`
+        : 'unlinked a request';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Pull requests, archive and check again (M7)
+// ---------------------------------------------------------------------------
+
+/** "#482" for GitHub and Forgejo pull requests, "!482" for GitLab merge requests. */
+export function requestRef(provider: GitProvider, number: number): string {
+  return `${provider === 'gitlab' ? '!' : '#'}${number}`;
+}
+
+export const pullRequestStateLabel = (state: PullRequestState) => PULL_REQUEST_STATE_LABELS[state];
+
+/** How a history line says a request was linked: by hand needs nothing more. */
+const HOW_SUFFIX: Record<PullRequestLinkHow, string> = {
+  hand: '',
+  branch: ' (started on its branch)',
+  description: ' (named on a Closes: line)',
+};
+
+/** "started on feat/webhook-retries", "named in its description", "linked by hand by Ana Ruiz". */
+export function pullRequestHowLabel(
+  request: Pick<PullRequestLink, 'how' | 'headBranch' | 'linkedBy'>,
+): string {
+  if (request.how === 'branch') return `started on ${request.headBranch}`;
+  if (request.how === 'description') return 'named in its description';
+  return request.linkedBy ? `linked by hand by ${request.linkedBy.name}` : 'linked by hand';
+}
+
+/** "Merged with 2 open criteria" when only criteria are open, "Merged with 3 open items" otherwise. */
+export function mergedOpenText({
+  openCriteria,
+  openDoneItems,
+}: Pick<MergedOpen, 'openCriteria' | 'openDoneItems'>): string {
+  if (openDoneItems === 0) {
+    return `Merged with ${openCriteria} open ${openCriteria === 1 ? 'criterion' : 'criteria'}`;
+  }
+  const total = openCriteria + openDoneItems;
+  return `Merged with ${total} open ${total === 1 ? 'item' : 'items'}`;
+}
+
+/** "2026-12-01: Wait for the bank's answer". */
+export function checkAgainLabel(checkAgain: CheckAgain): string {
+  return `${checkAgain.on}: ${checkAgain.reason}`;
+}
+
+/** What a request event did, after its number: "#482 opened by claude-dev". */
+const EVENT_WORDS: Record<PullRequestCauseEvent, string> = {
+  opened: 'opened',
+  ready: 'marked ready',
+  reopened: 'reopened',
+  merged: 'merged',
+  closed: 'closed',
+};
+
+/**
+ * Who an entry without an actor names: the git host of a request event (GitHub, GitLab, Forgejo),
+ * Backlog.md for a refresh, and Zamu for its own jobs (the archive job, the hourly cycle job).
+ */
+function systemName(activity: Activity): string {
+  switch (activity.system?.kind) {
+    case 'git':
+      return GIT_ACTOR_NAMES[activity.system.provider];
+    case 'zamu':
+      return ZAMU_ACTOR_NAME;
+    case 'backlog':
+      return BACKLOG_ACTOR_NAME;
+  }
+  if (activity.origin === 'backlog') return BACKLOG_ACTOR_NAME;
+  if (activity.cause?.kind === 'pull_request') return GIT_ACTOR_NAMES[activity.cause.provider];
+  return ZAMU_ACTOR_NAME;
 }
 
 type ItemChange = Extract<ActivityChange, { field: `criterion.${string}` | `doneItem.${string}` }>;
@@ -339,13 +434,29 @@ function textChange(noun: string, change: { from: string | null; to: string | nu
 
 /** "claude-dev for Ana Ruiz moved it from Todo to In progress". */
 export function activitySentence(activity: Activity): string {
-  // A null actor is a Backlog.md refresh (origin backlog) or the system: the hourly job that ends cycles.
-  const actor = activity.actor?.name ?? (activity.origin === 'backlog' ? 'Backlog.md' : 'System');
+  // A null actor is a Backlog.md refresh, a git host's request event (M7) or one of Zamu's jobs.
+  const actor = activity.actor?.name ?? systemName(activity);
   const who = activity.onBehalfOf ? `${actor} for ${activity.onBehalfOf.name}` : actor;
   // "(a1b2c3d)": the commit a Backlog.md refresh read.
   const commit =
     activity.origin === 'backlog' && activity.originRef ? ` (${activity.originRef.slice(0, 7)})` : '';
   if (activity.type === 'task.hidden') return `${who} hid the task: its file is gone${commit}`;
+  if (activity.type === 'task.archived') {
+    // "Zamu archived this 14 days after it closed": the nightly job.
+    if (activity.cause?.kind === 'archive') {
+      const days = activity.cause.afterDays;
+      return `${who} archived this ${days} ${days === 1 ? 'day' : 'days'} after it closed`;
+    }
+    if (activity.origin === 'backlog')
+      return `${who} archived the task: its file moved to archive/tasks/${commit}`;
+    return `${who} archived the task`;
+  }
+  if (activity.type === 'task.unarchived') {
+    if (activity.origin === 'backlog') {
+      return `${who} restored the task from the archive: its file left archive/tasks/${commit}`;
+    }
+    return `${who} restored the task from the archive`;
+  }
   if (activity.type === 'task.restored') return `${who} restored the task: its file is back${commit}`;
   if (activity.type === 'cycle.ended') {
     // "Cycle 12 ended. Moved to Cycle 13." The hourly job has no actor; a person who ended it early does.
@@ -363,9 +474,18 @@ export function activitySentence(activity: Activity): string {
       .map(changeSentence);
     return `${[`${who} created the task`, ...extras].join(', ')}${commit}`;
   }
-  const changes = activity.changes.map(changeSentence);
+  const cause = activity.cause?.kind === 'pull_request' ? activity.cause : null;
+  // "GitHub moved this to In review · #482 opened by claude-dev": a request event moved the task.
+  const changes = activity.changes.map((change) =>
+    cause && change.field === 'status' && change.to
+      ? `moved this to ${statusLabel(change.to)}`
+      : changeSentence(change),
+  );
   if (activity.backlogFields?.length) changes.push(`changed ${activity.backlogFields.join(', ')}`);
-  return `${who} ${changes.length ? changes.join(', ') : 'updated the task'}${commit}`;
+  const event = cause
+    ? ` · ${requestRef(cause.provider, cause.number)} ${EVENT_WORDS[cause.event]}${cause.by ? ` by ${cause.by}` : ''}`
+    : '';
+  return `${who} ${changes.length ? changes.join(', ') : 'updated the task'}${event}${commit}`;
 }
 
 /** "all projects, write" or "PAY, WEB, read". */

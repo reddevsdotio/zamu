@@ -231,6 +231,7 @@ export async function loadExisting(
         createdAt: task.createdAt,
         backlogData: task.backlogData,
         hiddenAt: task.hiddenAt,
+        archivedAt: task.archivedAt,
         dueDate: task.dueDate,
         parentId: task.parentId,
         plan: task.plan,

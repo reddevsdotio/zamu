@@ -1,8 +1,10 @@
 // M6: a project written out as Backlog.md files (GET /projects/{project}/backlog/export). Native
-// projects and projects switched to Zamu only: every task goes to tasks/, where Backlog.md itself keeps
-// Done tasks, and milestones to milestones/, paths relative to the Backlog.md folder. The legacy
-// completed/ folder stays in removedPrefixes so old copies of the same tasks are pruned. Hidden tasks are
-// left out (their files are gone). Rows are read here directly; the files come from the writer in
+// projects and projects switched to Zamu only: tasks go to tasks/, where Backlog.md itself keeps Done
+// tasks, and milestones to milestones/, paths relative to the Backlog.md folder. M7: archived tasks go to
+// archive/tasks/ under the same file name, so a re-import (or a refresh) reads them as archived. Every
+// owned folder is in removedPrefixes, so the copy in the other folder (a task archived or restored since
+// the last export) and old copies in the legacy completed/ folder are pruned. Hidden tasks are left out
+// (their files are gone). Rows are read here directly; the files come from the writer in
 // @zamu/backlog-md, which this package's reader and the Backlog.md CLI both read.
 import {
   BACKLOG_FILE_FORMAT,
@@ -158,7 +160,7 @@ function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
  * The project as Backlog.md files. Readable by anyone who may read the project; ProjectMirrored
  * (409 PROJECT_MIRRORED) while it still mirrors, since the files are the truth then. Task ids use
  * the switched mirror's Backlog.md prefix (else the letters of the project key) and the task's
- * number, so a re-import keeps every number. removedPrefixes lists the three folders the export owns.
+ * number, so a re-import keeps every number. removedPrefixes lists the folders the export owns.
  */
 export async function exportBacklog(
   ctx: DbContext,
@@ -275,7 +277,8 @@ export async function exportBacklog(
       implementationNotes: formatImplementationNotes(notes, block?.implementationNotes ?? null),
       finalSummary: row.finalSummary,
     };
-    files.push({ path: `tasks/${taskFileName(id, row.title)}`, content: writeTaskFile(input) });
+    const folder = row.archivedAt ? 'archive/tasks' : 'tasks';
+    files.push({ path: `${folder}/${taskFileName(id, row.title)}`, content: writeTaskFile(input) });
   }
   for (const row of rows.milestones) {
     const id = milestoneIds.get(row.id) as string;

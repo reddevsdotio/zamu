@@ -3,7 +3,10 @@
 // section 5 "Domain model and behaviour" of the M3 plan (Backlog.md tables live in ./backlog),
 // section 4 "Data model" of the M5 plan (labels, due dates, blockers and subtasks), and the M6 work
 // record (acceptance criteria and done items in task_item, plan and final summary on task, notes as
-// comments of kind note, and the machine and branch a CLI change came from).
+// comments of kind note, and the machine and branch a CLI change came from), and M7 (the work branch,
+// when a task closed, archiving, the merged-with-open-items flag, check-again days, the archive
+// setting of a project, and the cause of activity rows a git host or a job wrote). Repository links
+// and pull requests live in ./pull-requests.
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -44,11 +47,20 @@ export const ACTIVITY_TYPES = [
   'project.backlog_detached',
   // 0.6.0
   'project.backlog_webhook_secret_reissued',
+  // M7: archiving by hand, by the nightly job or from Backlog.md's archive folder, and its reverse.
+  'task.archived',
+  'task.unarchived',
+  // M7: a pull or merge request linked to the task or unlinked from it.
+  'task.pull_request_linked',
+  'task.pull_request_unlinked',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
-/** Who wrote an activity row: the app (a person, an agent or the system) or a Backlog.md refresh. */
-export const ACTIVITY_ORIGINS = ['app', 'backlog'] as const;
+/**
+ * Who wrote an activity row: the app (a person, an agent or the system), a Backlog.md refresh, or
+ * (M7) a git host event about a pull or merge request.
+ */
+export const ACTIVITY_ORIGINS = ['app', 'backlog', 'git'] as const;
 export type ActivityOrigin = (typeof ACTIVITY_ORIGINS)[number];
 
 /**
@@ -68,6 +80,31 @@ export interface ActivityChange {
   to?: unknown;
   [key: string]: unknown;
 }
+
+/**
+ * M7: activity.cause, why the system made a change: a pull or merge request event, or the archive
+ * job. The contract shape (ActivityCause in @zamu/contracts) validates it on writes; the database
+ * only stores it.
+ */
+export type StoredActivityCause =
+  | {
+      kind: 'pull_request';
+      provider: string;
+      number: number;
+      url: string;
+      title: string;
+      event: string;
+      by: string | null;
+    }
+  | { kind: 'archive'; afterDays: number };
+
+/** M7: longest work branch kept on a task, in characters. */
+export const WORK_BRANCH_MAX_LENGTH = 255;
+/** M7: longest check-again reason, in characters. */
+export const CHECK_AGAIN_REASON_MAX_LENGTH = 200;
+/** M7: project.archive_after_days allows 1 to 365 days; null turns archiving off. */
+export const ARCHIVE_AFTER_DAYS_MIN = 1;
+export const ARCHIVE_AFTER_DAYS_MAX = 365;
 
 /** M6: the two lists of a task's work record: acceptance criteria and definition-of-done items. */
 export const TASK_ITEM_KINDS = ['criterion', 'done'] as const;
@@ -135,6 +172,11 @@ export const project = pgTable(
     repositoryKey: text('repository_key'),
     /** M6: done items every new task of the project starts with, in order. Owners and admins edit them. */
     defaultDoneItems: jsonb('default_done_items').$type<string[]>().default([]).notNull(),
+    /**
+     * M7: Done and Canceled tasks are archived this many days after they closed; null is off. No
+     * database default: upgraded projects stay off, and core gives new projects 14 days.
+     */
+    archiveAfterDays: smallint('archive_after_days'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -146,6 +188,10 @@ export const project = pgTable(
     check('project_next_task_number_check', sql`${table.nextTaskNumber} >= 1`),
     check('project_next_cycle_number_check', sql`${table.nextCycleNumber} >= 1`),
     check('project_default_done_items_check', sql`jsonb_typeof(${table.defaultDoneItems}) = 'array'`),
+    check(
+      'project_archive_after_days_check',
+      sql`${table.archiveAfterDays} between ${sql.raw(String(ARCHIVE_AFTER_DAYS_MIN))} and ${sql.raw(String(ARCHIVE_AFTER_DAYS_MAX))}`,
+    ),
   ],
 );
 
@@ -283,6 +329,25 @@ export const task = pgTable(
     plan: text('plan'),
     /** M6: the final summary, Markdown; null when none. Author and time come from activity, like plan. */
     finalSummary: text('final_summary'),
+    /**
+     * M7: the git branch the task was started on, from the CLI's x-zamu-branch on a move to In
+     * progress or In review (never the default branch). Requests with this head branch link to it.
+     */
+    workBranch: text('work_branch'),
+    /** M7: when the task entered Done or Canceled; null while open. The archive job counts from it. */
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    /** M7: set while archived. Archived tasks are read-only and stay out of lists, boards and Home. */
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    /** M7: who archived it; null for the nightly job and Backlog.md's archive folder. */
+    archivedById: uuid('archived_by_id').references(() => user.id, { onDelete: 'restrict' }),
+    /**
+     * M7: a merge moved the task to Done while criteria or done items were open. Home lists it until
+     * the items are settled; reopening the task clears it.
+     */
+    mergedDoneAt: timestamp('merged_done_at', { withTimezone: true }),
+    /** M7: the day to look at the task again, with its reason. Both set or both null. */
+    checkAgainOn: date('check_again_on', { mode: 'string' }),
+    checkAgainReason: text('check_again_reason'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -308,6 +373,31 @@ export const task = pgTable(
     check('task_priority_check', sql`${table.priority} between 0 and 4`),
     check('task_number_check', sql`${table.number} >= 1`),
     check('task_key_suffix_check', sql`${table.keySuffix} ~ ${sql.raw(`'${KEY_SUFFIX_SQL_PATTERN}'`)}`),
+    // M7: the nightly archive job (closed tasks of a project by when they closed).
+    index('task_projectId_status_closedAt_idx')
+      .on(table.projectId, table.status, table.closedAt)
+      .where(sql`${table.archivedAt} is null and ${table.status} in ('done', 'canceled')`),
+    // M7: Home's check-again group and the Waiting and Ready to check filters.
+    index('task_assigneeId_checkAgainOn_idx')
+      .on(table.assigneeId, table.checkAgainOn)
+      .where(sql`${table.checkAgainOn} is not null`),
+    // M7: Home's merged-with-open-items group.
+    index('task_projectId_mergedDone_idx').on(table.projectId).where(sql`${table.mergedDoneAt} is not null`),
+    // M7: tasks a request links by its head branch.
+    index('task_projectId_workBranch_idx')
+      .on(table.projectId, table.workBranch)
+      .where(sql`${table.workBranch} is not null`),
+    // M7: the Archived filter.
+    index('task_projectId_archived_idx').on(table.projectId).where(sql`${table.archivedAt} is not null`),
+    check(
+      'task_work_branch_check',
+      sql`char_length(${table.workBranch}) between 1 and ${sql.raw(String(WORK_BRANCH_MAX_LENGTH))}`,
+    ),
+    check('task_archived_check', sql`${table.archivedAt} is not null or ${table.archivedById} is null`),
+    check(
+      'task_check_again_check',
+      sql`(${table.checkAgainOn} is null and ${table.checkAgainReason} is null) or (${table.checkAgainOn} is not null and ${table.checkAgainReason} is not null and char_length(${table.checkAgainReason}) between 1 and ${sql.raw(String(CHECK_AGAIN_REASON_MAX_LENGTH))})`,
+    ),
   ],
 );
 
@@ -448,8 +538,8 @@ export const activity = pgTable(
     /** Null for project-level events (project.backlog_imported, project.backlog_detached). */
     taskId: uuid('task_id').references(() => task.id, { onDelete: 'cascade' }),
     /**
-     * Null means the system: the hourly job that ends cycles, or a Backlog.md refresh (origin
-     * backlog), which the UI shows as the Backlog.md actor.
+     * Null means the system: the hourly job that ends cycles or the archive job (origin app, shown as
+     * Zamu), a Backlog.md refresh (origin backlog), or a request event (origin git, shown as the host).
      */
     actorId: uuid('actor_id').references(() => user.id, { onDelete: 'restrict' }),
     /** The agent's responsible human; null when a person acted. */
@@ -458,12 +548,17 @@ export const activity = pgTable(
     changes: jsonb('changes').$type<ActivityChange[]>().default([]).notNull(),
     /** M3: app for everything written in the app, backlog for rows a Backlog.md refresh wrote. */
     origin: text('origin', { enum: ACTIVITY_ORIGINS }).default('app').notNull(),
-    /** M3: the commit hash a Backlog.md refresh read; null for app rows. */
+    /** M3: the commit hash a Backlog.md refresh read, or (M7) the request URL for git rows; null for app rows. */
     originRef: text('origin_ref'),
     /** M6: the machine the change came from (the CLI's x-zamu-machine header); null otherwise. */
     machine: text('machine'),
     /** M6: the git branch the CLI ran on (x-zamu-branch); null otherwise. */
     branch: text('branch'),
+    /**
+     * M7: why the system made the change: a request event (origin git, origin_ref the request URL)
+     * or the archive job. Null for changes people and agents make.
+     */
+    cause: jsonb('cause').$type<StoredActivityCause>(),
     createdAt: createdAt(),
   },
   (table) => [
@@ -471,7 +566,7 @@ export const activity = pgTable(
     index('activity_projectId_createdAt_idx').on(table.projectId, table.createdAt),
     // 0.6.0: the dashboard agents strip (an agent's newest activity).
     index('activity_actorId_createdAt_idx').on(table.actorId, table.createdAt),
-    check('activity_origin_check', sql`${table.origin} in ('app', 'backlog')`),
+    check('activity_origin_check', sql`${table.origin} in ('app', 'backlog', 'git')`),
   ],
 );
 

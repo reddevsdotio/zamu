@@ -1,15 +1,23 @@
 import type { ProjectWithCounts, Theme, WorkspaceRef } from '@zamu/contracts';
 import { useMemo, useRef } from 'react';
-import { PROJECT_COMMAND_PREFIX } from '~/features/palette/CommandPalette';
+import { ARCHIVED_COMMAND_PREFIX, PROJECT_COMMAND_PREFIX } from '~/features/palette/CommandPalette';
 import { type Command, openPalette, useRegisterCommands } from '~/features/palette/registry';
 import { generalSettingsHref } from '~/features/workspaces/paths';
 import { WorkspaceTile } from '~/features/workspaces/WorkspaceTile';
 import { asWorkspaceSlug, type WorkspaceUrlSlug, workspacePath } from '~/lib/workspace-paths';
-import { GearGlyph, PlusGlyph, ProjectTile, SidebarGlyph } from '~/ui';
-import { homeHref, myKeysHref, type ProjectPage, projectHref, projectPageHref } from './paths';
+import { ArchiveGlyph, GearGlyph, PlusGlyph, ProjectTile, SidebarGlyph } from '~/ui';
+import {
+  archivedTasksHref,
+  homeHref,
+  myKeysHref,
+  type ProjectPage,
+  projectHref,
+  projectPageHref,
+} from './paths';
 
 // The palette's built-in commands: pages, projects and their pages, the person's other workspaces,
-// create (tasks, projects, workspaces), theme, sidebar, shortcuts.
+// create (tasks, projects, workspaces), theme, sidebar, shortcuts, and (M7, frame 086) "Show archived
+// tasks in <project>" for the project on screen.
 
 export interface ShellCommandsInput {
   /** The workspace's slug: every page the commands open is under /w/<slug>/. */
@@ -175,6 +183,19 @@ export function buildShellCommands(input: ShellCommandsInput): Command[] {
         },
       });
     }
+  }
+  const current = projects.find((project) => project.key === currentProjectKey);
+  if (current) {
+    commands.push({
+      id: `${ARCHIVED_COMMAND_PREFIX}${current.key}`,
+      title: `Show archived tasks in ${current.name}`,
+      section: 'navigate',
+      keywords: ['archive', 'archived', 'restore', current.key],
+      icon: <ArchiveGlyph />,
+      run: () => {
+        navigate(archivedTasksHref(workspace, current.key));
+      },
+    });
   }
   for (const other of input.otherWorkspaces ?? []) {
     commands.push({

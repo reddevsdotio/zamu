@@ -6,6 +6,7 @@ import {
   clientFilter,
   clientFilterFields,
   isServerFilterComplete,
+  matchesTaskFilter,
   parseTaskFilter,
   sameTaskFilter,
   type TaskFilter,
@@ -190,5 +191,35 @@ describe('toListTasksInput', () => {
       label: ['backend'],
       priority: ['urgent'],
     });
+  });
+});
+
+describe('M7 filters', () => {
+  it('reads, writes and sends check again and archived', () => {
+    const filter = parseTaskFilter({ checkAgain: 'ready', archived: 'only' });
+    expect(filter).toEqual({ checkAgain: 'ready', archived: 'only' });
+    expect(parseTaskFilter({ checkAgain: 'set', archived: 'exclude' })).toEqual({});
+    expect(taskFilterSearch(filter)).toMatchObject({ checkAgain: 'ready', archived: 'only' });
+    expect(activeFilterFields(filter)).toEqual(['checkAgain', 'archived']);
+    const input = toListTasksInput(filter);
+    expect(input).toEqual({ checkAgain: 'ready', archived: 'only' });
+    expect(ListTasksInput.parse({ ...input }).archived).toBe('only');
+    expect(withoutField(filter, 'archived')).toEqual({ checkAgain: 'ready' });
+  });
+
+  it('matches tasks by their day and archived state', () => {
+    const base = { status: 'todo' as const, priority: 'none' as const, assignee: null };
+    const waiting = { ...base, checkAgain: { on: '2026-12-03', reason: 'x' } };
+    const ready = { ...base, checkAgain: { on: '2026-11-20', reason: 'x' } };
+    const archived = { ...base, archivedAt: '2026-11-12T10:00:00.000Z' };
+    const context = { today: '2026-11-26' };
+    expect(matchesTaskFilter(waiting, { checkAgain: 'waiting' }, context)).toBe(true);
+    expect(matchesTaskFilter(ready, { checkAgain: 'waiting' }, context)).toBe(false);
+    expect(matchesTaskFilter(ready, { checkAgain: 'ready' }, context)).toBe(true);
+    expect(matchesTaskFilter(base, { checkAgain: 'ready' }, context)).toBe(false);
+    expect(matchesTaskFilter(archived, {}, context)).toBe(false);
+    expect(matchesTaskFilter(archived, { archived: 'only' }, context)).toBe(true);
+    expect(matchesTaskFilter(base, { archived: 'only' }, context)).toBe(false);
+    expect(matchesTaskFilter(base, { archived: 'include' }, context)).toBe(true);
   });
 });

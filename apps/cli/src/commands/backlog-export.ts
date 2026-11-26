@@ -1,8 +1,8 @@
 // zamu backlog export (M6): writes a project owned by Zamu out as Backlog.md files, so the folder in
 // the repository stays a readable copy. The server builds the files (GET .../backlog/export); this
 // command writes them under the Backlog.md folder and removes the task and milestone files the
-// export no longer has. It touches only the folders the export owns (tasks/, completed/,
-// milestones/): documents, decisions, drafts and config.yml are never written or removed.
+// export no longer has. It touches only the folders the export owns (tasks/, archive/tasks/ for
+// archived tasks, completed/, milestones/): documents, decisions, drafts and config.yml are never written or removed.
 import { execFile } from 'node:child_process';
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';

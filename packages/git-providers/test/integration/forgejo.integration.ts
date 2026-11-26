@@ -1,7 +1,8 @@
 // Runs the Gitea/Forgejo adapter against a real Forgejo container started by docker/forgejo/setup.sh:
 // creates a repository with a small backlog/ folder, lists and reads it, verifies a real webhook
-// delivery, and lists open pull requests that touch the folder with a read-only token. Skipped with
-// a message when Docker is not available.
+// delivery, and lists open pull requests that touch the folder with a read-only token. M7: reads
+// pull requests by number and by update, and parses real pull_request deliveries (opened, edited out
+// of WIP, merged). Skipped with a message when Docker is not available.
 
 import { execFileSync } from 'node:child_process';
 import { once } from 'node:events';
@@ -211,24 +212,39 @@ describe.skipIf(!docker)('Gitea/Forgejo adapter against a Forgejo container', ()
     await expect(guarded.whoami()).rejects.toBeInstanceOf(GitHostRefused);
   });
 
-  it('verifies a real push webhook delivery, and only the changed blob gets a new hash', async () => {
-    hookServer = createServer((request, response) => {
-      const chunks: Buffer[] = [];
-      request.on('data', (chunk: Buffer) => chunks.push(chunk));
-      request.on('end', () => {
-        deliveries.push({ headers: request.headers, body: Buffer.concat(chunks) });
-        response.writeHead(202).end();
+  /** Port of the test server that records every webhook delivery, started on first use. */
+  async function hookPort(): Promise<number> {
+    if (!hookServer) {
+      hookServer = createServer((request, response) => {
+        const chunks: Buffer[] = [];
+        request.on('data', (chunk: Buffer) => chunks.push(chunk));
+        request.on('end', () => {
+          deliveries.push({ headers: request.headers, body: Buffer.concat(chunks) });
+          response.writeHead(202).end();
+        });
       });
-    });
-    hookServer.listen(0, '0.0.0.0');
-    await once(hookServer, 'listening');
-    const hookPort = (hookServer.address() as AddressInfo).port;
+      hookServer.listen(0, '0.0.0.0');
+      await once(hookServer, 'listening');
+    }
+    return (hookServer.address() as AddressInfo).port;
+  }
+
+  async function waitForDelivery(match: (entry: Delivery) => boolean): Promise<Delivery | undefined> {
+    const deadline = Date.now() + 30_000;
+    while (!deliveries.some(match) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return deliveries.find(match);
+  }
+
+  it('verifies a real push webhook delivery, and only the changed blob gets a new hash', async () => {
+    const port = await hookPort();
 
     await api('POST', `/repos/${path}/hooks`, {
       type: 'forgejo',
       active: true,
       events: ['push'],
-      config: { url: `http://host.docker.internal:${hookPort}/hook`, content_type: 'json', secret },
+      config: { url: `http://host.docker.internal:${port}/hook`, content_type: 'json', secret },
     });
 
     const before = await provider.listTree(path, await provider.getBranchHead(path, 'main'), 'backlog');
@@ -252,11 +268,7 @@ describe.skipIf(!docker)('Gitea/Forgejo adapter against a Forgejo container', ()
     const head = await provider.getBranchHead(path, 'main');
     const isEdit = (entry: Delivery) =>
       (JSON.parse(entry.body.toString()) as { after?: string }).after === head;
-    const deadline = Date.now() + 30_000;
-    while (!deliveries.some(isEdit) && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    const delivery = deliveries.find(isEdit);
+    const delivery = await waitForDelivery(isEdit);
     expect(
       delivery,
       'no webhook delivery for the edit reached the test server within 30 seconds',
@@ -342,5 +354,118 @@ describe.skipIf(!docker)('Gitea/Forgejo adapter against a Forgejo container', ()
     await expect(readOnly.listOpenRequests?.(path, 'docs')).resolves.toMatchObject({
       requests: [{ headBranch: 'docs-only' }],
     });
+  });
+  it('reads pull requests and parses real pull_request deliveries (M7)', async () => {
+    const port = await hookPort();
+    const requestSecret = `${secret}-requests`;
+    await api('POST', `/repos/${path}/hooks`, {
+      type: 'forgejo',
+      active: true,
+      events: ['pull_request', 'pull_request_sync'],
+      config: {
+        url: `http://host.docker.internal:${port}/requests`,
+        content_type: 'json',
+        secret: requestSecret,
+      },
+    });
+    const isRequestEvent = (action: string, number: number) => (entry: Delivery) => {
+      if (entry.headers['x-forgejo-event'] !== 'pull_request') return false;
+      const body = JSON.parse(entry.body.toString()) as { action?: string; number?: number };
+      return body.action === action && body.number === number;
+    };
+
+    await api('POST', `/repos/${path}/contents`, {
+      branch: 'main',
+      new_branch: 'task/m7',
+      message: 'Add a task for M7',
+      files: [
+        {
+          operation: 'create',
+          path: 'backlog/tasks/back-14 - Task 14.md',
+          content: Buffer.from('---\nid: BACK-14\n---\n').toString('base64'),
+        },
+      ],
+    });
+    const created = (await api('POST', `/repos/${path}/pulls`, {
+      base: 'main',
+      head: 'task/m7',
+      title: 'WIP: Task 14',
+      body: 'Closes: BACK-14',
+    })) as { number: number; html_url: string };
+
+    const opened = await waitForDelivery(isRequestEvent('opened', created.number));
+    expect(opened, 'no pull_request delivery for the opening within 30 seconds').toBeDefined();
+    if (!opened) return;
+    expect(provider.verifyWebhook(opened.headers, opened.body, requestSecret)).toMatchObject({
+      ok: true,
+      event: 'pull_request',
+      eventName: 'pull_request',
+      action: 'opened',
+      request: {
+        number: created.number,
+        title: 'WIP: Task 14',
+        body: 'Closes: BACK-14',
+        state: 'draft',
+        headBranch: 'task/m7',
+        baseBranch: 'main',
+        author: owner,
+        mergedBy: null,
+        webUrl: created.html_url,
+        mergedAt: null,
+        closedAt: null,
+      },
+    });
+    expect(provider.verifyWebhook(opened.headers, opened.body, secret)).toEqual({
+      ok: false,
+      reason: 'bad_signature',
+    });
+
+    await api('PATCH', `/repos/${path}/pulls/${created.number}`, { title: 'Task 14' });
+    const edited = await waitForDelivery(isRequestEvent('edited', created.number));
+    expect(edited, 'no pull_request delivery for the title edit within 30 seconds').toBeDefined();
+    if (!edited) return;
+    expect(provider.verifyWebhook(edited.headers, edited.body, requestSecret)).toMatchObject({
+      action: 'ready',
+      request: { state: 'open', title: 'Task 14' },
+    });
+
+    await expect(provider.getRequest?.(path, created.number)).resolves.toMatchObject({
+      number: created.number,
+      state: 'open',
+      headBranch: 'task/m7',
+      author: owner,
+    });
+    await expect(provider.getRequest?.(path, 9999)).resolves.toBeNull();
+
+    // Forgejo checks mergeability in the background and refuses a merge until it is done.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await api('POST', `/repos/${path}/pulls/${created.number}/merge`, { Do: 'merge' });
+        break;
+      } catch (error) {
+        if (attempt >= 20) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+    const merged = await waitForDelivery(isRequestEvent('closed', created.number));
+    expect(merged, 'no pull_request delivery for the merge within 30 seconds').toBeDefined();
+    if (!merged) return;
+    const result = provider.verifyWebhook(merged.headers, merged.body, requestSecret);
+    expect(result).toMatchObject({ action: 'merged', request: { state: 'merged', mergedBy: owner } });
+    const mergedRequest = result.ok && result.event === 'pull_request' ? result.request : null;
+    expect(mergedRequest?.mergedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(mergedRequest?.closedAt).toBeTruthy();
+
+    const fromApi = await provider.getRequest?.(path, created.number);
+    expect(fromApi).toMatchObject({ state: 'merged', mergedBy: owner, body: 'Closes: BACK-14' });
+
+    const recent = await provider.listRequestsUpdatedSince?.(path, null, 100);
+    expect(recent?.[0]).toMatchObject({ number: created.number, state: 'merged' });
+    const later = await provider.listRequestsUpdatedSince?.(
+      path,
+      new Date(Date.parse(fromApi?.updatedAt ?? '') + 1000),
+      100,
+    );
+    expect(later).toEqual([]);
   });
 });

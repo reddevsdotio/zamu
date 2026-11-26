@@ -1,7 +1,7 @@
 # REST API
 
 The web app, the `zamu` CLI and your scripts use the same REST API at `/api/v1`. The server publishes the full
-OpenAPI document at `GET /api/v1/openapi.json`; this page is an overview, with what 0.7.0, 0.9.0 and 0.10.0
+OpenAPI document at `GET /api/v1/openapi.json`; this page is an overview, with what each release since 0.7.0
 added.
 
 ## Requests
@@ -75,6 +75,8 @@ workspaces; that happens in the web app.
 | `POST /tasks/bulk`          | Change up to 100 tasks at once (0.7.0).                           |
 | `GET /tasks/{key}/timeline` | Activity, comments and notes, oldest first.                       |
 | `GET /tasks/{key}/comments` | Comments and notes. `POST` adds one.                              |
+| `POST /tasks/archive`       | Archive up to 100 tasks, all or nothing.                          |
+| `POST /tasks/restore`       | Restore up to 100 archived tasks, all or nothing.                 |
 
 ### Fields added in 0.7.0
 
@@ -182,22 +184,82 @@ refused task fails the whole request. The problem lists the open items, criteria
 }
 ```
 
+### Pull requests, archive and check-again days
+
+A task now has:
+- `workBranch`: the git branch the task was started from with `zamu`, or null (see below);
+- `pullRequests`: `[{ provider, number, title, url, state, headBranch, baseBranch, author, mergedBy, how,
+  linkedBy, linkedAt, openedAt, mergedAt, closedAt, updatedAt }]`. `state` is `open`, `draft`, `merged` or
+  `closed`; `how` is `branch`, `description` or `hand`; `provider` is `github`, `gitlab` or `gitea`;
+- `checkAgain`: `{ on, reason }` or null. `on` is a day, `YYYY-MM-DD`;
+- `closedAt`: when the task last entered Done or Canceled, null while it is open;
+- `archivedAt` and `archivedBy`: null unless archived. `archivedBy` is null when the nightly job or a
+  Backlog.md refresh archived it;
+- `mergedOpen`: `{ at, openCriteria, openDoneItems }` while a merge closed the task with items still open,
+  else null.
+
+List rows carry `checkAgain`, `archivedAt`, `pullRequest` (the newest request, with its `state`) and
+`pullRequestCount`.
+
+History entries that no person or agent made have `actor: null` and carry `system`: `{ kind: "git",
+provider }` for a request event, `{ kind: "zamu" }` for Zamu's own jobs (the nightly archive, cycle ends) or
+`{ kind: "backlog" }`. `cause` says why: `{ kind: "pull_request", provider, number, url, title, event, by }`
+with `event` `opened`, `ready`, `reopened`, `merged` or `closed`, or `{ kind: "archive", afterDays }`. New
+entry types: `task.archived`, `task.unarchived`, `task.pull_request_linked` and
+`task.pull_request_unlinked`.
+
+The work branch comes from the `x-zamu-branch` header: a write with an API key that sets the status to In
+progress or In review records it, unless it is the repository's default branch (`main` or `master` while
+Zamu has not read it). Sessions never record one. Open requests Zamu knows for that branch link at once.
+
+`PATCH /tasks/{key}` takes `checkAgain: { on, reason }` (both required; the reason is 1 to 200 characters,
+and any day works, past days included) or `checkAgain: null` to clear it. `POST /tasks` takes it too. A move
+to Done or Canceled clears it.
+
+| Method and path                              | What it does                                                         |
+| -------------------------------------------- | -------------------------------------------------------------------- |
+| `POST /tasks/{key}/pull-requests`            | Link a request by hand: `{ url, dryRun? }`. Returns the link.        |
+| `DELETE /tasks/{key}/pull-requests/{n}`      | Unlink request `n` (`204`). It stays off until linked by hand again. |
+| `POST /tasks/archive`, `POST /tasks/restore` | `{ keys }`, up to 100. Returns `{ items }` in the order sent.        |
+
+`POST /tasks/{key}/pull-requests` reads the request from the host through the project's repository link.
+With `dryRun: true` it returns the request as it would link and writes nothing. Otherwise it links it and
+applies it like a webhook event, so linking an open request moves the task to In review and a merged one to
+Done when the project closes on merge. A project without a repository gets `409 CONFLICT`.
+
+`POST /tasks/archive` archives tasks in any status; anyone who may write the task may, agents included.
+Restoring a Done or Canceled task sets `closedAt` to now, so the project's archive days count from the
+restore. Both refuse tasks of a mirrored project with `409 TASK_MIRRORED`: there, Backlog.md's
+`archive/tasks/` folder decides. An archived task refuses every other write, comments and notes included.
+
+The rules:
+
+| Code                       | Status | When                                                                            |
+| -------------------------- | ------ | ------------------------------------------------------------------------------- |
+| `TASK_ARCHIVED`            | 409    | A write to an archived task other than restore. Restore it first.               |
+| `REQUEST_OTHER_REPOSITORY` | 422    | A request address of another repository. `repository` names the project's one.  |
+| `NOT_A_REQUEST`            | 422    | An address that is not a pull or merge request.                                 |
+| `REQUEST_NOT_FOUND`        | 404    | The host has no such request, or (`DELETE`) the task does not link that number. |
+| `TASK_MIRRORED`            | 409    | Archiving or restoring a task of a mirrored project.                            |
+
 ### List filters and sort
 
 `GET /tasks` takes these parameters besides `project`, `status`, `priority`, `q`, `limit` and `cursor`:
 
-| Parameter   | Values                                                                                      |
-| ----------- | ------------------------------------------------------------------------------------------- |
-| `assignee`  | `me`, `agents`, `none` or user ids; repeat for any of several (0.7.0).                      |
-| `milestone` | Milestone ids or `none`; repeat for any of several (0.7.0).                                 |
-| `cycle`     | A number, `current`, `next` or `none`; repeat for any of several (0.7.0).                   |
-| `label`     | Label ids; a task matches when it has any of them.                                          |
-| `due`       | `overdue` (open, due before today), `soon` (open, due today or in 2 days), `set`, `none`.   |
-| `blocked`   | `true` for tasks with an open blocker, `false` for the others.                              |
-| `topLevel`  | `true` leaves subtasks out.                                                                 |
-| `parent`    | A task key: only its subtasks.                                                              |
-| `sort`      | `priority`, `due` (soonest first, none last), `updated`, `created`, `manual` (board order). |
-| `hidden`    | `only` for tasks removed from Backlog.md, `include` for every task.                         |
+| Parameter    | Values                                                                                      |
+| ------------ | ------------------------------------------------------------------------------------------- |
+| `assignee`   | `me`, `agents`, `none` or user ids; repeat for any of several (0.7.0).                      |
+| `milestone`  | Milestone ids or `none`; repeat for any of several (0.7.0).                                 |
+| `cycle`      | A number, `current`, `next` or `none`; repeat for any of several (0.7.0).                   |
+| `label`      | Label ids; a task matches when it has any of them.                                          |
+| `due`        | `overdue` (open, due before today), `soon` (open, due today or in 2 days), `set`, `none`.   |
+| `blocked`    | `true` for tasks with an open blocker, `false` for the others.                              |
+| `topLevel`   | `true` leaves subtasks out.                                                                 |
+| `parent`     | A task key: only its subtasks.                                                              |
+| `sort`       | `priority`, `due` (soonest first, none last), `updated`, `created`, `manual` (board order). |
+| `hidden`     | `only` for tasks removed from Backlog.md, `include` for every task.                         |
+| `archived`   | `exclude` (the default) leaves archived tasks out, `include` adds them, `only` lists them.  |
+| `checkAgain` | `waiting` (the day is after today), `ready` (today or earlier), `set`, `none`.              |
 
 Without `sort`, `order=list` (the default) groups by status, then priority, then last update, and
 `order=board` by status, then board rank. "Today" is the server's day in `APP_TIME_ZONE`.
@@ -216,6 +278,43 @@ It takes `status`, `priority`, `assignee`, `milestone`, `cycle`, `dueDate`, `add
 sent them. A mirrored task fails the whole request with `409 TASK_MIRRORED`. Milestone and cycle need every
 task in one project (`422 NOT_SAME_PROJECT`).
 
+## Repositories
+
+| Method and path                                      | What it does                                                    |
+| ---------------------------------------------------- | --------------------------------------------------------------- |
+| `GET /projects/{project}/repository`                 | The repository settings. Anyone who reads the project.          |
+| `PATCH /projects/{project}/repository`               | `{ connectionId?, closeOnMerge? }`. Owners and admins.          |
+| `POST /projects/{project}/repository/webhook-secret` | A new webhook secret: `{ url, secret }`, returned once.         |
+| `POST /projects/{project}/repository/sync`           | Queue the hourly check now (`202`). Owners and admins.          |
+| `GET /projects/{project}/archive-preview?days=N`     | `{ project, days, count }`: what the nightly run would archive. |
+
+The settings are `{ project, repository, provider, connection, defaultBranch, closeOnMerge, mirrored, webhook:
+{ url, secretSet, lastAt, lastStatus, coveredByBacklog }, sync: { lastAt, error, nextAt }, canEdit }`.
+`webhook` is null when the project has no repository. The secret itself is never returned after
+`webhook-secret`. `connectionId` takes a connection for the repository's host (`422` for another host) or null
+to read the repository without a token; a change queues a check. `closeOnMerge` on a mirrored project gets
+`409 PROJECT_MIRRORED`. A project without a repository gets `409 CONFLICT` from `sync`.
+
+`PATCH /projects/{project}` takes `archiveAfterDays`, 1 to 365, or null to turn the nightly archive off
+(owners and admins; `409 PROJECT_MIRRORED` for a mirrored project). Projects return it as
+`archiveAfterDays`; new projects start at 14. The preview counts with the same rule as the job: Done and
+Canceled tasks closed more than `days` days ago in `APP_TIME_ZONE`, without the ones a merge closed with
+items open. A mirrored project counts 0.
+
+### Webhook
+
+Git hosts post request events to a URL outside `/api/v1`, one per project:
+
+```text
+POST {PUBLIC_URL}/api/webhooks/repository/{webhookId}
+```
+
+It answers with a bare status: `202` for a request event (queued), `200` for a ping, another event or a
+signed payload it can't read, `401` for a missing or wrong signature, `404` for an unknown id, `410` when
+the project no longer has a repository, `413` over 25 MB. The Backlog.md webhook of a mirrored project
+(`/api/webhooks/backlog/{id}`) takes request events too and answers `202` for them. Setup per host is in
+[repositories.md](repositories.md#webhooks).
+
 ## Backlog.md export
 
 | Method and path                          | What it does                                                        |
@@ -223,9 +322,10 @@ task in one project (`422 NOT_SAME_PROJECT`).
 | `GET /projects/{project}/backlog/export` | The project as Backlog.md files, for `zamu backlog export` (0.9.0). |
 
 It returns `{ project, format, generatedAt, files: [{ path, content }], removedPrefixes }`. Paths are relative
-to the Backlog.md folder: every task that is not hidden under `tasks/`, milestones under `milestones/`.
-`format` names the Backlog.md file format the files target. `removedPrefixes` is `tasks/`, `completed/` and
-`milestones/`: Markdown files there that are not in `files` are stale. A read-only key can call it. A project
+to the Backlog.md folder: every task that is not hidden under `tasks/`, archived tasks under
+`archive/tasks/`, milestones under `milestones/`. `format` names the Backlog.md file format the files
+target. `removedPrefixes` is `tasks/`, `archive/tasks/`, `completed/` and `milestones/`: Markdown files
+there that are not in `files` are stale. A read-only key can call it. A project
 that still mirrors Backlog.md gets `409 PROJECT_MIRRORED`. See
 [backlog-md.md](backlog-md.md#export-to-backlogmd).
 
@@ -245,16 +345,18 @@ colour still changes.
 
 ## Home
 
-| Method and path    | What it does                                                     |
-| ------------------ | ---------------------------------------------------------------- |
-| `GET /home`        | Home: groups of tasks, the deadlines strip and the agent cards.  |
-| `GET /home/counts` | The sidebar count: review, mentions, blocked, overdue and total. |
+| Method and path    | What it does                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------------- |
+| `GET /home`        | Home: groups of tasks, the deadlines strip and the agent cards.                          |
+| `GET /home/counts` | The sidebar count: review, mergedOpen, checkAgain, mentions, blocked, overdue and total. |
 
 `GET /home` takes `tab` (`mine`, the default, `everyone` or `agents`) and the filters `project` (keys),
 `label` (names, merged across projects) and `priority`. It returns:
 - `counts`: the number of items on each tab;
-- `groups`, in order. Mine has `review`, `mentions`, `blocked`, `overdue` and `assigned`; Everyone has
-  `review`, `blocked`, `overdue` and `dueThisWeek`; Agents has `waiting`. Each group has `total` and up to 50
+- `groups`, in order. Mine has `review`, `mergedOpen`, `checkAgain`, `mentions`, `blocked`, `overdue` and
+  `assigned`; Everyone has `review`, `mergedOpen`, `blocked`, `overdue` and `dueThisWeek`; Agents has
+  `waiting`. `mergedOpen` holds Done tasks a merge closed with items open; `checkAgain` your open tasks whose
+  check-again day has come. Archived tasks are never on Home. Each group has `total` and up to 50
   `items`: `{ task, reason, relation, pills }`. A task shows once, in its first group;
 - `deadlines`: milestones and cycles that end within 2 days, and tasks due within 2 days or overdue (empty on
   Agents);

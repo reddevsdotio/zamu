@@ -10,6 +10,8 @@ import {
   greeting,
   groupHint,
   groupTitle,
+  mergedPillText,
+  mergedWhen,
   needYouText,
   pillView,
   rowAvatar,
@@ -197,6 +199,68 @@ describe('rows', () => {
     const mine = item({ kind: 'assigned' }, { task: task({ assignee: { ...ANA, responsible: null } }) });
     expect(rowAvatar(mine, 'mine', ANA.id)).toBeNull();
     expect(rowAvatar(mine, 'everyone', ANA.id)?.name).toBe('Ana Ruiz');
+  });
+});
+
+describe('M7 groups', () => {
+  const merged = (provider: 'github' | 'gitlab', openDoneItems: number) =>
+    item({
+      kind: 'mergedOpen',
+      pullRequest: { provider, number: 482, title: 'Retry', url: 'https://example.com/pull/482' },
+      openCriteria: 2,
+      openDoneItems,
+      at: minutesAgo(26 * 60),
+    });
+
+  it('names the groups and explains them', () => {
+    expect(groupTitle('mergedOpen', 'mine')).toBe('Merged with open criteria');
+    expect(groupTitle('mergedOpen', 'everyone')).toBe('Merged with open criteria');
+    expect(groupTitle('checkAgain', 'mine')).toBe('Check again');
+    expect(groupHint({ key: 'mergedOpen', items: [] }, 'mine')).toBe(
+      'Done through a merge. Check the criteria, waive them or reopen the task.',
+    );
+    expect(groupHint({ key: 'mergedOpen', items: [] }, 'everyone')).toBe(
+      'Done through a merge, with criteria still open.',
+    );
+    expect(groupHint({ key: 'checkAgain', items: [] }, 'mine')).toBe('The day you set has come.');
+  });
+
+  it('words merged rows: the pill, the request and when', () => {
+    expect(mergedPillText(merged('github', 0))).toBe('Merged with 2 open criteria');
+    expect(mergedPillText(merged('github', 1))).toBe('Merged with 3 open items');
+    expect(whyText(merged('github', 0), 'mine', ANA.id, NOW)).toBe('#482 merged yesterday');
+    expect(whyText(merged('gitlab', 0), 'everyone', ANA.id, NOW)).toBe('!482 merged yesterday');
+    // Before the clock is known the time is left out.
+    expect(whyText(merged('github', 0), 'mine', ANA.id, null)).toBe('#482 merged');
+    const by = item({
+      kind: 'mergedOpen',
+      pullRequest: { provider: 'github', number: 482, title: 'Retry', url: 'https://example.com/pull/482' },
+      mergedBy: 'tomas',
+      openCriteria: 2,
+      openDoneItems: 0,
+      at: minutesAgo(26 * 60),
+    });
+    expect(whyText(by, 'mine', ANA.id, NOW)).toBe('#482 merged yesterday by tomas');
+    expect(mergedPillText(item({ kind: 'assigned' }))).toBe('');
+  });
+
+  it('counts merge days by the calendar', () => {
+    const at = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
+    expect(mergedWhen(at(0), NOW)).toBe('today');
+    expect(mergedWhen(at(72), NOW)).toBe('3 days ago');
+  });
+
+  it('gives a check-again row its reason, and words the pills elsewhere', () => {
+    const row = item({ kind: 'checkAgain', on: '2026-11-03', reason: 'Wait for the bank', daysAgo: 0 });
+    expect(whyText(row, 'mine', ANA.id, NOW)).toBe('Wait for the bank');
+    expect(pillView({ kind: 'mergedOpen', openItems: 1 })).toEqual({
+      text: 'merged, 1 open item',
+      tone: 'accent',
+    });
+    expect(pillView({ kind: 'checkAgain', on: '2026-11-03' })).toEqual({
+      text: 'check again',
+      tone: 'accent',
+    });
   });
 });
 

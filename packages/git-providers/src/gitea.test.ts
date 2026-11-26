@@ -130,3 +130,80 @@ describe('Gitea and Forgejo open pull requests (M6)', () => {
     expect(server.unused()).toEqual([]);
   });
 });
+
+describe('Gitea and Forgejo pull requests (M7)', () => {
+  function forgejo() {
+    const server = replay(loadFixture('gitea', 'requests'));
+    const provider = createProvider({
+      provider: 'gitea',
+      host: 'forgejo.example.com',
+      token: FIXTURE_TOKEN,
+      fetch: server.fetch,
+    });
+    return { provider, server };
+  }
+
+  it('reads one pull request, with drafts from the flag or the title prefix', async () => {
+    const { provider } = forgejo();
+    await expect(provider.getRequest?.('northwind/payments', 1202)).resolves.toEqual({
+      number: 1202,
+      title: 'Add refunds endpoint',
+      body: '',
+      state: 'merged',
+      headBranch: 'task/pay-1202',
+      baseBranch: 'main',
+      author: 'claude-dev',
+      mergedBy: 'ana-dev',
+      webUrl: 'https://forgejo.example.com/northwind/payments/pulls/1202',
+      openedAt: '2026-11-20T09:00:00.000Z',
+      mergedAt: '2026-11-24T18:05:00.000Z',
+      closedAt: '2026-11-24T18:05:00.000Z',
+      updatedAt: '2026-11-24T18:05:00.000Z',
+    });
+    await expect(provider.getRequest?.('northwind/payments', 1203)).resolves.toMatchObject({
+      state: 'draft',
+      title: 'WIP: split the ledger',
+    });
+    // A release without the draft field: the [WIP] prefix decides.
+    await expect(provider.getRequest?.('northwind/payments', 1100)).resolves.toMatchObject({
+      state: 'draft',
+    });
+    await expect(provider.getRequest?.('northwind/payments', 12)).resolves.toBeNull();
+  });
+
+  it('lists pull requests by recent update in one page', async () => {
+    const { provider, server } = forgejo();
+    const list = await provider.listRequestsUpdatedSince?.('northwind/payments', null, 100);
+    expect(list?.map((request) => [request.number, request.state, request.updatedAt])).toEqual([
+      [1204, 'open', '2026-11-25T16:40:00.000Z'],
+      [1203, 'draft', '2026-11-25T12:00:00.000Z'],
+      [1202, 'merged', '2026-11-24T18:05:00.000Z'],
+      [1201, 'closed', '2026-11-22T09:30:00.000Z'],
+    ]);
+    expect(list?.[0]?.body).toBe('Closes: PAY-12');
+    expect(server.calls).toHaveLength(1);
+  });
+
+  it('sends only GET requests and never repeats the token Forgejo echoes', async () => {
+    const { provider, server } = forgejo();
+    await provider.getRequest?.('northwind/payments', 1202);
+    await provider.listRequestsUpdatedSince?.('northwind/payments', new Date('2026-11-25T00:00:00Z'), 100);
+    const errors = [
+      await provider.getRequest?.('northwind/payments', 1199).catch((caught: unknown) => caught),
+      await provider
+        .listRequestsUpdatedSince?.('northwind/payments', null, 100)
+        .catch((caught: unknown) => caught),
+    ];
+    for (const error of errors) {
+      expect(error).toBeInstanceOf(GitUnauthorized);
+      expect(String(error)).not.toContain(FIXTURE_TOKEN);
+      expect(JSON.stringify(error)).not.toContain(FIXTURE_TOKEN);
+    }
+    expect(server.calls.map((call) => call.method)).toEqual(['GET', 'GET', 'GET', 'GET']);
+    expect(server.unused()).toEqual([
+      'https://forgejo.example.com/api/v1/repos/northwind/payments/pulls/1203',
+      'https://forgejo.example.com/api/v1/repos/northwind/payments/pulls/1100',
+      'https://forgejo.example.com/api/v1/repos/northwind/payments/pulls/12',
+    ]);
+  });
+});

@@ -125,12 +125,12 @@ next refresh applies them to every task.
 
 ## What a mirror owns
 
-| Object    | Comes from Backlog.md                                                                                                          | Editable here                                  |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
-| Task      | Title, description, status, priority, assignee, milestone, creation date, labels, due date, blockers, parent task, work record | Cycle, order inside its board column, comments |
-| Label     | Name, and creating or deleting labels                                                                                          | Colour                                         |
-| Milestone | Name, description, target date, status, and creating or deleting milestones                                                    | Nothing                                        |
-| Project   | Key (it has tasks), repository, and turning milestones off                                                                     | Name, description, cycles switch               |
+| Object    | Comes from Backlog.md                                                                                                                    | Editable here                                                   |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Task      | Title, description, status, priority, assignee, milestone, creation date, labels, due date, blockers, parent task, work record, archived | Cycle, order inside its board column, comments, check-again day |
+| Label     | Name, and creating or deleting labels                                                                                                    | Colour                                                          |
+| Milestone | Name, description, target date, status, and creating or deleting milestones                                                              | Nothing                                                         |
+| Project   | Key (it has tasks), repository, and turning milestones off                                                                               | Name, description, cycles switch                                |
 
 In the web app, the task view shows one small Backlog.md badge, which links to the file. A field shows a lock
 only when you point at it or try to change it, and the pickers open read-only. The board does not let a
@@ -259,8 +259,23 @@ To list hidden tasks, use the "Removed from Backlog.md" filter on the task list
 (`/w/<slug>/p/PAY?hidden=only`), or `GET /api/v1/tasks?project=PAY&hidden=only`. When a file with the same ID
 comes back, the task comes back with the same key.
 
-Archived tasks (`archive/tasks/`, and the old `completed/` folder) are not hidden: they come in with their
-own status, usually Done.
+Archived tasks (`archive/tasks/`, and the old `completed/` folder) are not hidden: they are archived, see
+below.
+
+## Archived tasks
+
+A task file under `archive/tasks/`, or the older `completed/` folder, is an archived task here: it keeps its
+status, usually Done, and leaves the list, the board, Home and the counts like any archived task (see
+[guide.md](guide.md#archive)). Moving the file back under `tasks/` and pushing restores it at the next
+refresh. Both moves are history lines by Backlog.md, with the commit.
+
+In a mirrored project the folder decides. Archive and Restore are not offered, the API and `zamu` refuse
+them with `409 TASK_MIRRORED` (exit code 6) and the folder to move the file to, and the project has no
+archive setting: Settings > Archive says that archiving follows the `archive/tasks/` folder. An import brings
+the archived files in archived. The export writes archived tasks back to `archive/tasks/` (see below).
+
+At the upgrade that brought the archive, active mirrors archived the tasks whose files were in those
+folders; projects imported earlier kept those tasks as they were.
 
 ## Webhooks
 
@@ -276,21 +291,27 @@ https://projects.example.com/api/webhooks/backlog/<id>
 ```
 
 **GitLab.** Open the repository > Settings > Webhooks > Add new webhook. Paste the URL, and the secret into
-Secret token. Under Trigger, tick Push events only, for the default branch. Save, then press Test > Push
-events.
+Secret token. Under Trigger, tick Push events, for the default branch (and Merge request events, see below).
+Save, then press Test > Push events.
 
 **GitHub.** Open the repository > Settings > Webhooks > Add webhook. Paste the URL into Payload URL, pick
-`application/json` as the content type, and paste the secret into Secret. Keep "Just the push event". GitHub
-sends a ping on save.
+`application/json` as the content type, and paste the secret into Secret. Keep "Just the push event", or
+pick Pushes and Pull requests under "Let me select individual events" (see below). GitHub sends a ping on
+save.
 
 **Gitea / Forgejo.** Open the repository > Settings > Webhooks > Add webhook > Forgejo (or Gitea). Paste the
 URL into Target URL, keep POST and `application/json`, and paste the secret into Secret. Under Trigger on,
 pick Push events and set the branch filter to the default branch. Save, then open the webhook and press Test
 delivery.
 
+The same webhook carries pull request events for the project's repository (see
+[repositories.md](repositories.md)): tick Pull requests (GitHub), Merge request events (GitLab) or Pull
+request (Gitea and Forgejo, under Custom events) next to the push events, and the project needs no second
+webhook. Requests link to the mirrored tasks but never move them: the files own the status.
+
 The server checks GitHub's `X-Hub-Signature-256`, GitLab's `X-Gitlab-Token`, and Gitea's or Forgejo's
 signature header against the secret. A request with a wrong signature or an unknown ID gets `404`. Pushes to
-other branches get `204` and change nothing. After the switch to Zamu the URL answers `410 Gone`; remove
+other branches get `204` and change nothing, and request events get `202`. After the switch to Zamu the URL answers `410 Gone`; remove
 the webhook at the host then. Once the project is deleted the URL answers `404`; remove the webhook at the
 host too.
 
@@ -351,8 +372,9 @@ The files come from `GET /api/v1/projects/{project}/backlog/export`, which a rea
 export targets the Backlog.md file format of release 1.57.
 
 What it writes:
-- every task that is not hidden, under `tasks/`, Done and Canceled ones included (Backlog.md keeps them there
-  too), with the front matter Backlog.md reads: status, assignee, labels, milestone, dependencies, parent,
+- every task that is not hidden or archived, under `tasks/`, Done and Canceled ones included (Backlog.md
+  keeps them there too), and archived tasks under `archive/tasks/` with the same file name, with the front
+  matter Backlog.md reads: status, assignee, labels, milestone, dependencies, parent,
   priority, due date and the dates;
 - the description, the acceptance criteria and the definition of done as checklists, the plan, the
   implementation notes and the final summary. The implementation notes hold the notes read from the file
@@ -364,12 +386,13 @@ What it writes:
 Task IDs use the switched mirror's own prefix (`PAY-142` stays `PAY-142`), or else the letters of the project
 key, so a later import keeps every number.
 
-What it removes: Markdown files under `tasks/`, `completed/` and `milestones/` that the export no longer has,
-such as tasks deleted in Zamu or copies in the old `completed/` folder.
+What it removes: Markdown files under `tasks/`, `archive/tasks/`, `completed/` and `milestones/` that the
+export no longer has, such as tasks deleted in Zamu, the copy in the other folder of a task archived or
+restored since the last export, or copies in the old `completed/` folder.
 
 What it leaves alone: everything else in the folder, such as `config.yml`, documents, decisions, drafts and
-files that aren't Markdown. The export refuses when `tasks/`, `completed/` or `milestones/` have uncommitted
-changes, untracked files included; commit or discard them, or pass `--force`.
+files that aren't Markdown. The export refuses when `tasks/`, `archive/tasks/`, `completed/` or
+`milestones/` have uncommitted changes, untracked files included; commit or discard them, or pass `--force`.
 
 The export does not write `config.yml`. The `backlog` CLI lists no task without a `config.yml` whose
 `task_prefix` matches the exported IDs (`task_prefix: "pay"` for `PAY-142`), so zamu warns when the file is

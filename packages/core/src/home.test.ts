@@ -203,7 +203,15 @@ describe('Mine', () => {
 
   it('returns the Mine groups in order, each task once, in its first group', () => {
     expect(result.tab).toBe('mine');
-    expect(result.groups.map((g) => g.key)).toEqual(['review', 'mentions', 'blocked', 'overdue', 'assigned']);
+    expect(result.groups.map((g) => g.key)).toEqual([
+      'review',
+      'mergedOpen',
+      'checkAgain',
+      'mentions',
+      'blocked',
+      'overdue',
+      'assigned',
+    ]);
     const all = result.groups.flatMap((g) => keys(g.items));
     expect(new Set(all).size).toBe(all.length);
     expect(keys(group(result, 'review').items).sort()).toEqual([k('agentReview'), k('createdReview')].sort());
@@ -297,7 +305,15 @@ describe('Mine', () => {
 
   it('counts review, mentions, blocked and overdue for the sidebar and the Mine tab', async () => {
     const counts = await getHomeCounts(clock(), world.memberActor);
-    expect(counts).toEqual({ review: 2, mentions: 2, blocked: 1, overdue: 2, total: 7 });
+    expect(counts).toEqual({
+      review: 2,
+      mergedOpen: 0,
+      checkAgain: 0,
+      mentions: 2,
+      blocked: 1,
+      overdue: 2,
+      total: 7,
+    });
     expect(result.counts.mine).toBe(7);
     expect(result.counts.agents).toBe(1);
     expect(group(result, 'assigned').total).toBe(4);
@@ -342,7 +358,13 @@ describe('Everyone', () => {
   const k = (name: string) => keyOf(p, t[name] as TaskRow);
 
   it('groups needs review, blocked, overdue and due this week, without mentions', () => {
-    expect(result.groups.map((g) => g.key)).toEqual(['review', 'blocked', 'overdue', 'dueThisWeek']);
+    expect(result.groups.map((g) => g.key)).toEqual([
+      'review',
+      'mergedOpen',
+      'blocked',
+      'overdue',
+      'dueThisWeek',
+    ]);
     expect(keys(group(result, 'review').items)).toEqual([k('review')]);
     expect(keys(group(result, 'blocked').items)).toEqual([k('blocked')]);
     expect(keys(group(result, 'overdue').items)).toEqual([k('overdue')]);
@@ -514,6 +536,8 @@ describe('filters and readable projects', () => {
     expect(result.groups.flatMap((g) => g.items).every((item) => item.task.project.key === a.key)).toBe(true);
     expect(await getHomeCounts(clock(), scoped)).toEqual({
       review: 0,
+      mergedOpen: 0,
+      checkAgain: 0,
       mentions: 0,
       blocked: 0,
       overdue: 0,

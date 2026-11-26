@@ -20,7 +20,7 @@ export interface JobRecord {
 export interface RunJobContext {
   db: Db;
   logger: Logger;
-  /** APP_TIME_ZONE, passed to core so cycles end at midnight in that zone. */
+  /** APP_TIME_ZONE, passed to core so cycles end at midnight and archive days count in that zone. */
   timeZone?: string;
   /**
    * APP_ENCRYPTION_KEY, GIT_ALLOW_PRIVATE_HOSTS and GIT_HTTP_HOSTS (and a provider factory in tests)

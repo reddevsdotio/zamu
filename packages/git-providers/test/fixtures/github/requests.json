@@ -1,0 +1,418 @@
+{
+  "description": "GET /repos/{owner}/{repo}/pulls/{number} for a merged, a draft and a reopened pull request and an issue number, and GET /pulls?state=all&sort=updated&direction=desc (no merged or merged_by in list entries).",
+  "source": "Hand-written from the GitHub REST docs (pulls: get a pull request, list pull requests, API version 2022-11-28) on a made-up repository; shapes trimmed.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/northwind/payments/pulls/479"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "url": "https://api.github.com/repos/northwind/payments/pulls/479",
+          "id": 2000000479,
+          "html_url": "https://github.com/northwind/payments/pull/479",
+          "number": 479,
+          "state": "closed",
+          "locked": false,
+          "title": "Add refunds endpoint",
+          "user": {
+            "login": "claude-dev",
+            "id": 11846,
+            "type": "User"
+          },
+          "body": "Closes: PAY-9",
+          "created_at": "2026-11-21T11:00:00Z",
+          "updated_at": "2026-11-24T18:05:01Z",
+          "closed_at": "2026-11-24T18:05:00Z",
+          "merged_at": "2026-11-24T18:05:00Z",
+          "merge_commit_sha": "e5bd3914e2e596debea16f433f57875b5b90bcd6",
+          "draft": false,
+          "head": {
+            "label": "northwind:task/pay-479",
+            "ref": "task/pay-479",
+            "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+          },
+          "base": {
+            "label": "northwind:main",
+            "ref": "main",
+            "sha": "9049f1265b7d61be4a8904a9a27120d2064dab3b"
+          },
+          "author_association": "MEMBER",
+          "merged": true,
+          "merged_by": {
+            "login": "ana-dev",
+            "id": 96307,
+            "type": "User"
+          },
+          "mergeable": null,
+          "comments": 0
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/northwind/payments/pulls/481"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "url": "https://api.github.com/repos/northwind/payments/pulls/481",
+          "id": 2000000481,
+          "html_url": "https://github.com/northwind/payments/pull/481",
+          "number": 481,
+          "state": "open",
+          "locked": false,
+          "title": "Draft: split the ledger",
+          "user": {
+            "login": "claude-dev",
+            "id": 11846,
+            "type": "User"
+          },
+          "body": null,
+          "created_at": "2026-11-23T08:00:00Z",
+          "updated_at": "2026-11-25T12:00:00Z",
+          "closed_at": null,
+          "merged_at": null,
+          "merge_commit_sha": null,
+          "draft": true,
+          "head": {
+            "label": "northwind:task/pay-481",
+            "ref": "task/pay-481",
+            "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+          },
+          "base": {
+            "label": "northwind:main",
+            "ref": "main",
+            "sha": "9049f1265b7d61be4a8904a9a27120d2064dab3b"
+          },
+          "author_association": "MEMBER",
+          "merged": false,
+          "merged_by": null,
+          "mergeable": true,
+          "comments": 0
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/northwind/payments/pulls/478"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "url": "https://api.github.com/repos/northwind/payments/pulls/478",
+          "id": 2000000478,
+          "html_url": "https://github.com/northwind/payments/pull/478",
+          "number": 478,
+          "state": "open",
+          "locked": false,
+          "title": "Reopened after review",
+          "user": {
+            "login": "claude-dev",
+            "id": 11846,
+            "type": "User"
+          },
+          "body": null,
+          "created_at": "2026-11-21T10:00:00Z",
+          "updated_at": "2026-11-23T10:00:00Z",
+          "closed_at": "2026-11-22T10:00:00Z",
+          "merged_at": null,
+          "merge_commit_sha": null,
+          "draft": false,
+          "head": {
+            "label": "northwind:feature/statements",
+            "ref": "feature/statements",
+            "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+          },
+          "base": {
+            "label": "northwind:release/2.4",
+            "ref": "release/2.4",
+            "sha": "9049f1265b7d61be4a8904a9a27120d2064dab3b"
+          },
+          "author_association": "MEMBER",
+          "merged": false,
+          "merged_by": null,
+          "mergeable": true,
+          "comments": 0
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/northwind/payments/pulls/12"
+      },
+      "response": {
+        "status": 404,
+        "json": {
+          "message": "Not Found",
+          "documentation_url": "https://docs.github.com/rest/pulls/pulls#get-a-pull-request",
+          "status": "404"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/northwind/payments/pulls?state=all&sort=updated&direction=desc&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "link": "<https://api.github.com/repos/northwind/payments/pulls?state=all&sort=updated&direction=desc&per_page=100&page=2>; rel=\"next\""
+        },
+        "json": [
+          {
+            "url": "https://api.github.com/repos/northwind/payments/pulls/482",
+            "id": 2000000482,
+            "html_url": "https://github.com/northwind/payments/pull/482",
+            "number": 482,
+            "state": "open",
+            "locked": false,
+            "title": "Retry failed card payments",
+            "user": {
+              "login": "claude-dev",
+              "id": 11846,
+              "type": "User"
+            },
+            "body": "Retries declined cards once.\n\nCloses: PAY-12, PAY-14",
+            "created_at": "2026-11-24T10:00:00Z",
+            "updated_at": "2026-11-25T16:40:00Z",
+            "closed_at": null,
+            "merged_at": null,
+            "merge_commit_sha": null,
+            "draft": false,
+            "head": {
+              "label": "northwind:task/pay-482",
+              "ref": "task/pay-482",
+              "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+            },
+            "base": {
+              "label": "northwind:main",
+              "ref": "main",
+              "sha": "9049f1265b7d61be4a8904a9a27120d2064dab3b"
+            },
+            "author_association": "MEMBER"
+          },
+          {
+            "url": "https://api.github.com/repos/northwind/payments/pulls/481",
+            "id": 2000000481,
+            "html_url": "https://github.com/northwind/payments/pull/481",
+            "number": 481,
+            "state": "open",
+            "locked": false,
+            "title": "Draft: split the ledger",
+            "user": {
+              "login": "claude-dev",
+              "id": 11846,
+              "type": "User"
+            },
+            "body": null,
+            "created_at": "2026-11-23T08:00:00Z",
+            "updated_at": "2026-11-25T12:00:00Z",
+            "closed_at": null,
+            "merged_at": null,
+            "merge_commit_sha": null,
+            "draft": true,
+            "head": {
+              "label": "northwind:task/pay-481",
+              "ref": "task/pay-481",
+              "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+            },
+            "base": {
+              "label": "northwind:main",
+              "ref": "main",
+              "sha": "9049f1265b7d61be4a8904a9a27120d2064dab3b"
+            },
+            "author_association": "MEMBER"
+          },
+          {
+            "url": "https://api.github.com/repos/northwind/payments/pulls/479",
+            "id": 2000000479,
+            "html_url": "https://github.com/northwind/payments/pull/479",
+            "number": 479,
+            "state": "closed",
+            "locked": false,
+            "title": "Add refunds endpoint",
+            "user": {
+              "login": "claude-dev",
+              "id": 11846,
+              "type": "User"
+            },
+            "body": "Closes: PAY-9",
+            "created_at": "2026-11-21T11:00:00Z",
+            "updated_at": "2026-11-24T18:05:01Z",
+            "closed_at": "2026-11-24T18:05:00Z",
+            "merged_at": "2026-11-24T18:05:00Z",
+            "merge_commit_sha": "e5bd3914e2e596debea16f433f57875b5b90bcd6",
+            "draft": false,
+            "head": {
+              "label": "northwind:task/pay-479",
+              "ref": "task/pay-479",
+              "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+            },
+            "base": {
+              "label": "northwind:main",
+              "ref": "main",
+              "sha": "9049f1265b7d61be4a8904a9a27120d2064dab3b"
+            },
+            "author_association": "MEMBER"
+          },
+          {
+            "url": "https://api.github.com/repos/northwind/payments/pulls/477",
+            "id": 2000000477,
+            "html_url": "https://github.com/northwind/payments/pull/477",
+            "number": 477,
+            "state": "closed",
+            "locked": false,
+            "title": "Try another payment provider",
+            "user": null,
+            "body": null,
+            "created_at": "2026-11-20T09:00:00Z",
+            "updated_at": "2026-11-22T09:30:00Z",
+            "closed_at": "2026-11-22T09:30:00Z",
+            "merged_at": null,
+            "merge_commit_sha": null,
+            "draft": false,
+            "head": {
+              "label": "northwind:task/pay-477",
+              "ref": "task/pay-477",
+              "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+            },
+            "base": {
+              "label": "northwind:main",
+              "ref": "main",
+              "sha": "9049f1265b7d61be4a8904a9a27120d2064dab3b"
+            },
+            "author_association": "MEMBER"
+          },
+          {
+            "url": "https://api.github.com/repos/northwind/payments/pulls/470",
+            "id": 2000000470,
+            "html_url": "https://github.com/northwind/payments/pull/470",
+            "number": 470,
+            "state": "closed",
+            "locked": false,
+            "title": "Old cleanup",
+            "user": {
+              "login": "claude-dev",
+              "id": 11846,
+              "type": "User"
+            },
+            "body": null,
+            "created_at": "2026-11-09T10:00:00Z",
+            "updated_at": "2026-11-10T10:00:00Z",
+            "closed_at": "2026-11-10T10:00:00Z",
+            "merged_at": "2026-11-10T10:00:00Z",
+            "merge_commit_sha": "e5bd3914e2e596debea16f433f57875b5b90bcd6",
+            "draft": false,
+            "head": {
+              "label": "northwind:task/pay-470",
+              "ref": "task/pay-470",
+              "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+            },
+            "base": {
+              "label": "northwind:main",
+              "ref": "main",
+              "sha": "9049f1265b7d61be4a8904a9a27120d2064dab3b"
+            },
+            "author_association": "MEMBER"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/northwind/payments/pulls?state=all&sort=updated&direction=desc&per_page=2"
+      },
+      "response": {
+        "status": 200,
+        "json": [
+          {
+            "url": "https://api.github.com/repos/northwind/payments/pulls/482",
+            "id": 2000000482,
+            "html_url": "https://github.com/northwind/payments/pull/482",
+            "number": 482,
+            "state": "open",
+            "locked": false,
+            "title": "Retry failed card payments",
+            "user": {
+              "login": "claude-dev",
+              "id": 11846,
+              "type": "User"
+            },
+            "body": "Retries declined cards once.\n\nCloses: PAY-12, PAY-14",
+            "created_at": "2026-11-24T10:00:00Z",
+            "updated_at": "2026-11-25T16:40:00Z",
+            "closed_at": null,
+            "merged_at": null,
+            "merge_commit_sha": null,
+            "draft": false,
+            "head": {
+              "label": "northwind:task/pay-482",
+              "ref": "task/pay-482",
+              "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+            },
+            "base": {
+              "label": "northwind:main",
+              "ref": "main",
+              "sha": "9049f1265b7d61be4a8904a9a27120d2064dab3b"
+            },
+            "author_association": "MEMBER"
+          },
+          {
+            "url": "https://api.github.com/repos/northwind/payments/pulls/481",
+            "id": 2000000481,
+            "html_url": "https://github.com/northwind/payments/pull/481",
+            "number": 481,
+            "state": "open",
+            "locked": false,
+            "title": "Draft: split the ledger",
+            "user": {
+              "login": "claude-dev",
+              "id": 11846,
+              "type": "User"
+            },
+            "body": null,
+            "created_at": "2026-11-23T08:00:00Z",
+            "updated_at": "2026-11-25T12:00:00Z",
+            "closed_at": null,
+            "merged_at": null,
+            "merge_commit_sha": null,
+            "draft": true,
+            "head": {
+              "label": "northwind:task/pay-481",
+              "ref": "task/pay-481",
+              "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+            },
+            "base": {
+              "label": "northwind:main",
+              "ref": "main",
+              "sha": "9049f1265b7d61be4a8904a9a27120d2064dab3b"
+            },
+            "author_association": "MEMBER"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/northwind/payments/pulls/480"
+      },
+      "response": {
+        "status": 401,
+        "json": {
+          "message": "Bad credentials",
+          "documentation_url": "https://docs.github.com/rest",
+          "status": "401"
+        }
+      }
+    }
+  ]
+}

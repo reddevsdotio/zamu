@@ -19,6 +19,7 @@ import { type DbOrTx, schema, type Tx } from '@zamu/db';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { entrySourceOf } from './activity';
+import { assertTaskWritable } from './archive';
 import { type Actor, authorize } from './authz';
 import type { DbContext } from './context';
 import { Conflict, Forbidden, Invalid, NotFound, parseInput, TaskMirrored } from './errors';
@@ -127,7 +128,13 @@ async function replaceMentions(tx: Tx, commentId: string, userIds: string[]) {
  */
 async function findOwnComment(tx: Tx, actor: Actor, id: string, verb: 'edit' | 'delete') {
   const [found] = await tx
-    .select({ comment, projectKey: project.key, taskNumber: task.number, keySuffix: task.keySuffix })
+    .select({
+      comment,
+      projectKey: project.key,
+      taskNumber: task.number,
+      keySuffix: task.keySuffix,
+      taskArchivedAt: task.archivedAt,
+    })
     .from(comment)
     .innerJoin(task, eq(task.id, comment.taskId))
     .innerJoin(project, eq(project.id, comment.projectId))
@@ -142,6 +149,11 @@ async function findOwnComment(tx: Tx, actor: Actor, id: string, verb: 'edit' | '
     throw new Forbidden(`Only the author can ${verb} this comment`);
   }
   if (found.comment.deletedAt) throw new Conflict('This comment was deleted');
+  // M7: an archived task is read-only, its comments and notes included.
+  assertTaskWritable(
+    { key: found.projectKey },
+    { number: found.taskNumber, keySuffix: found.keySuffix, archivedAt: found.taskArchivedAt },
+  );
   return { row: found.comment, taskKey: formatTaskKey(found.projectKey, found.taskNumber, found.keySuffix) };
 }
 
@@ -201,6 +213,7 @@ export async function createComment(
       project: parsed.project,
     });
     authorize(actor, 'task.write', { type: 'project', projectId: projectRow.id });
+    assertTaskWritable(projectRow, taskRow);
     const kind = parsed.kind ?? 'comment';
     if (kind === 'note') {
       const mirrored = await noteMirrored(tx, projectRow, taskRow, parsed.body);

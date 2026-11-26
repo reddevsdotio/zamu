@@ -132,14 +132,18 @@ export interface WorkItemSectionProps {
 
 export function WorkItemSection({ task, kind, defaults = [], listRef, className }: WorkItemSectionProps) {
   const items = (kind === 'criterion' ? task.criteria : task.doneItems) ?? [];
-  const readOnly = (task.locked?.length ?? 0) > 0;
+  const mirrored = (task.locked?.length ?? 0) > 0;
+  // M7: an archived task is read-only too, and leaves out the lists it doesn't have.
+  const archived = task.archivedAt != null;
+  const readOnly = mirrored || archived;
   const progress = progressOf(items);
   const actions = useItemActions(task, kind);
   const title = SECTION_TITLE[kind];
   const noun = NOUN[kind];
   const titleId = `work-${kind}-title`;
+  if (archived && items.length === 0) return null;
 
-  const end = readOnly
+  const end = mirrored
     ? 'from the file'
     : kind === 'done' && isFromDefaults(items, defaults)
       ? 'from the project defaults'

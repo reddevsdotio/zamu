@@ -2,6 +2,7 @@ import { type InferContractRouterInputs, type InferContractRouterOutputs, oc } f
 import { z } from 'zod';
 import {
   ActivityList,
+  ArchivePreview,
   BacklogExport,
   BacklogRefreshResult,
   BacklogSourceStatus,
@@ -21,12 +22,17 @@ import {
   MilestoneWithProgress,
   Project,
   ProjectList,
+  PullRequestLink,
+  RepositorySettings,
+  RepositoryWebhookSecret,
   Task,
   TaskBulkResult,
   TaskListPage,
   Timeline,
 } from './entities';
 import {
+  ArchivePreviewInput,
+  ArchiveTasksInput,
   BulkUpdateTasksInput,
   CreateCommentInput,
   CreateCycleInput,
@@ -45,7 +51,9 @@ import {
   GetDashboardInput,
   GetHomeInput,
   GetMilestoneInput,
+  GetRepositorySettingsInput,
   GetTaskInput,
+  LinkPullRequestInput,
   ListCommentsInput,
   ListCyclesInput,
   ListLabelsInput,
@@ -53,13 +61,18 @@ import {
   ListTaskActivityInput,
   ListTasksInput,
   ListTaskTimelineInput,
+  NewRepositoryWebhookSecretInput,
   RefreshBacklogInput,
+  RestoreTasksInput,
+  SyncRepositoryInput,
+  UnlinkPullRequestInput,
   UpdateCommentInput,
   UpdateCycleInput,
   UpdateLabelInput,
   UpdateMeInput,
   UpdateMilestoneInput,
   UpdateProjectInput,
+  UpdateRepositoryInput,
   UpdateTaskInput,
 } from './inputs';
 import { PROBLEM_STATUS, ProblemData } from './problem';
@@ -124,6 +137,15 @@ export const apiErrors = {
   NOT_A_MEMBER: { status: PROBLEM_STATUS.NOT_A_MEMBER, data: ProblemData },
   /** An API key with a workspace header naming another workspace (403). */
   WORKSPACE_MISMATCH: { status: PROBLEM_STATUS.WORKSPACE_MISMATCH, data: ProblemData },
+  // M7
+  /** Any write to an archived task but restore, comments and notes included (409). */
+  TASK_ARCHIVED: { status: PROBLEM_STATUS.TASK_ARCHIVED, data: ProblemData },
+  /** A request URL of another repository than the project's (422, repository). */
+  REQUEST_OTHER_REPOSITORY: { status: PROBLEM_STATUS.REQUEST_OTHER_REPOSITORY, data: ProblemData },
+  /** An address that is not a pull or merge request (422). */
+  NOT_A_REQUEST: { status: PROBLEM_STATUS.NOT_A_REQUEST, data: ProblemData },
+  /** A request the host does not know, or one the task does not link (404). */
+  REQUEST_NOT_FOUND: { status: PROBLEM_STATUS.REQUEST_NOT_FOUND, data: ProblemData },
 };
 
 const base = oc.errors(apiErrors);
@@ -179,10 +201,24 @@ export const contract = base.prefix(API_PREFIX).router({
         description:
           'The key can change only while the project has no tasks. usesMilestones and usesCycles turn ' +
           'the features on or off; turning one off keeps its data. defaultDoneItems replaces the done ' +
-          'items new tasks start with (owners and admins); existing tasks keep theirs.',
+          'items new tasks start with (owners and admins); existing tasks keep theirs. ' +
+          'archiveAfterDays (1 to 365, null is off) archives Done and Canceled tasks that many days ' +
+          'after they closed; a mirrored project gets 409 PROJECT_MIRRORED.',
       })
       .input(UpdateProjectInput)
       .output(Project),
+    archivePreview: base
+      .route({
+        method: 'GET',
+        path: '/projects/{project}/archive-preview',
+        tags: ['projects'],
+        summary: 'Preview the archive setting',
+        description:
+          'How many tasks the next nightly run would archive with days=N: Done and Canceled tasks ' +
+          'closed more than N days ago, except tasks merged with open items. Nothing is written.',
+      })
+      .input(ArchivePreviewInput)
+      .output(ArchivePreview),
     delete: base
       .route({
         method: 'DELETE',
@@ -212,7 +248,8 @@ export const contract = base.prefix(API_PREFIX).router({
           'order=list (default): status, then priority (highest first), then last update. order=board: ' +
           'status, then board rank. sort (priority, due, updated, created, manual) orders the whole ' +
           'result by one key instead. Filters: label ids (any of), due (overdue, soon, none, set), ' +
-          'blocked, topLevel and parent. Paginate with nextCursor.',
+          'blocked, topLevel and parent; archived (exclude by default, include or only) and ' +
+          'checkAgain (waiting, ready, set or none). Paginate with nextCursor.',
       })
       .input(ListTasksInput)
       .output(TaskListPage),
@@ -255,7 +292,9 @@ export const contract = base.prefix(API_PREFIX).router({
           'eight for DoneItems); numbers refer to the list before the request. plan and finalSummary ' +
           'set the Markdown texts (null clears). An agent moving a task to In review or Done while a ' +
           'criterion or done item is open gets 409 OPEN_ITEMS with the open items; people are not ' +
-          'refused. Every work-record field of a mirrored task fails with 409 TASK_MIRRORED.',
+          'refused. Every work-record field of a mirrored task fails with 409 TASK_MIRRORED. ' +
+          'checkAgain sets a day to look at the task again with a reason (both required; null ' +
+          'clears it). An archived task fails every change with 409 TASK_ARCHIVED.',
       })
       .input(UpdateTaskInput)
       .output(Task),
@@ -273,6 +312,33 @@ export const contract = base.prefix(API_PREFIX).router({
           'Returns the tasks in the order sent.',
       })
       .input(BulkUpdateTasksInput)
+      .output(TaskBulkResult),
+    archive: base
+      .route({
+        method: 'POST',
+        path: '/tasks/archive',
+        tags: ['tasks'],
+        summary: 'Archive tasks',
+        description:
+          'Up to 100 task keys, in any status, all or nothing, with one activity row per task. ' +
+          'Archived tasks leave lists, boards, Home and counts, and refuse every write but restore ' +
+          '(409 TASK_ARCHIVED). Tasks of a mirrored project fail the request with 409 TASK_MIRRORED: ' +
+          "Backlog.md's archive folder decides. Returns the tasks in the order sent.",
+      })
+      .input(ArchiveTasksInput)
+      .output(TaskBulkResult),
+    restore: base
+      .route({
+        method: 'POST',
+        path: '/tasks/restore',
+        tags: ['tasks'],
+        summary: 'Restore archived tasks',
+        description:
+          'Up to 100 task keys, all or nothing. A restored Done or Canceled task counts its archive ' +
+          'days again from now. Mirrored tasks fail with 409 TASK_MIRRORED. Returns the tasks in the ' +
+          'order sent.',
+      })
+      .input(RestoreTasksInput)
       .output(TaskBulkResult),
     activity: base
       .route({
@@ -297,6 +363,36 @@ export const contract = base.prefix(API_PREFIX).router({
       })
       .input(ListTaskTimelineInput)
       .output(Timeline),
+  },
+  pullRequests: {
+    link: base
+      .route({
+        method: 'POST',
+        path: '/tasks/{key}/pull-requests',
+        tags: ['pull-requests'],
+        summary: 'Link a pull or merge request to a task',
+        description:
+          "url is the request's web address in the project's repository. Another repository fails " +
+          'with 422 REQUEST_OTHER_REPOSITORY, an address that is not a request with 422 ' +
+          'NOT_A_REQUEST, a request the host does not know with 404 REQUEST_NOT_FOUND. dryRun ' +
+          'returns the request as it would link and writes nothing. Linking a request removed by ' +
+          'hand brings it back. Zamu reads the host and never writes to it.',
+      })
+      .input(LinkPullRequestInput)
+      .output(PullRequestLink),
+    unlink: base
+      .route({
+        method: 'DELETE',
+        path: '/tasks/{key}/pull-requests/{number}',
+        successStatus: 204,
+        tags: ['pull-requests'],
+        summary: 'Unlink a pull or merge request from a task',
+        description:
+          'The link stays removed: neither the branch nor a Closes: line brings it back; linking it ' +
+          'by hand does. 404 REQUEST_NOT_FOUND when the task does not link that number.',
+      })
+      .input(UnlinkPullRequestInput)
+      .output(z.void()),
   },
   comments: {
     list: base
@@ -550,6 +646,58 @@ export const contract = base.prefix(API_PREFIX).router({
       .input(ExportBacklogInput)
       .output(BacklogExport),
   },
+  repository: {
+    get: base
+      .route({
+        method: 'GET',
+        path: '/projects/{project}/repository',
+        tags: ['repository'],
+        summary: 'Get the repository settings of a project',
+        description:
+          'How Zamu reads the pull or merge requests of the project repository: the connection (or ' +
+          'none for a public repository), the default branch, close on merge, the webhook URL and ' +
+          'its last delivery, and the hourly check. The secret is never returned here. repository ' +
+          'is null when the project has none.',
+      })
+      .input(GetRepositorySettingsInput)
+      .output(RepositorySettings),
+    update: base
+      .route({
+        method: 'PATCH',
+        path: '/projects/{project}/repository',
+        tags: ['repository'],
+        summary: 'Update the repository settings of a project',
+        description:
+          'Owners and admins. connectionId picks a connection for the repository host, or null to ' +
+          'read a public repository without a token; requests seen after the change move tasks ' +
+          'again only from then on. closeOnMerge turns the Done step of a merge on or off.',
+      })
+      .input(UpdateRepositoryInput)
+      .output(RepositorySettings),
+    newWebhookSecret: base
+      .route({
+        method: 'POST',
+        path: '/projects/{project}/repository/webhook-secret',
+        tags: ['repository'],
+        summary: 'Issue a new repository webhook secret',
+        description:
+          'Owners and admins. Returns the secret once; the old one stops working at once. The URL ' +
+          'stays the same.',
+      })
+      .input(NewRepositoryWebhookSecretInput)
+      .output(RepositoryWebhookSecret),
+    sync: base
+      .route({
+        method: 'POST',
+        path: '/projects/{project}/repository/sync',
+        successStatus: 202,
+        tags: ['repository'],
+        summary: 'Check the repository for requests now',
+        description: 'Queues the hourly check of the repository requests to run now.',
+      })
+      .input(SyncRepositoryInput)
+      .output(z.void()),
+  },
   dashboard: {
     get: base
       .route({
@@ -585,9 +733,10 @@ export const contract = base.prefix(API_PREFIX).router({
         tags: ['home'],
         summary: 'Get Home',
         description:
-          'What needs attention, grouped by why. tab=mine (default): needs your review, mentions, ' +
-          'blocked, overdue and assigned to you. tab=everyone: needs review, blocked, overdue and ' +
-          'due this week across the workspace. tab=agents: one card per agent and what agents wait ' +
+          'What needs attention, grouped by why. tab=mine (default): needs your review, merged with ' +
+          'open criteria, check again, mentions, blocked, overdue and assigned to you. tab=everyone: ' +
+          'needs review, merged with open criteria, blocked, overdue and due this week across the ' +
+          'workspace. tab=agents: one card per agent and what agents wait ' +
           'on people for. Each task shows once, in its first group; each group has its total and up ' +
           'to 50 items. Mine and Everyone add the deadlines strip. Filter by project, label name ' +
           'and priority.',
@@ -601,8 +750,8 @@ export const contract = base.prefix(API_PREFIX).router({
         tags: ['home'],
         summary: 'Count what needs you',
         description:
-          'The Mine counts of needs your review, mentions, blocked and overdue, and their sum (the ' +
-          'sidebar count), without items.',
+          'The Mine counts of needs your review, merged with open criteria, check again, mentions, ' +
+          'blocked and overdue, and their sum (the sidebar count), without items.',
       })
       .output(HomeCounts),
   },

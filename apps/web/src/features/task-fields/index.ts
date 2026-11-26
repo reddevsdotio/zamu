@@ -1,6 +1,7 @@
 // Field pickers and mutations (M5-09): wired pickers for one task or a selection, the change toast
 // with Undo, the finishing warning before In review and Done (M6), and the task keys with their
-// palette commands. Screens import from here.
+// palette commands. M7 adds the check-again picker (Shift+W) and refuses changes to archived tasks.
+// Screens import from here.
 
 export { AssigneeMenu, type AssigneeMenuProps, AssigneePicker, toAssigneeRef } from './AssigneePicker';
 export { type ApplyOptions, type FieldChange, failureText, useFieldChange } from './apply';
@@ -12,9 +13,17 @@ export {
   loopText,
   useTaskSearch,
 } from './BlockerPicker';
+export {
+  CHECK_AGAIN_HELP,
+  CheckAgainMenu,
+  type CheckAgainMenuProps,
+  CheckAgainPicker,
+} from './CheckAgainPicker';
 export { DueMenu, type DueMenuProps, DuePicker } from './DuePicker';
 export {
   addDays,
+  type CheckAgainPick,
+  checkAgainPicks,
   formatDayWithWeekday,
   nextWeekday,
   parseDueText,
@@ -81,9 +90,11 @@ export {
 export { inheritNote, SubtaskMenu, type SubtaskMenuProps, SubtaskPicker } from './SubtaskPicker';
 export { commonValue, FieldPopover, type PickerAnchorProps, ReadOnlyLine } from './shared';
 export {
+  ARCHIVED_TEXT,
   contextOf,
   type FieldTarget,
   fieldRefusal,
+  isArchivedTarget,
   isFieldLocked,
   isMirroredTarget,
   READ_ONLY_TEXT,

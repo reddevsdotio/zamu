@@ -9,6 +9,7 @@ import {
 import {
   type AssigneeRef,
   type BulkUpdateTasksInput,
+  type CheckAgain,
   type CreateTaskInput,
   type CycleRef,
   type Home,
@@ -164,6 +165,8 @@ export interface TaskPatch {
   addBlockers?: RelatedTask[];
   /** M5: keys of blockers to drop. */
   removeBlockers?: string[];
+  /** M7: the day to look at the task again with its reason, or null to clear it. One task at a time. */
+  checkAgain?: CheckAgain | null;
 }
 
 /** The fields POST /tasks/bulk can change (native projects only). */
@@ -248,6 +251,7 @@ export function applyTaskPatch<T extends CachedTask>(item: T, patch: TaskPatch, 
   if (patch.cycle !== undefined) next.cycle = patch.cycle;
   if (touchesLabels(patch)) next.labels = patchedLabels(item.labels ?? [], patch);
   if (patch.dueDate !== undefined) next.dueDate = patch.dueDate;
+  if (patch.checkAgain !== undefined) next.checkAgain = patch.checkAgain;
   if (patch.parent !== undefined) {
     if (isFullTask(next)) next.parent = patch.parent;
     else next.parentKey = patch.parent?.key ?? null;
@@ -280,6 +284,7 @@ export function inversePatch(before: CachedTask, patch: TaskPatch): TaskPatch {
   if (patch.milestone !== undefined) inverse.milestone = before.milestone;
   if (patch.cycle !== undefined) inverse.cycle = before.cycle;
   if (patch.dueDate !== undefined) inverse.dueDate = before.dueDate ?? null;
+  if (patch.checkAgain !== undefined) inverse.checkAgain = before.checkAgain ?? null;
   const labels = before.labels ?? [];
   const has = (name: string) => labels.some((label) => lower(label.name) === lower(name));
   if (patch.labels) inverse.labels = [...labels];
@@ -331,12 +336,18 @@ export function isNoopPatch(item: CachedTask, patch: TaskPatch): boolean {
     id(after.cycle) === id(item.cycle) &&
     names(after.labels) === names(item.labels) &&
     (after.dueDate ?? null) === (item.dueDate ?? null) &&
+    sameCheckAgain(after.checkAgain, item.checkAgain) &&
     parent(after) === parent(item) &&
     blockers(after) === blockers(item) &&
     // Rows don't list their blockers: a blocker change on a row always goes to the server.
     !(touchesBlockers(patch) && !isFullTask(item)) &&
     !(patch.description !== undefined && isFullTask(item) && patch.description !== item.description)
   );
+}
+
+/** M7: the same check-again day and reason (both unset counts as the same). */
+function sameCheckAgain(a: CheckAgain | null | undefined, b: CheckAgain | null | undefined): boolean {
+  return (a?.on ?? null) === (b?.on ?? null) && (a?.reason ?? null) === (b?.reason ?? null);
 }
 
 /** A related task known only by key (a row's parentKey): enough to send and to undo. */
@@ -397,6 +408,9 @@ export function toUpdateInput({ key, patch, ifUpdatedAt }: UpdateTaskVariables) 
     ...(patch.parent !== undefined ? { parent: patch.parent?.key ?? null } : {}),
     ...(patch.addBlockers?.length ? { addBlockers: patch.addBlockers.map((task) => task.key) } : {}),
     ...(patch.removeBlockers?.length ? { removeBlockers: patch.removeBlockers } : {}),
+    ...(patch.checkAgain !== undefined
+      ? { checkAgain: patch.checkAgain ? { on: patch.checkAgain.on, reason: patch.checkAgain.reason } : null }
+      : {}),
     ...(ifUpdatedAt ? { ifUpdatedAt } : {}),
   } satisfies z.input<typeof UpdateTaskInput>;
 }

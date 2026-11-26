@@ -1,13 +1,16 @@
 // Push webhooks: POST /api/webhooks/backlog/{webhookId}. The route reads the raw body once and
 // maps this decision to a response. Unknown id or a bad signature: 404 with no detail. Detached:
 // 410. Pushes to other branches and other events: 204. A push to the default branch: 202 and a
-// refresh (trigger webhook). Every accepted delivery sets webhook_last_at.
+// refresh (trigger webhook). Every accepted delivery sets webhook_last_at. M7: a pull or merge
+// request event goes to the project's repository link, as if delivered to its own webhook: 202
+// and a repository.event job (204 when the project has no repository).
 import { schema } from '@zamu/db';
 import { PROVIDER_KINDS, type ProviderKind, verifyWebhook, type WebhookHeaders } from '@zamu/git-providers';
 import { eq } from 'drizzle-orm';
 import type { DbContext, GitContext } from '../context';
 import { clockNow } from '../cycles';
 import type { JobQueue } from '../jobs';
+import { queueBacklogRequestEvent } from '../pull-requests';
 import { decryptSecret, EncryptionKeyMissing, SecretUnreadable } from '../secrets';
 import { enqueueBacklogRefresh, loadSource } from './refresh';
 
@@ -22,6 +25,7 @@ export interface BacklogWebhookDecision {
     | 'other_branch'
     | 'branch_deleted'
     | 'not_a_push'
+    | 'request_queued'
     | 'unknown_webhook'
     | 'bad_signature'
     | 'detached';
@@ -83,6 +87,14 @@ export async function acceptBacklogWebhook(
 
   const now = clockNow(ctx);
   return ctx.db.transaction(async (tx) => {
+    if (verified.event === 'pull_request') {
+      // The project lock comes first, as everywhere else that also touches the source row.
+      const queued = await queueBacklogRequestEvent(ctx, tx, source.projectId, verified);
+      await tx.update(backlogSource).set({ webhookLastAt: now }).where(eq(backlogSource.id, source.id));
+      return queued
+        ? ({ status: 202, reason: 'request_queued' } as const)
+        : ({ status: 204, reason: 'not_a_push' } as const);
+    }
     await tx.update(backlogSource).set({ webhookLastAt: now }).where(eq(backlogSource.id, source.id));
     if (verified.event !== 'push') return { status: 204, reason: 'not_a_push' } as const;
     if (verified.deleted || !verified.headCommit) return { status: 204, reason: 'branch_deleted' } as const;

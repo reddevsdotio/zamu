@@ -109,20 +109,22 @@ const box = 'overflow-hidden rounded-md border border-line-soft bg-surface';
 
 export interface RelationSectionProps {
   task: Task;
-  /** The task is mirrored: rows only, no add line. */
+  /** The task is mirrored or archived: rows only, no add line. */
   readOnly: boolean;
+  /** M7: the task is archived: an empty list is left out. */
+  hideEmpty?: boolean;
   /** Opens the picker (⇧S, ⇧B) over the add line. */
   onAdd: () => void;
   addRef: RefObject<HTMLButtonElement | null>;
 }
 
 /** "Subtasks  ◔ 3 of 4 done ………… 1 canceled". */
-export function SubtasksSection({ task, readOnly, onAdd, addRef }: RelationSectionProps) {
+export function SubtasksSection({ task, readOnly, hideEmpty, onAdd, addRef }: RelationSectionProps) {
   const subtasks = task.subtasks ?? [];
   const progress = task.subtaskProgress ?? { done: 0, total: 0 };
   const canceled = subtasks.filter((item) => item.status === 'canceled').length;
   // A subtask can't have subtasks of its own (one level).
-  if (task.parent && subtasks.length === 0) return null;
+  if ((task.parent || hideEmpty) && subtasks.length === 0) return null;
   return (
     <section aria-label="Subtasks">
       <SectionHead>
@@ -183,10 +185,11 @@ function BlocksLine({ blocks }: { blocks: readonly (RelatedTask | null)[] }) {
 }
 
 /** "Blocked by  2 open ………… Blocks PAY-150". */
-export function BlockedBySection({ task, readOnly, onAdd, addRef }: RelationSectionProps) {
+export function BlockedBySection({ task, readOnly, hideEmpty, onAdd, addRef }: RelationSectionProps) {
   const blockers = task.blockedBy ?? [];
   const open = blockers.filter((item) => item != null && isOpenStatus(item.status)).length;
   const { apply } = useFieldChange();
+  if (hideEmpty && blockers.length === 0 && (task.blocks ?? []).length === 0) return null;
   return (
     <section aria-label="Blocked by">
       <SectionHead>

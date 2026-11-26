@@ -2,12 +2,14 @@
 // tasks' labels, parents and blockers (M5), the project's next task number, backlog_file rows,
 // activity from the Backlog.md actor (origin backlog, origin_ref = commit) and the source state.
 // M6: the work record too (plan and final summary columns, task_item rows).
+// M7: archived_at follows the archive folder (task.archived and task.unarchived rows), closed_at follows
+// status changes, and a move to Done or Canceled clears the check-again day with a history line.
 // Rows are written directly with Drizzle; services' owned-field locks do not apply to the refresh
 // itself.
 import type { WorkRecordItem } from '@zamu/backlog-md';
-import type { BacklogMode, BacklogTrigger, WorkItemKind } from '@zamu/contracts';
+import { type BacklogMode, type BacklogTrigger, isOpenStatus, type WorkItemKind } from '@zamu/contracts';
 import { schema, type Tx } from '@zamu/db';
-import { and, eq, inArray, notInArray, type SQL, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, notInArray, type SQL, sql } from 'drizzle-orm';
 import {
   recordActivities,
   recordActivity,
@@ -19,6 +21,7 @@ import {
 import { labelKey } from './fields';
 import type {
   BacklogPlan,
+  ClosedAtChange,
   ExistingFile,
   FileRow,
   LabelTarget,
@@ -45,6 +48,11 @@ function chunks<T>(items: T[], size = CHUNK): T[][] {
   const out: T[][] = [];
   for (let index = 0; index < items.length; index += size) out.push(items.slice(index, index + size));
   return out;
+}
+
+/** M7: the history line of a check-again day cleared because the task closed. */
+function checkAgainChange(cleared: { on: string; reason: string }): StoredChange {
+  return { field: 'checkAgain', from: cleared, to: null };
 }
 
 /**
@@ -78,6 +86,9 @@ export interface ApplyResult {
   hidden: number;
   restored: number;
   milestonesCreated: number;
+  /** M7: tasks archived (created in the archive folder or moved into it) and taken out of it. */
+  archived: number;
+  unarchived: number;
   /** True when the source was an import and is detached now. */
   detached: boolean;
 }
@@ -221,10 +232,45 @@ export async function applyPlan(tx: Tx, input: ApplyInput): Promise<ApplyResult>
       .set({ number: TEMP_NUMBER_BASE + index, updatedAt: sql`${task.updatedAt}` })
       .where(eq(task.id, update.id));
   }
+  // M7: closing tasks lose their check-again day; the history line names the one they had.
+  const closing = plan.tasks.updates
+    .filter((update) => update.set.status !== undefined && !isOpenStatus(update.set.status))
+    .map((update) => update.id);
+  const checkAgainCleared = new Map<string, { on: string; reason: string }>();
+  for (const batch of chunks(closing)) {
+    const rows = await tx
+      .select({ id: task.id, on: task.checkAgainOn, reason: task.checkAgainReason })
+      .from(task)
+      .where(and(inArray(task.id, batch), isNotNull(task.checkAgainOn)));
+    for (const row of rows) {
+      if (row.on !== null) checkAgainCleared.set(row.id, { on: row.on, reason: row.reason ?? '' });
+    }
+  }
+  const at = sql`${now.toISOString()}::timestamptz`;
+  const closedColumns = (change: ClosedAtChange | undefined) => {
+    switch (change) {
+      case 'close':
+        return { closedAt: sql`coalesce(${task.closedAt}, ${at})` };
+      case 'clear':
+        return { closedAt: null };
+      case 'reset':
+        return { closedAt: now };
+      default:
+        return {};
+    }
+  };
   let restored = 0;
   for (const update of plan.tasks.updates) {
     if (update.restore) restored += 1;
-    const columns = { ...taskColumns(update.set), ...(update.restore ? { hiddenAt: null } : {}) };
+    const columns = {
+      ...taskColumns(update.set),
+      ...(update.restore ? { hiddenAt: null } : {}),
+      // An archived task keeps its first archived_at; Backlog.md archives by no one.
+      ...(update.archived === true ? { archivedAt: sql`coalesce(${task.archivedAt}, ${at})` } : {}),
+      ...(update.archived === false ? { archivedAt: null, archivedById: null } : {}),
+      ...closedColumns(update.closedAt),
+      ...(checkAgainCleared.has(update.id) ? { checkAgainOn: null, checkAgainReason: null } : {}),
+    };
     await tx
       .update(task)
       // A change of labels, blockers or parent alone still counts as an update of the task.
@@ -265,6 +311,8 @@ export async function applyPlan(tx: Tx, input: ApplyInput): Promise<ApplyResult>
           dueDate: values.dueDate,
           plan: values.plan,
           finalSummary: values.finalSummary,
+          closedAt: isOpenStatus(values.status) ? null : now,
+          archivedAt: values.archived ? now : null,
         })),
       )
       .returning({ id: task.id, backlogId: task.backlogId });
@@ -410,39 +458,27 @@ export async function applyPlan(tx: Tx, input: ApplyInput): Promise<ApplyResult>
           return change;
       }
     };
+    const entry = (
+      taskId: string,
+      type: SystemActivityEntry['type'],
+      changes: StoredChange[] = [],
+    ): SystemActivityEntry => ({ ...origin, projectId: input.project.id, taskId, type, changes });
+    // Per task: out of the archive first, then the changes, then into the archive.
     for (const update of plan.tasks.updates) {
       const changes: StoredChange[] = [];
       for (const change of update.changes) changes.push(await stored(change));
-      if (update.restore) {
-        entries.push({
-          ...origin,
-          projectId: input.project.id,
-          taskId: update.id,
-          type: 'task.restored',
-          changes,
-        });
-      } else if (changes.length > 0) {
-        entries.push({
-          ...origin,
-          projectId: input.project.id,
-          taskId: update.id,
-          type: 'task.updated',
-          changes,
-        });
-      }
+      const cleared = checkAgainCleared.get(update.id);
+      if (cleared) changes.push(checkAgainChange(cleared));
+      if (update.archived === false) entries.push(entry(update.id, 'task.unarchived'));
+      if (update.restore) entries.push(entry(update.id, 'task.restored', changes));
+      else if (changes.length > 0) entries.push(entry(update.id, 'task.updated', changes));
+      if (update.archived === true) entries.push(entry(update.id, 'task.archived'));
     }
-    for (const hide of plan.tasks.hides) {
-      entries.push({
-        ...origin,
-        projectId: input.project.id,
-        taskId: hide.id,
-        type: 'task.hidden',
-        changes: [],
-      });
-    }
+    for (const hide of plan.tasks.hides) entries.push(entry(hide.id, 'task.hidden'));
     for (const created of plan.tasks.creates) {
       const taskId = taskIds.get(created.backlogId) as string;
-      entries.push({ ...origin, projectId: input.project.id, taskId, type: 'task.created', changes: [] });
+      entries.push(entry(taskId, 'task.created'));
+      if (created.archived) entries.push(entry(taskId, 'task.archived'));
     }
     for (const batch of chunks(entries)) await recordActivities(tx, null, batch);
   }
@@ -531,6 +567,10 @@ export async function applyPlan(tx: Tx, input: ApplyInput): Promise<ApplyResult>
     hidden: plan.tasks.hides.length,
     restored,
     milestonesCreated: plan.milestones.creates.length,
+    archived:
+      plan.tasks.updates.filter((update) => update.archived === true).length +
+      plan.tasks.creates.filter((values) => values.archived).length,
+    unarchived: plan.tasks.updates.filter((update) => update.archived === false).length,
     detached: detach,
   };
 }

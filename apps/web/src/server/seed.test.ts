@@ -1,6 +1,7 @@
 // The dev seed with its second workspace, through /api/v1 against a throwaway database: each
 // workspace has its own PAY and its own claude-dev, every key stays in its workspace, the admin
 // still lands on the first workspace, and a second run adds keys without duplicating anything.
+// With pullRequests, PAY has requests in every state, archived tasks and check-again days.
 import { createAuth } from '@zamu/auth';
 import type { CoreContext } from '@zamu/core';
 import { createTestDatabase, type TestDatabase } from '@zamu/db/test';
@@ -35,8 +36,9 @@ beforeAll(async () => {
     publicUrl: ORIGIN,
   };
   handle = createApiFetchHandler(core);
-  first = await seedDevData(core, { planning: true, dashboard: true, secondWorkspace: true });
-  again = await seedDevData(core, { planning: true, dashboard: true, secondWorkspace: true });
+  const options = { planning: true, dashboard: true, secondWorkspace: true, pullRequests: true };
+  first = await seedDevData(core, options);
+  again = await seedDevData(core, options);
 });
 
 afterAll(async () => {
@@ -100,5 +102,128 @@ describe('dev seed with a second workspace', () => {
     expect(organizations.map((o) => o.slug).sort()).toEqual(['globex', 'reddevs']);
     const tasks = await get('/api/v1/tasks?project=PAY', again.second?.adminKey as string);
     expect(tasks.body.items).toHaveLength(5);
+  });
+});
+
+describe('dev seed with pull requests, archive and check again', () => {
+  // PAY-12 onward, in the order of REQUEST_TASKS in seed.ts.
+  const keys = {
+    refundCap: 'PAY-12',
+    payoutTimeout: 'PAY-13',
+    payoutsHang: 'PAY-14',
+    webhookWorker: 'PAY-15',
+    statementFees: 'PAY-16',
+    fxCache: 'PAY-17',
+    currencyColumn: 'PAY-18',
+    secondProcessor: 'PAY-19',
+    rotateSecret: 'PAY-20',
+    sftpHost: 'PAY-21',
+    payoutTotals: 'PAY-22',
+  };
+  const task = async (key: string) => (await get(`/api/v1/tasks/${key}`, first.adminKey)).body;
+  const requests = (body: { pullRequests: { number: number; state: string; how: string }[] }) =>
+    body.pullRequests.map((pr) => ({ number: pr.number, state: pr.state, how: pr.how }));
+
+  it('counts the added tasks in PAY', () => {
+    expect(first.createdProjects).toEqual(
+      expect.arrayContaining([
+        { key: 'PAY', tasks: 22 },
+        { key: 'WEB', tasks: 4 },
+      ]),
+    );
+  });
+
+  it('links PAY to its repository, checked and with close on merge', async () => {
+    const { status, body } = await get('/api/v1/projects/PAY/repository', first.adminKey);
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      repository: 'https://github.com/northwind/payments',
+      provider: 'github',
+      connection: null,
+      defaultBranch: 'main',
+      closeOnMerge: true,
+      mirrored: false,
+      sync: { lastAt: expect.any(String), error: null },
+    });
+  });
+
+  it('moves tasks through a merge, leaving one Done with open criteria', async () => {
+    const merged = await task(keys.refundCap);
+    expect(merged).toMatchObject({
+      status: 'done',
+      workBranch: 'claude/pay-refund-cap',
+      mergedOpen: { openCriteria: 2, openDoneItems: 0 },
+    });
+    expect(requests(merged)).toEqual([{ number: 45, state: 'merged', how: 'branch' }]);
+    const fees = await task(keys.statementFees);
+    expect(fees).toMatchObject({ status: 'done', mergedOpen: null });
+    expect(requests(fees)).toEqual([{ number: 46, state: 'merged', how: 'description' }]);
+  });
+
+  it('links by branch, by description and by hand, and moves only for open requests', async () => {
+    const timeout = await task(keys.payoutTimeout);
+    expect(timeout.status).toBe('in_review');
+    expect(requests(timeout)).toEqual([{ number: 47, state: 'open', how: 'branch' }]);
+    const hang = await task(keys.payoutsHang);
+    expect(hang.status).toBe('in_review');
+    expect(requests(hang)).toEqual([{ number: 47, state: 'open', how: 'description' }]);
+    const draft = await task(keys.webhookWorker);
+    expect(draft.status).toBe('in_progress');
+    expect(requests(draft)).toEqual([{ number: 48, state: 'draft', how: 'branch' }]);
+    const closed = await task(keys.fxCache);
+    expect(closed.status).toBe('todo');
+    expect(requests(closed)).toEqual([{ number: 44, state: 'closed', how: 'hand' }]);
+  });
+
+  it('names the host on the moves in history', async () => {
+    const { body } = await get(`/api/v1/tasks/${keys.refundCap}/activity`, first.adminKey);
+    const moves = body.items.filter(
+      (entry: { changes: { field: string }[] }) => entry.changes[0]?.field === 'status',
+    );
+    expect(moves.map((entry: { cause: { event: string } | null }) => entry.cause?.event)).toEqual(
+      expect.arrayContaining(['opened', 'merged']),
+    );
+    expect(moves.at(-1) ?? moves[0]).toMatchObject({ actor: null, system: { kind: 'git' } });
+  });
+
+  it('archives by hand and by the nightly job, out of the default list', async () => {
+    const list = await get('/api/v1/tasks?project=PAY&archived=only&limit=50', first.adminKey);
+    expect(list.body.items.map((item: { key: string }) => item.key).sort()).toEqual(
+      [keys.currencyColumn, keys.rotateSecret, keys.secondProcessor].sort(),
+    );
+    const all = await get('/api/v1/tasks?project=PAY&limit=50', first.adminKey);
+    expect(all.body.items.map((item: { key: string }) => item.key)).not.toContain(keys.rotateSecret);
+
+    const byJob = await get(`/api/v1/tasks/${keys.rotateSecret}/activity`, first.adminKey);
+    expect(byJob.body.items.find((entry: { type: string }) => entry.type === 'task.archived')).toMatchObject({
+      actor: null,
+      cause: { kind: 'archive', afterDays: 14 },
+    });
+    expect((await task(keys.currencyColumn)).archivedBy).toMatchObject({ id: first.admin.id });
+    expect((await task(keys.secondProcessor)).archivedBy).toMatchObject({ id: first.agent.id });
+  });
+
+  it('has tasks waiting and ready to check again, the ready one in Home', async () => {
+    const waiting = await get('/api/v1/tasks?project=PAY&checkAgain=waiting', first.adminKey);
+    expect(waiting.body.items.map((item: { key: string }) => item.key)).toEqual([keys.sftpHost]);
+    const ready = await get('/api/v1/tasks?project=PAY&checkAgain=ready', first.adminKey);
+    expect(ready.body.items.map((item: { key: string }) => item.key)).toEqual([keys.payoutTotals]);
+
+    const home = await get('/api/v1/home', first.adminKey);
+    const group = (key: string) =>
+      home.body.groups
+        .find((g: { key: string }) => g.key === key)
+        ?.items.map((item: { task: { key: string } }) => item.task.key) ?? [];
+    expect(group('checkAgain')).toEqual([keys.payoutTotals]);
+    expect(group('mergedOpen')).toEqual([keys.refundCap]);
+  });
+
+  it('keeps archiving on for PAY and off for WEB', async () => {
+    const projects = (await get('/api/v1/projects', first.adminKey)).body.items as {
+      key: string;
+      archiveAfterDays: number | null;
+    }[];
+    expect(projects.find((p) => p.key === 'PAY')?.archiveAfterDays).toBe(14);
+    expect(projects.find((p) => p.key === 'WEB')?.archiveAfterDays).toBeNull();
   });
 });

@@ -6,6 +6,9 @@
 // (criteria, done items, plan, final summary, notes) comes out of the file the way the
 // m6_work_record migration takes it out of stored descriptions (taskWorkRecord), so an upgrade
 // followed by a refresh of unchanged files changes nothing.
+// M7: a task file under archive/tasks/ (or the legacy completed/) archives its task and moving it
+// back restores it; status changes keep closed_at right (set on entering Done or Canceled, cleared on
+// leaving them).
 import {
   type BacklogConfig,
   type BacklogMilestone,
@@ -87,6 +90,11 @@ export interface ExistingTask {
   finalSummary?: string | null;
   criteria?: WorkRecordItem[];
   doneItems?: WorkRecordItem[];
+  /**
+   * M7: task.archived_at. Left out by callers that don't load it: the planner then reads the
+   * archived state from the stored block's kind, which the refresh keeps in step with it.
+   */
+  archivedAt?: Date | null;
 }
 
 /** M5: a label of the project. */
@@ -227,6 +235,8 @@ export interface TaskCreate extends TaskValues {
   rank: number;
   path: string;
   kind: TaskFileKind;
+  /** M7: the file is in the archive folder, so the task starts archived. */
+  archived: boolean;
 }
 
 /** A change for task.updated activity. Milestones may point at rows created by the same plan. */
@@ -251,7 +261,21 @@ export interface TaskUpdate {
   changes: PlannedChange[];
   /** The file is back: clear hidden_at, write task.restored. */
   restore: boolean;
+  /**
+   * M7: the file moved into the archive folder (true: set archived_at, keeping an earlier one, and
+   * write task.archived) or out of it (false: clear it, write task.unarchived). Absent: no change.
+   */
+  archived?: boolean;
+  /** M7: what happens to closed_at. Absent: it stays. */
+  closedAt?: ClosedAtChange;
 }
+
+/**
+ * M7: closed_at after a refresh. `close`: the task is Done or Canceled after a status change (an
+ * earlier closed_at stays, so Done to Canceled keeps it); `clear`: it left them; `reset`: it came out
+ * of the archive while closed, so it gets now, as a restore by hand does.
+ */
+export type ClosedAtChange = 'close' | 'clear' | 'reset';
 
 export interface MilestoneValues {
   backlogId: string;
@@ -1225,6 +1249,7 @@ export function planRefresh(input: PlanInput): BacklogPlan {
         rank: snapshot.ordinal ?? fallbackRank(want.number, want.keySuffix),
         path: snapshot.path,
         kind: snapshot.kind,
+        archived: snapshot.kind === 'archived',
       });
       if (fileRow) fileRow.task = { backlogId: snapshot.backlogId };
       continue;
@@ -1324,6 +1349,11 @@ export function planRefresh(input: PlanInput): BacklogPlan {
     }
     const before = readStoredBlock(row.backlogData);
     const after = BacklogBlock.parse(want.backlogData);
+    // M7: the archive folder decides. task.archived and task.unarchived name the move, so the
+    // block's kind is not listed as a Backlog.md-only change then.
+    const wasArchived = row.archivedAt !== undefined ? row.archivedAt !== null : before?.kind === 'archived';
+    const inArchive = snapshot.kind === 'archived';
+    const archived = inArchive === wasArchived ? undefined : inArchive;
     const changedKeys = (Object.keys(after) as (keyof BacklogBlock)[]).filter(
       (key) => !before || stableJson(before[key]) !== stableJson(after[key]),
     );
@@ -1336,6 +1366,7 @@ export function planRefresh(input: PlanInput): BacklogPlan {
         ...changedKeys.filter(
           (key) =>
             !NATIVE_BLOCK_KEYS.has(key) &&
+            (key !== 'kind' || archived === undefined) &&
             (!['status', 'priority', 'milestone', 'assignees'].includes(key) || !before),
         ),
       );
@@ -1343,7 +1374,19 @@ export function planRefresh(input: PlanInput): BacklogPlan {
     if (backlogFields.length > 0)
       changes.push({ field: 'backlog', from: null, to: [...new Set(backlogFields)] });
     const restore = row.hiddenAt !== null;
-    if (Object.keys(set).length > 0 || restore) updates.push({ id: row.id, set, changes, restore });
+    let closedAt: ClosedAtChange | undefined;
+    if (set.status !== undefined) closedAt = isOpenStatus(set.status) ? 'clear' : 'close';
+    if (archived === false && !isOpenStatus(set.status ?? row.status)) closedAt = 'reset';
+    if (Object.keys(set).length > 0 || restore || archived !== undefined) {
+      updates.push({
+        id: row.id,
+        set,
+        changes,
+        restore,
+        ...(archived !== undefined ? { archived } : {}),
+        ...(closedAt ? { closedAt } : {}),
+      });
+    }
   }
   updates.push(...relocations);
   const hides: { id: string }[] = [];

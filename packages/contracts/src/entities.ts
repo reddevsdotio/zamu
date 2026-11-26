@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   ActivityOrigin,
   ApiKeyAccess,
+  ArchiveAfterDays,
   AuthId,
   BacklogMode,
   BacklogSourceId,
@@ -17,6 +18,7 @@ import {
   LabelColor,
   LabelId,
   LabelSource,
+  MAX_CHECK_AGAIN_REASON_LENGTH,
   MilestoneId,
   MilestoneOwnedField,
   MilestoneStatus,
@@ -155,6 +157,12 @@ export const Project = z.object({
    * Changing them leaves existing tasks alone. Optional in the type like the M3 fields; missing reads as [].
    */
   defaultDoneItems: z.array(z.string()).optional(),
+  /**
+   * M7: Done and Canceled tasks are archived this many days after they closed (1 to 365); null is
+   * off. Mirrored projects follow Backlog.md's archive folder instead and keep null. Optional in
+   * the type like the M3 fields; missing reads as null.
+   */
+  archiveAfterDays: ArchiveAfterDays.nullable().optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 });
@@ -449,6 +457,127 @@ export const EntrySource = z.object({
 export type EntrySource = z.output<typeof EntrySource>;
 
 // ---------------------------------------------------------------------------
+// Pull requests, archive and check again (M7)
+// ---------------------------------------------------------------------------
+
+/** A request's state on the host. draft: open but marked as not ready (moves nothing). */
+export const PULL_REQUEST_STATES = ['open', 'draft', 'merged', 'closed'] as const;
+export const PullRequestState = z.enum(PULL_REQUEST_STATES);
+export type PullRequestState = z.infer<typeof PullRequestState>;
+
+export const PULL_REQUEST_STATE_LABELS: Record<PullRequestState, string> = {
+  open: 'Open',
+  draft: 'Draft',
+  merged: 'Merged',
+  closed: 'Closed',
+};
+
+/**
+ * How a request is linked to a task: by hand, by the task's work branch (the request's head
+ * branch), or by a `Closes:` line in its description. A link made several ways shows the first of
+ * this order.
+ */
+export const PULL_REQUEST_LINK_HOWS = ['hand', 'branch', 'description'] as const;
+export const PullRequestLinkHow = z.enum(PULL_REQUEST_LINK_HOWS);
+export type PullRequestLinkHow = z.infer<typeof PullRequestLinkHow>;
+
+/** A request as rows, cards, Home reasons and causes name it: "#482 Retry webhooks". */
+export const PullRequestRef = z.object({
+  /** The host kind: GitHub, GitLab, or Gitea and Forgejo. */
+  provider: GitProvider,
+  /** The host's number: #482 on GitHub and Forgejo, !482 (the iid) on GitLab. */
+  number: z.number().int().positive(),
+  title: z.string(),
+  url: z.url(),
+});
+export type PullRequestRef = z.output<typeof PullRequestRef>;
+
+/** A request on a task, as the task view, the peek and zamu tasks show list it. */
+export const PullRequestLink = PullRequestRef.extend({
+  state: PullRequestState,
+  headBranch: z.string(),
+  baseBranch: z.string(),
+  /** Host logins; null when the host did not say. */
+  author: z.string().nullable(),
+  mergedBy: z.string().nullable(),
+  how: PullRequestLinkHow,
+  /** Who linked it by hand; null for links by branch or description. */
+  linkedBy: UserRef.nullable(),
+  /** When Zamu first linked it to the task. */
+  linkedAt: Timestamp,
+  openedAt: Timestamp,
+  mergedAt: Timestamp.nullable(),
+  closedAt: Timestamp.nullable(),
+  /** The host's last update of the request. */
+  updatedAt: Timestamp,
+});
+export type PullRequestLink = z.output<typeof PullRequestLink>;
+
+/** The newest linked request on a list row or card, for the request marker. */
+export const PullRequestSummary = PullRequestRef.extend({ state: PullRequestState });
+export type PullRequestSummary = z.output<typeof PullRequestSummary>;
+
+/**
+ * A day to look at the task again and why. Waiting while the day is after today, ready from the
+ * day on (checkAgainState). Moving the task to Done or Canceled clears it.
+ */
+export const CheckAgain = z.object({
+  on: CalendarDate,
+  reason: z.string().min(1).max(MAX_CHECK_AGAIN_REASON_LENGTH),
+});
+export type CheckAgain = z.output<typeof CheckAgain>;
+
+/**
+ * A merge moved the task to Done while criteria or done items were open. Shown until every item
+ * is settled or the task is reopened: "Merged with 2 open criteria" when only criteria are open,
+ * "Merged with 3 open items" otherwise.
+ */
+export const MergedOpen = z
+  .object({
+    /** When the merge moved the task to Done. */
+    at: Timestamp,
+    openCriteria: z.number().int().nonnegative(),
+    openDoneItems: z.number().int().nonnegative(),
+  })
+  .refine((value) => value.openCriteria + value.openDoneItems > 0, {
+    message: 'A merged task is flagged only while an item is open',
+    path: ['openCriteria'],
+  });
+export type MergedOpen = z.output<typeof MergedOpen>;
+
+/** The request events that move tasks or close the request. */
+export const PULL_REQUEST_CAUSE_EVENTS = ['opened', 'ready', 'reopened', 'merged', 'closed'] as const;
+export const PullRequestCauseEvent = z.enum(PULL_REQUEST_CAUSE_EVENTS);
+export type PullRequestCauseEvent = z.infer<typeof PullRequestCauseEvent>;
+
+/**
+ * Why the system made a change. pull_request: a request event moved the task ("GitHub moved this
+ * to In review · #482 opened by claude-dev"); `by` is the host login behind the event, null when
+ * the host did not say. archive: the nightly job archived the task `afterDays` days after it closed.
+ */
+export const ActivityCause = z.discriminatedUnion('kind', [
+  PullRequestRef.extend({
+    kind: z.literal('pull_request'),
+    event: PullRequestCauseEvent,
+    by: z.string().nullable(),
+  }),
+  z.object({ kind: z.literal('archive'), afterDays: ArchiveAfterDays }),
+]);
+export type ActivityCause = z.output<typeof ActivityCause>;
+
+/**
+ * Who a history entry without an actor names. git: the host of a request event (GitHub, GitLab,
+ * Forgejo). zamu: Zamu's own jobs (the archive job, the hourly cycle job). backlog: a Backlog.md
+ * refresh.
+ */
+export const ActivitySystemActor = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('git'), provider: GitProvider }),
+  z.object({ kind: z.literal('zamu') }),
+  z.object({ kind: z.literal('backlog') }),
+]);
+export type ActivitySystemActor = z.output<typeof ActivitySystemActor>;
+
+// ---------------------------------------------------------------------------
 // Tasks
 // ---------------------------------------------------------------------------
 
@@ -518,6 +647,22 @@ export const Task = z.object({
   finalSummary: z.string().nullable().optional(),
   /** M6: who last wrote the final summary and when; null without one. */
   finalSummaryMeta: WorkTextMeta.nullable().optional(),
+  // M7 fields are optional in the type, so shapes built before M7 (fixtures, fakes) stay valid.
+  // Servers from M7 on always send them; read a missing list as [] and a missing value as null.
+  /** M7: the git branch the task was started on (never the default branch); null when none. */
+  workBranch: z.string().nullable().optional(),
+  /** M7: linked requests (removed links left out), newest opened first. */
+  pullRequests: z.array(PullRequestLink).optional(),
+  /** M7: the day to look at the task again, with the reason; null when none. */
+  checkAgain: CheckAgain.nullable().optional(),
+  /** M7: when the task entered Done or Canceled; null while open. */
+  closedAt: Timestamp.nullable().optional(),
+  /** M7: set while archived. An archived task is read-only: every write but restore is refused. */
+  archivedAt: Timestamp.nullable().optional(),
+  /** M7: who archived it; null when not archived, or when the nightly job or Backlog.md did. */
+  archivedBy: UserRef.nullable().optional(),
+  /** M7: a merge moved the task to Done with items open; null otherwise. */
+  mergedOpen: MergedOpen.nullable().optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 });
@@ -544,6 +689,8 @@ export const TaskListItem = Task.pick({
   dueDate: true,
   subtaskProgress: true,
   blocked: true,
+  checkAgain: true,
+  archivedAt: true,
   createdAt: true,
   updatedAt: true,
 }).extend({
@@ -559,6 +706,10 @@ export const TaskListItem = Task.pick({
   doneProgress: WorkItemProgress.optional(),
   /** M6: the task has a final summary (the peek opens on it). Missing reads as false. */
   hasFinalSummary: z.boolean().optional(),
+  /** M7: the newest linked request (by opened date) and its state; null when none. */
+  pullRequest: PullRequestSummary.nullable().optional(),
+  /** M7: linked requests, the newest included ("+3" counts the others). Missing reads as 0. */
+  pullRequestCount: z.number().int().nonnegative().optional(),
 });
 export type TaskListItem = z.output<typeof TaskListItem>;
 
@@ -732,6 +883,15 @@ export const ACTIVITY_TYPES = [
   'project.backlog_detached',
   /** Project-level: an owner or admin issued a new webhook secret (0.6.0). */
   'project.backlog_webhook_secret_reissued',
+  // M7
+  /** Archived by hand, by the nightly job (cause archive) or by Backlog.md's archive folder. */
+  'task.archived',
+  /** Restored from the archive. */
+  'task.unarchived',
+  /** A request linked to the task; the change `pullRequest` names it (from null). */
+  'task.pull_request_linked',
+  /** A request unlinked from the task; the change `pullRequest` names it (to null). */
+  'task.pull_request_unlinked',
 ] as const;
 export const ActivityType = z.enum(ACTIVITY_TYPES);
 export type ActivityType = z.infer<typeof ActivityType>;
@@ -743,6 +903,10 @@ export const TASK_ACTIVITY_TYPES = [
   'cycle.ended',
   'task.hidden',
   'task.restored',
+  'task.archived',
+  'task.unarchived',
+  'task.pull_request_linked',
+  'task.pull_request_unlinked',
 ] as const;
 export const TaskActivityType = z.enum(TASK_ACTIVITY_TYPES);
 export type TaskActivityType = z.infer<typeof TaskActivityType>;
@@ -786,6 +950,10 @@ export const ActivityTaskRef = z.object({
   removed: z.boolean(),
 });
 export type ActivityTaskRef = z.output<typeof ActivityTaskRef>;
+
+/** M7: a request inside an activity change, with how it was linked at the time. */
+export const ActivityPullRequestRef = PullRequestRef.extend({ how: PullRequestLinkHow });
+export type ActivityPullRequestRef = z.output<typeof ActivityPullRequestRef>;
 
 /** The prefix of a work-item change: criterion.checked, doneItem.waived, ... */
 export const WORK_ITEM_CHANGE_PREFIXES = {
@@ -841,7 +1009,8 @@ function workItemChanges<P extends string>(prefix: P) {
  * and parent; labels and blockedBy record the whole list before and after (sorted by name and by
  * key), so the UI diffs them for "added payouts, removed backend". M6 adds the eight item changes
  * of criteria (criterion.*) and done items (doneItem.*), and plan and finalSummary with the text
- * before and after.
+ * before and after. M7 adds workBranch, checkAgain (set, changed, or cleared when the task closes)
+ * and pullRequest (a link from null, an unlink to null).
  */
 export const ActivityChange = z.discriminatedUnion('field', [
   z.object({ field: z.literal('title'), from: z.string().nullable(), to: z.string().nullable() }),
@@ -865,6 +1034,14 @@ export const ActivityChange = z.discriminatedUnion('field', [
   ...workItemChanges(WORK_ITEM_CHANGE_PREFIXES.done),
   z.object({ field: z.literal('plan'), from: z.string().nullable(), to: z.string().nullable() }),
   z.object({ field: z.literal('finalSummary'), from: z.string().nullable(), to: z.string().nullable() }),
+  // M7
+  z.object({ field: z.literal('workBranch'), from: z.string().nullable(), to: z.string().nullable() }),
+  z.object({ field: z.literal('checkAgain'), from: CheckAgain.nullable(), to: CheckAgain.nullable() }),
+  z.object({
+    field: z.literal('pullRequest'),
+    from: ActivityPullRequestRef.nullable(),
+    to: ActivityPullRequestRef.nullable(),
+  }),
 ]);
 export type ActivityChange = z.output<typeof ActivityChange>;
 
@@ -892,10 +1069,11 @@ export const Activity = z.object({
   // M3 fields are optional in the type, so shapes built before M3 stay valid; servers send them.
   /**
    * M3: app, or backlog for changes a Backlog.md refresh wrote. A null actor with origin backlog
-   * is the Backlog.md actor; with origin app it is the system (the hourly cycle job). Missing: app.
+   * is the Backlog.md actor; with origin app it is the system (the hourly cycle job, the archive
+   * job); with origin git (M7) it is the host of a request. Missing: app.
    */
   origin: ActivityOrigin.optional(),
-  /** M3: the commit a Backlog.md refresh read; null for app changes. */
+  /** M3: the commit a Backlog.md refresh read, or (M7) the request URL for git changes; null for app changes. */
   originRef: z.string().nullable().optional(),
   /**
    * M3: Backlog.md-only fields a refresh changed (references, type, createdAt, ...), named
@@ -905,6 +1083,13 @@ export const Activity = z.object({
   backlogFields: z.array(z.string()).optional(),
   /** M6: the machine and branch the CLI sent; null when neither was set. Missing reads as null. */
   source: EntrySource.nullable().optional(),
+  /** M7: why the system made the change (a request event, the archive job); null otherwise. */
+  cause: ActivityCause.nullable().optional(),
+  /**
+   * M7: who to name when `actor` is null: the git host, Zamu, or Backlog.md. Null when a person or
+   * an agent acted. Missing reads as backlog for origin backlog and zamu otherwise.
+   */
+  system: ActivitySystemActor.nullable().optional(),
   createdAt: Timestamp,
 });
 export type Activity = z.output<typeof Activity>;
@@ -1401,7 +1586,9 @@ export const HomeTab = z.enum(HOME_TABS);
 export type HomeTab = z.infer<typeof HomeTab>;
 
 /**
- * Home groups. review: tasks In review. mentions: unanswered comments mentioning the caller (Mine
+ * Home groups. review: tasks In review. mergedOpen (M7): Done tasks a merge closed while a
+ * criterion or done item is still open, not archived. checkAgain (M7, Mine only): tasks whose
+ * check-again day is today or past. mentions: unanswered comments mentioning the caller (Mine
  * only). blocked: open tasks with an open blocker. overdue: open tasks due before today.
  * assigned: the rest of the caller's open tasks, by due date (overdue first, none last) then
  * priority. dueThisWeek: open tasks due from today to the end of the week (Everyone).
@@ -1409,6 +1596,8 @@ export type HomeTab = z.infer<typeof HomeTab>;
  */
 export const HOME_GROUP_KEYS = [
   'review',
+  'mergedOpen',
+  'checkAgain',
   'mentions',
   'blocked',
   'overdue',
@@ -1421,8 +1610,8 @@ export type HomeGroupKey = z.infer<typeof HomeGroupKey>;
 
 /** The groups of each tab, in order. A task shows once, in the first group it qualifies for. */
 export const HOME_GROUPS_BY_TAB = {
-  mine: ['review', 'mentions', 'blocked', 'overdue', 'assigned'],
-  everyone: ['review', 'blocked', 'overdue', 'dueThisWeek'],
+  mine: ['review', 'mergedOpen', 'checkAgain', 'mentions', 'blocked', 'overdue', 'assigned'],
+  everyone: ['review', 'mergedOpen', 'blocked', 'overdue', 'dueThisWeek'],
   agents: ['waiting'],
 } as const satisfies Record<HomeTab, readonly HomeGroupKey[]>;
 
@@ -1504,6 +1693,28 @@ export const HomeReason = z.discriminatedUnion('kind', [
   }),
   /** Assigned to you: no reason line. */
   z.object({ kind: z.literal('assigned') }),
+  /**
+   * M7: a merge closed the task with items open ("Merged with 2 open criteria · #482"). pullRequest
+   * is the merged request; null when the link is gone.
+   */
+  z.object({
+    kind: z.literal('mergedOpen'),
+    pullRequest: PullRequestRef.nullable(),
+    /** Who merged it, as the host names them ("#479 merged yesterday by tomas"); null when unknown. */
+    mergedBy: z.string().nullable().optional(),
+    openCriteria: z.number().int().nonnegative(),
+    openDoneItems: z.number().int().nonnegative(),
+    /** When the merge moved it to Done. */
+    at: Timestamp,
+  }),
+  /** M7: the check-again day came ("Check again today: wait for the bank's answer"). */
+  z.object({
+    kind: z.literal('checkAgain'),
+    on: CalendarDate,
+    reason: z.string(),
+    /** Days since the day in APP_TIME_ZONE: 0 on the day. */
+    daysAgo: z.number().int().nonnegative(),
+  }),
 ]);
 export type HomeReason = z.output<typeof HomeReason>;
 
@@ -1524,6 +1735,10 @@ export const HomePill = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('question') }),
   /** Nobody holds the task. */
   z.object({ kind: z.literal('unassigned') }),
+  /** M7: merged with items open, shown outside the mergedOpen group. */
+  z.object({ kind: z.literal('mergedOpen'), openItems: z.number().int().positive() }),
+  /** M7: the check-again day came, shown outside the checkAgain group. */
+  z.object({ kind: z.literal('checkAgain'), on: CalendarDate }),
 ]);
 export type HomePill = z.output<typeof HomePill>;
 
@@ -1638,9 +1853,9 @@ export const HomeAgent = z.object({
 export type HomeAgent = z.output<typeof HomeAgent>;
 
 /**
- * Tab counts in the Home header. mine: review + mentions + blocked + overdue (assigned is not
- * counted; the sidebar shows the same number). everyone: the sum of its four groups. agents: the
- * number of agent cards.
+ * Tab counts in the Home header. mine: review + mergedOpen + checkAgain + mentions + blocked +
+ * overdue (assigned is not counted; the sidebar shows the same number). everyone: the sum of its
+ * groups. agents: the number of agent cards.
  */
 export const HomeTabCounts = z.object({
   mine: z.number().int().nonnegative(),
@@ -1663,20 +1878,30 @@ export const Home = z.object({
 });
 export type Home = z.output<typeof Home>;
 
-/** GET /home/counts: the sidebar count of what needs the caller (the Mine tab count). */
+/**
+ * GET /home/counts: the sidebar count of what needs the caller (the Mine tab count). mergedOpen and
+ * checkAgain (M7) are optional in the type so shapes built before M7 stay valid; servers send them,
+ * and a missing one reads as 0.
+ */
 export const HomeCounts = z
   .object({
     review: z.number().int().nonnegative(),
+    mergedOpen: z.number().int().nonnegative().optional(),
+    checkAgain: z.number().int().nonnegative().optional(),
     mentions: z.number().int().nonnegative(),
     blocked: z.number().int().nonnegative(),
     overdue: z.number().int().nonnegative(),
-    /** review + mentions + blocked + overdue. */
+    /** review + mergedOpen + checkAgain + mentions + blocked + overdue. */
     total: z.number().int().nonnegative(),
   })
-  .refine((c) => c.total === c.review + c.mentions + c.blocked + c.overdue, {
-    message: 'total is the sum of the four groups',
-    path: ['total'],
-  });
+  .refine(
+    (c) =>
+      c.total === c.review + (c.mergedOpen ?? 0) + (c.checkAgain ?? 0) + c.mentions + c.blocked + c.overdue,
+    {
+      message: 'total is the sum of the counted groups',
+      path: ['total'],
+    },
+  );
 export type HomeCounts = z.output<typeof HomeCounts>;
 
 // ---------------------------------------------------------------------------
@@ -1771,6 +1996,90 @@ export const GitConnectionDeleted = z.object({
   pausedProjects: z.array(ProjectRef),
 });
 export type GitConnectionDeleted = z.output<typeof GitConnectionDeleted>;
+
+// ---------------------------------------------------------------------------
+// Repository links (M7): GET /projects/{project}/repository
+// ---------------------------------------------------------------------------
+
+/** How the last webhook delivery went: accepted, refused for its signature, or unreadable. */
+export const REPOSITORY_WEBHOOK_STATUSES = ['ok', 'bad_signature', 'bad_payload'] as const;
+export const RepositoryWebhookStatus = z.enum(REPOSITORY_WEBHOOK_STATUSES);
+export type RepositoryWebhookStatus = z.infer<typeof RepositoryWebhookStatus>;
+
+/**
+ * The repository's webhook. The secret is never sent here: POST .../repository/webhook-secret
+ * issues one and returns it once.
+ */
+export const RepositoryWebhook = z.object({
+  /** POST target for the host: https://zamu.example.com/api/webhooks/repository/{webhookId}. */
+  url: z.url(),
+  /** A secret was issued (the page shows it masked). */
+  secretSet: z.boolean(),
+  /** When the last delivery arrived, whatever its status; null: none yet. */
+  lastAt: Timestamp.nullable(),
+  lastStatus: RepositoryWebhookStatus.nullable(),
+  /**
+   * The project mirrors Backlog.md and its Backlog.md webhook carries request events too, so it
+   * needs no second webhook.
+   */
+  coveredByBacklog: z.boolean(),
+});
+export type RepositoryWebhook = z.output<typeof RepositoryWebhook>;
+
+/** The hourly check of the repository's requests. */
+export const RepositorySync = z.object({
+  /** When the last check finished; null before the first one. */
+  lastAt: Timestamp.nullable(),
+  /** Why the last check failed, without the token; null after a good one. */
+  error: z.string().nullable(),
+  /** The next hourly check; null when the project has no repository. */
+  nextAt: Timestamp.nullable(),
+});
+export type RepositorySync = z.output<typeof RepositorySync>;
+
+/**
+ * A project's repository link: how Zamu reads its requests and what a merge does. repository null
+ * is the "No repository" state: webhook is null then and the rest describes nothing yet. Owners
+ * and admins edit (canEdit); everyone else reads.
+ */
+export const RepositorySettings = z.object({
+  project: ProjectRef,
+  /** The project's repository as entered; null when it has none. */
+  repository: z.string().nullable(),
+  /** The host kind, from the connection or the host name; null when unknown. */
+  provider: GitProvider.nullable(),
+  /** The token Zamu reads with; null reads a public repository without one. */
+  connection: GitConnectionRef.nullable(),
+  /** The repository's default branch from the last check; null until then. */
+  defaultBranch: z.string().nullable(),
+  /** A merge into the default branch moves linked tasks to Done. Always false while mirrored. */
+  closeOnMerge: z.boolean(),
+  /** The project mirrors Backlog.md: the files own the status, so requests move nothing. */
+  mirrored: z.boolean(),
+  /** Null while the project has no repository. */
+  webhook: RepositoryWebhook.nullable(),
+  sync: RepositorySync,
+  canEdit: z.boolean(),
+});
+export type RepositorySettings = z.output<typeof RepositorySettings>;
+
+/** A newly issued repository webhook secret, shown once. The URL is unchanged. */
+export const RepositoryWebhookSecret = z.object({
+  url: z.url(),
+  secret: z.string().min(1),
+});
+export type RepositoryWebhookSecret = z.output<typeof RepositoryWebhookSecret>;
+
+/**
+ * GET /projects/{project}/archive-preview?days=N: how many tasks the next nightly run would archive
+ * with that setting (the same query the job runs).
+ */
+export const ArchivePreview = z.object({
+  project: ProjectKey,
+  days: ArchiveAfterDays,
+  count: z.number().int().nonnegative(),
+});
+export type ArchivePreview = z.output<typeof ArchivePreview>;
 
 // ---------------------------------------------------------------------------
 // Backlog.md sources (M3)
@@ -2083,12 +2392,12 @@ export type BacklogWebhookSecret = z.output<typeof BacklogWebhookSecret>;
 // ---------------------------------------------------------------------------
 
 /**
- * The folders under the Backlog.md folder that an export owns: tasks in tasks/, milestones in
- * milestones/, and the legacy completed/ folder, which an export only prunes. The CLI writes and
- * prunes only these.
+ * The folders under the Backlog.md folder that an export owns: tasks in tasks/, archived tasks in
+ * archive/tasks/ (M7), milestones in milestones/, and the legacy completed/ folder, which an export
+ * only prunes. The CLI writes and prunes only these.
  */
-export const BACKLOG_EXPORT_FOLDERS = ['tasks', 'completed', 'milestones'] as const;
-export const BACKLOG_EXPORT_PREFIXES = ['tasks/', 'completed/', 'milestones/'] as const;
+export const BACKLOG_EXPORT_FOLDERS = ['tasks', 'archive/tasks', 'completed', 'milestones'] as const;
+export const BACKLOG_EXPORT_PREFIXES = ['tasks/', 'archive/tasks/', 'completed/', 'milestones/'] as const;
 export const BacklogExportPrefix = z.enum(BACKLOG_EXPORT_PREFIXES);
 export type BacklogExportPrefix = z.infer<typeof BacklogExportPrefix>;
 

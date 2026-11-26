@@ -2,6 +2,7 @@
 // nav (Project: General, Labels, Task defaults, Backlog.md) and the current section in a 720px column.
 // M6: a project that still mirrors Backlog.md has no Task defaults (its tasks come from the files) and
 // calls its page "Backlog.md sync"; once Zamu owns the tasks the page is "Backlog.md" (frames 031, 038).
+// M7: Repository and Archive follow Task defaults, in the design's order, before Backlog.md.
 import { useQuery } from '@tanstack/react-query';
 import { useRouterState } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
@@ -12,9 +13,9 @@ import { cn, SettingsNav, SourceStatusDot } from '~/ui';
 import { sourceDot } from './format';
 import { hasTasksQuery } from './queries';
 
-export type ProjectSettingsSection = 'general' | 'labels' | 'defaults' | 'backlog';
+export type ProjectSettingsSection = 'general' | 'labels' | 'defaults' | 'repository' | 'archive' | 'backlog';
 
-/** /p/PAY/settings, /p/PAY/settings/labels, /p/PAY/settings/defaults and /p/PAY/settings/backlog, in the workspace. */
+/** /p/PAY/settings, /p/PAY/settings/labels, …/defaults, …/repository, …/archive and …/backlog, in the workspace. */
 export function projectSettingsHref(
   workspace: WorkspaceUrlSlug,
   projectKey: string,
@@ -30,6 +31,8 @@ export function settingsSection(pathname: string): ProjectSettingsSection {
   if (path.endsWith('/settings/backlog')) return 'backlog';
   if (path.endsWith('/settings/labels')) return 'labels';
   if (path.endsWith('/settings/defaults')) return 'defaults';
+  if (path.endsWith('/settings/repository')) return 'repository';
+  if (path.endsWith('/settings/archive')) return 'archive';
   return 'general';
 }
 
@@ -80,6 +83,8 @@ export function ProjectSettingsLayout({ projectKey, children }: { projectKey: st
                 item('general', 'General'),
                 item('labels', 'Labels'),
                 ...(showDefaults ? [item('defaults', 'Task defaults')] : []),
+                item('repository', 'Repository'),
+                item('archive', 'Archive'),
                 ...(showBacklog
                   ? [
                       item(

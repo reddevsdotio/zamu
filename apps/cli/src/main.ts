@@ -14,10 +14,11 @@ import { createLabel, deleteLabel, listLabels, updateLabel } from './commands/la
 import { link } from './commands/link';
 import { createMilestone, listMilestones, updateMilestone } from './commands/milestones';
 import { addNote } from './commands/notes';
-import { deleteProject, listProjects } from './commands/projects';
+import { linkPullRequest, unlinkPullRequest } from './commands/pr';
+import { deleteProject, listProjects, showProject } from './commands/projects';
 import { dropQueueEntry, showQueue } from './commands/queue';
 import { collectKeys, collectList } from './commands/shared';
-import { createTask, listTasks, showTask, updateTask } from './commands/tasks';
+import { archiveTasks, createTask, listTasks, restoreTasks, showTask, updateTask } from './commands/tasks';
 import { collectNumbers, collectTexts, waiveCollector } from './commands/work';
 import { type CommandContext, createContext, reportError } from './context';
 import { EXIT, toCliError, usageError } from './errors';
@@ -103,14 +104,23 @@ Work record: acceptance criteria (--ac), done items (--dod), the plan and the fi
 through zamu tasks create and update, with the flag names of the Backlog.md CLI. zamu notes add writes
 a work note. zamu instructions explains how agents work on a task.
 
-Offline queue: when the server doesn't answer within 5 seconds, checking, unchecking, waiving and
-unwaiving items, a status change, a note and a comment on an existing task are queued in
-$XDG_STATE_HOME/zamu/queue.json (~/.local/state/zamu) and sent by the next command that reaches the
-server. zamu queue lists them; zamu queue drop ID removes one.
+Pull requests: a request links to the tasks started on its branch, to the tasks on a "Closes: PAY-12"
+line of its description, and to tasks linked with zamu pr link. Opening it moves them to In review; a
+merge into the default branch moves them to Done when the project closes on merge.
 
-Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task with open items),
-2 auth, 3 not found, 4 forbidden, 5 server (unreachable, and nothing queued), 6 Backlog.md conflict,
-7 queued (the server didn't answer; the write waits in the offline queue).`,
+Archive: archived tasks are left out of lists and refuse every write until zamu tasks restore. A task
+can wait until a day: zamu tasks update KEY --check-again YYYY-MM-DD --reason "...".
+
+Offline queue: when the server doesn't answer within 5 seconds, writes on an existing task are
+queued in $XDG_STATE_HOME/zamu/queue.json (~/.local/state/zamu): checking, unchecking, waiving and
+unwaiving items, a status change, a check-again day, a note, a comment, archiving, restoring, and
+linking or unlinking a request. The next command that reaches the server sends them. zamu queue lists
+them; zamu queue drop ID removes one.
+
+Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task with open items;
+TASK_ARCHIVED: restore the task first), 2 auth, 3 not found, 4 forbidden, 5 server (unreachable, and
+nothing queued), 6 Backlog.md conflict, 7 queued (the server didn't answer; the write waits in the
+offline queue).`,
     );
 
   const leaf = (command: Command) => command.option('--json', 'print the versioned JSON result (zamu.v1.*)');
@@ -187,10 +197,23 @@ Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task w
       .option('--everyone', 'the whole workspace instead of your tasks, your agents and mentions of you'),
   ).action((options: { everyone?: boolean }) => showDashboard(context, options));
 
-  const projects = program.command('projects').description('list and delete projects');
+  const projects = program.command('projects').description('list, show and delete projects');
   leaf(projects.command('list').description('list projects with open task counts')).action(() =>
     listProjects(context),
   );
+
+  leaf(
+    projects
+      .command('show')
+      .description(
+        'show a project: open tasks, the repository (how Zamu reads its requests, close on merge, the ' +
+          'webhook and the hourly check) and the archive setting',
+      )
+      .argument(
+        '[KEY]',
+        "project key, e.g. PAY (default: ZAMU_PROJECT, .zamu.json or this clone's linked project)",
+      ),
+  ).action((key: string | undefined) => showProject(context, key));
 
   leaf(
     projects
@@ -203,7 +226,7 @@ Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task w
       .option('--confirm <KEY>', 'the project key again; nothing is deleted without it'),
   ).action((key: string, options: { confirm?: string }) => deleteProject(context, key, options));
 
-  const tasks = program.command('tasks').description('list, show, create and update tasks');
+  const tasks = program.command('tasks').description('list, show, create, update, archive and restore tasks');
   // --waive-ac, --waive-dod and --reason share one list, so a reason pairs with the waives before it.
   const waives = waiveCollector();
   leaf(
@@ -238,6 +261,12 @@ Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task w
       .option('--no-blocked', 'only tasks without an open blocker')
       .option('--top-level', 'leave subtasks out')
       .option('--parent <TASK-KEY>', 'only the subtasks of this task')
+      .option('--waiting', 'only tasks waiting for their check-again day (the day is after today)')
+      .option('--ready-to-check', 'only tasks whose check-again day is today or has passed')
+      .option(
+        '--archived <which>',
+        'include: archived tasks with the rest; only: just archived tasks (default: left out)',
+      )
       .option('--sort <order>', `one order for the whole list: ${SORT_HELP} (default: status, then priority)`)
       .option('--limit <n>', 'tasks per page, 1 to 200 (default 50)')
       .option('--cursor <cursor>', 'next page, from the previous result'),
@@ -317,8 +346,15 @@ Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task w
       .option('--waive-dod <n>', 'waive done item n; needs --reason; repeatable', waives.waive('done'))
       .option('--unwaive-dod <n>', `take the waiver off done item n: ${ITEM_NUMBER_HELP}`, collectNumbers)
       .option(
+        '--check-again <day>',
+        'look at the task again on this day, YYYY-MM-DD; needs --reason (what it waits for)',
+        waives.checkAgain,
+      )
+      .option('--no-check-again', 'clear the check-again day', waives.noCheckAgain)
+      .option(
         '--reason <text>',
-        'why the waived items no longer apply (one line); applies to the --waive-ac and --waive-dod before it',
+        'one line: why the waived items no longer apply, or what the task waits for with --check-again; ' +
+          'applies to the --waive-ac, --waive-dod and --check-again before it',
         waives.reason,
       )
       .option('--plan <text>', 'implementation plan, Markdown; "-" reads it from stdin, "" clears it')
@@ -329,6 +365,56 @@ Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task w
         collectTexts,
       ),
   ).action((key: string, options) => updateTask(context, key, options));
+
+  leaf(
+    tasks
+      .command('archive')
+      .description(
+        'archive tasks in any status, all or nothing: they leave lists, boards and Home and refuse every ' +
+          'write until restored (mirrored tasks follow the Backlog.md archive/tasks/ folder instead)',
+      )
+      .argument('<TASK-KEY...>', 'task keys, e.g. PAY-12 PAY-13 or PAY-12,PAY-13 (up to 100)'),
+  ).action((keys: string[]) => archiveTasks(context, keys));
+
+  leaf(
+    tasks
+      .command('restore')
+      .description('take archived tasks out of the archive, all or nothing')
+      .argument('<TASK-KEY...>', 'task keys, e.g. PAY-12 PAY-13 or PAY-12,PAY-13 (up to 100)'),
+  ).action((keys: string[]) => restoreTasks(context, keys));
+
+  const pr = program
+    .command('pr')
+    .description(
+      "link pull and merge requests of the project's repository to tasks by hand, or unlink them " +
+        '(requests also link from the work branch and a Closes: line)',
+    );
+  leaf(
+    pr
+      .command('link')
+      .description(
+        "link a request of the project's repository to a task; Zamu reads it from the host and never writes there",
+      )
+      .argument('<TASK-KEY>', TASK_KEY_HELP)
+      .argument(
+        '<url>',
+        'web address of the request, e.g. https://github.com/northwind/payments/pull/482 or ' +
+          'https://gitlab.example.com/northwind/payments/-/merge_requests/12',
+      )
+      .option('--project <KEY>', TASK_PROJECT_HELP)
+      .option('--dry-run', 'show the request as it would link, and write nothing'),
+  ).action((key: string, url: string, options) => linkPullRequest(context, key, url, options));
+
+  leaf(
+    pr
+      .command('unlink')
+      .description(
+        'remove a request from a task; neither its branch nor a Closes: line links it again, zamu pr link does',
+      )
+      .argument('<TASK-KEY>', TASK_KEY_HELP)
+      .argument('<number>', 'the request number, e.g. 482 (#482 on GitHub and Forgejo, !482 on GitLab)')
+      .option('--project <KEY>', TASK_PROJECT_HELP),
+  ).action((key: string, number: string, options) => unlinkPullRequest(context, key, number, options));
 
   const notes = program.command('notes').description('work notes on a task (M6)');
   leaf(
@@ -512,7 +598,8 @@ Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task w
     backlog
       .command('export')
       .description(
-        'write the project as Backlog.md files under tasks/ and milestones/, and remove task and milestone ' +
+        'write the project as Backlog.md files under tasks/, archive/tasks/ (archived tasks) and milestones/, ' +
+          'and remove task and milestone ' +
           'files it no longer has; documents, decisions, drafts and config.yml stay as they are',
       )
       .option('--project <KEY>', PROJECT_HELP)

@@ -322,3 +322,76 @@ export async function createTaskItemRows(
     )
     .returning();
 }
+
+// ---------------------------------------------------------------------------
+// M7 rows: repository links, pull requests and their links to tasks. Raw inserts like the rows
+// above; the pull request services decide what links, these don't.
+// ---------------------------------------------------------------------------
+
+/** Inserts a project's repository link. repository_key defaults to the project's. */
+export async function createRepositoryLinkRow(
+  db: Db,
+  scope: ProjectScope,
+  values: Partial<Omit<typeof schema.repositoryLink.$inferInsert, 'workspaceId' | 'projectId'>> = {},
+): Promise<typeof schema.repositoryLink.$inferSelect> {
+  const [project] = await db
+    .select({ repositoryKey: schema.project.repositoryKey })
+    .from(schema.project)
+    .where(eq(schema.project.id, scope.projectId));
+  const [row] = await db
+    .insert(schema.repositoryLink)
+    .values({
+      repositoryKey: project?.repositoryKey ?? `github.com/northwind/payments-${unique()}`,
+      webhookId: `hook-${crypto.randomUUID()}`,
+      ...values,
+      ...scope,
+    })
+    .returning();
+  if (!row) throw new Error('repository link insert failed');
+  return row;
+}
+
+/**
+ * Inserts a request of a project's repository. Defaults: open, head branch feat/<number>, base
+ * main, a GitHub address under github.com/northwind/payments, opened and updated an hour ago.
+ */
+export async function createPullRequestRow(
+  db: Db,
+  scope: ProjectScope,
+  values: Partial<Omit<typeof schema.pullRequest.$inferInsert, 'workspaceId' | 'projectId'>> & {
+    number: number;
+  },
+): Promise<typeof schema.pullRequest.$inferSelect> {
+  const at = new Date(Date.now() - 3_600_000);
+  const [row] = await db
+    .insert(schema.pullRequest)
+    .values({
+      title: `Request ${values.number}`,
+      state: 'open',
+      headBranch: `feat/${values.number}`,
+      baseBranch: 'main',
+      webUrl: `https://github.com/northwind/payments/pull/${values.number}`,
+      openedAt: at,
+      hostUpdatedAt: at,
+      ...values,
+      ...scope,
+    })
+    .returning();
+  if (!row) throw new Error('pull request insert failed');
+  return row;
+}
+
+/** Links a request to a task. Defaults to a link by branch. */
+export async function linkPullRequestRow(
+  db: Db,
+  taskId: string,
+  pullRequestId: string,
+  values: Partial<Omit<typeof schema.taskPullRequest.$inferInsert, 'taskId' | 'pullRequestId'>> = {},
+): Promise<typeof schema.taskPullRequest.$inferSelect> {
+  const [row] = await db
+    .insert(schema.taskPullRequest)
+    .values({ viaBranch: !values.viaHand && !values.viaDescription, ...values, taskId, pullRequestId })
+    .returning();
+  if (!row) throw new Error('task pull request insert failed');
+  return row;
+}

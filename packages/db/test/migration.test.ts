@@ -1,7 +1,8 @@
 // Upgrade paths: a database migrated and filled under an older release keeps every row through the
 // later migrations, and each backfill fills what it should (M2 ranks in the M1 list order, M5 task
-// fields from Backlog.md blocks, the M6 work record from mirrored descriptions, and in 0.10 the
-// workspace each user used last and workspace slugs that fit the URL rules).
+// fields from Backlog.md blocks, the M6 work record from mirrored descriptions, in 0.10 the
+// workspace each user used last and workspace slugs that fit the URL rules, and in M7 when closed
+// tasks closed and which mirrored tasks start archived).
 import { cpSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1067,5 +1068,299 @@ describe('workspaces migration on a 0.9.0 database with slugs outside the URL ru
       { id: DEE, last_workspace_id: null },
       { id: EVE, last_workspace_id: id(4) },
     ]);
+  });
+});
+
+/** Every migration released in 0.10.0, the last release before M7. */
+const V0_10_0_MIGRATIONS = [...V0_9_0_MIGRATIONS, '20261126093425_mw_workspaces'];
+
+describe('M7 migration on a 0.10.0 database with closed, mirrored and linked projects', () => {
+  let url: string;
+  let folder: string;
+  let db: Db;
+  let end: () => Promise<void>;
+
+  const ANA = '0190a1b2-0000-7000-8000-0000000005a1';
+  const AGENT = '0190a1b2-0000-7000-8000-0000000005a2';
+  const NORTHWIND = '0190a1b2-0000-7000-8000-0000000005b1';
+  const PAY = '0190a1b2-0000-7000-8000-0000000005c1';
+  const BACK = '0190a1b2-0000-7000-8000-0000000005c2';
+  const OLD = '0190a1b2-0000-7000-8000-0000000005c3';
+
+  beforeAll(async () => {
+    folder = mkdtempSync(join(tmpdir(), 'zamu-0-10-0-migrations-'));
+    for (const name of V0_10_0_MIGRATIONS) {
+      cpSync(join(migrationsFolder, name), join(folder, name), { recursive: true });
+    }
+    url = withDatabase(testServerUrl(), uniqueDatabaseName('pm_test_upgrade_m7'));
+    await createDatabase(url);
+    await migrateFrom(url, folder);
+    const handle = createDb(url);
+    db = handle.db;
+    end = () => handle.pool.end();
+  });
+
+  afterAll(async () => {
+    await end?.();
+    if (url) await dropDatabase(url);
+    if (folder) rmSync(folder, { recursive: true, force: true });
+  });
+
+  async function rows(query: ReturnType<typeof sql>) {
+    const result = await db.execute<Record<string, unknown>>(query);
+    return result.rows;
+  }
+
+  /** Inserts a task as 0.10.0 wrote it; returns its id. */
+  async function insertTask(
+    projectId: string,
+    number: number,
+    status: string,
+    updatedAt: string,
+    block: Record<string, unknown> | null = null,
+  ): Promise<string> {
+    const result = await db.execute<{ id: string }>(sql`
+      insert into task (project_id, number, backlog_id, backlog_data, title, status, created_by_id, updated_at)
+      values (${projectId}, ${number}, ${block ? `BACK-${number}` : null}, ${block ? JSON.stringify(block) : null}::jsonb,
+        ${`Task ${number}`}, ${status}::task_status, ${ANA}, ${updatedAt}::timestamptz)
+      returning id`);
+    return result.rows[0]?.id as string;
+  }
+
+  /** An activity row on a task as 0.10.0 wrote it. */
+  async function insertActivity(
+    projectId: string,
+    taskId: string,
+    type: string,
+    changes: unknown[],
+    createdAt: string,
+    origin = 'app',
+  ) {
+    await db.execute(sql`
+      insert into activity (workspace_id, project_id, task_id, actor_id, type, changes, origin, created_at)
+      values (${NORTHWIND}, ${projectId}, ${taskId}, ${origin === 'app' ? AGENT : null}, ${type},
+        ${JSON.stringify(changes)}::jsonb, ${origin}, ${createdAt}::timestamptz)`);
+  }
+
+  it('fills closed_at from history, archives mirrored archive files and adds the request tables', async () => {
+    await db.execute(sql`insert into "user" (id, name, email) values
+      (${ANA}, 'Ana', 'ana-m7@example.com'), (${AGENT}, 'claude-dev', 'claude-dev-m7@agents.invalid')`);
+    await db.execute(sql`update "user" set kind = 'agent', responsible_user_id = ${ANA} where id = ${AGENT}`);
+    await db.execute(
+      sql`insert into organization (id, name, slug) values (${NORTHWIND}, 'Northwind', 'northwind')`,
+    );
+    await db.execute(sql`insert into member (organization_id, user_id, role) values
+      (${NORTHWIND}, ${ANA}, 'owner'), (${NORTHWIND}, ${AGENT}, 'member')`);
+    // PAY is native and linked to a repository; BACK mirrors Backlog.md; OLD was imported (detached).
+    await db.execute(sql`insert into project (id, workspace_id, key, name, repository, repository_key) values
+      (${PAY}, ${NORTHWIND}, 'PAY', 'Payments', 'https://github.com/northwind/payments', 'github.com/northwind/payments'),
+      (${BACK}, ${NORTHWIND}, 'BACK', 'Backend', 'git@gitlab.com:northwind/backend.git', 'gitlab.com/northwind/backend'),
+      (${OLD}, ${NORTHWIND}, 'OLD', 'Legacy', 'https://gitlab.com/northwind/legacy', 'gitlab.com/northwind/legacy')`);
+    await db.execute(sql`insert into backlog_source (project_id, mode, state, webhook_id, created_by_id, detached_at) values
+      (${BACK}, 'mirror', 'healthy', 'hook-back-m7', ${ANA}, null),
+      (${OLD}, 'import', 'detached', 'hook-old-m7', ${ANA}, '2026-11-01T09:00:00Z')`);
+
+    // Done after a reopen: the latest move to Done counts, not the first one or a later title edit.
+    const reopened = await insertTask(PAY, 1, 'done', '2026-11-20T10:00:00.123456Z');
+    await insertActivity(
+      PAY,
+      reopened,
+      'task.created',
+      [{ field: 'title', from: null, to: 'Task 1' }],
+      '2026-11-01T09:00:00Z',
+    );
+    await insertActivity(
+      PAY,
+      reopened,
+      'task.updated',
+      [{ field: 'status', from: 'in_review', to: 'done' }],
+      '2026-11-05T09:00:00Z',
+    );
+    await insertActivity(
+      PAY,
+      reopened,
+      'task.updated',
+      [{ field: 'status', from: 'done', to: 'in_progress' }],
+      '2026-11-06T09:00:00Z',
+    );
+    await insertActivity(
+      PAY,
+      reopened,
+      'task.updated',
+      [
+        { field: 'priority', from: 'low', to: 'high' },
+        { field: 'status', from: 'in_review', to: 'done' },
+      ],
+      '2026-11-08T09:00:00Z',
+    );
+    await insertActivity(
+      PAY,
+      reopened,
+      'task.updated',
+      [{ field: 'title', from: 'Task', to: 'Task 1' }],
+      '2026-11-20T10:00:00Z',
+    );
+    // Created as Done: the creation is the close.
+    const createdDone = await insertTask(PAY, 2, 'done', '2026-11-12T10:00:00Z');
+    await insertActivity(
+      PAY,
+      createdDone,
+      'task.created',
+      [{ field: 'status', from: null, to: 'done' }],
+      '2026-11-10T09:00:00Z',
+    );
+    // Canceled without a status row: updated_at.
+    const canceled = await insertTask(PAY, 3, 'canceled', '2026-11-15T08:30:00.654321Z');
+    // Canceled, but the only status row moved it to Done: that row is not the current value.
+    const canceledAfterDone = await insertTask(PAY, 4, 'canceled', '2026-11-16T08:00:00Z');
+    await insertActivity(
+      PAY,
+      canceledAfterDone,
+      'task.updated',
+      [{ field: 'status', from: 'todo', to: 'done' }],
+      '2026-11-14T09:00:00Z',
+    );
+    // Open tasks stay unclosed, whatever their history says.
+    const open = await insertTask(PAY, 5, 'in_progress', '2026-11-18T08:00:00Z');
+    await insertActivity(
+      PAY,
+      open,
+      'task.updated',
+      [{ field: 'status', from: 'done', to: 'in_progress' }],
+      '2026-11-17T09:00:00Z',
+    );
+
+    // Mirrored tasks: one in archive/tasks/, one in tasks/, one Done in the archive (closed and archived).
+    const mirroredArchived = await insertTask(BACK, 10, 'todo', '2026-11-19T07:00:00Z', { kind: 'archived' });
+    const mirroredActive = await insertTask(BACK, 11, 'todo', '2026-11-19T07:00:00Z', { kind: 'task' });
+    const mirroredDone = await insertTask(BACK, 12, 'done', '2026-11-19T07:30:00Z', { kind: 'archived' });
+    await insertActivity(
+      BACK,
+      mirroredDone,
+      'task.updated',
+      [{ field: 'status', from: 'in_review', to: 'done' }],
+      '2026-11-18T07:30:00Z',
+      'backlog',
+    );
+    // Imported (detached) tasks from the archive folder are Zamu's now: not archived by the upgrade.
+    const imported = await insertTask(OLD, 20, 'done', '2026-11-02T07:00:00Z', { kind: 'archived' });
+
+    const before = await rowCounts(db);
+    const updatedBefore = await rows(sql`select id, updated_at::text from task order by id`);
+
+    await migrateFrom(url, migrationsFolder);
+
+    expect(await rowCounts(db)).toEqual(before);
+    // The backfills leave updated_at alone (microseconds included).
+    expect(await rows(sql`select id, updated_at::text from task order by id`)).toEqual(updatedBefore);
+
+    const tasks = new Map(
+      (
+        await rows(sql`select id, closed_at, archived_at, archived_by_id, work_branch, merged_done_at,
+          check_again_on, check_again_reason from task`)
+      ).map((row) => [row.id as string, row]),
+    );
+    /** A timestamp column as an ISO string, or null. Raw queries hand timestamps back as text. */
+    const iso = (value: unknown) =>
+      value === null || value === undefined ? null : new Date(value as string).toISOString();
+    const closed = (id: string) => iso(tasks.get(id)?.closed_at);
+    const archived = (id: string) => iso(tasks.get(id)?.archived_at);
+    expect(closed(reopened)).toBe('2026-11-08T09:00:00.000Z');
+    expect(closed(createdDone)).toBe('2026-11-10T09:00:00.000Z');
+    expect(closed(canceled)).toBe('2026-11-15T08:30:00.654Z');
+    expect(closed(canceledAfterDone)).toBe('2026-11-16T08:00:00.000Z');
+    expect(closed(open)).toBeNull();
+    expect(closed(mirroredDone)).toBe('2026-11-18T07:30:00.000Z');
+    expect(closed(imported)).toBe('2026-11-02T07:00:00.000Z');
+    // The stored value keeps the microseconds of updated_at.
+    expect(await rows(sql`select closed_at::text as closed from task where id = ${canceled}`)).toEqual([
+      { closed: '2026-11-15 08:30:00.654321+00' },
+    ]);
+
+    expect(archived(mirroredArchived)).toBe('2026-11-19T07:00:00.000Z');
+    expect(archived(mirroredDone)).toBe('2026-11-19T07:30:00.000Z');
+    expect(archived(mirroredActive)).toBeNull();
+    expect(archived(imported)).toBeNull();
+    for (const id of [reopened, createdDone, canceled, canceledAfterDone, open])
+      expect(archived(id)).toBeNull();
+
+    // The other new task columns start empty; no one archived anything by hand.
+    for (const row of tasks.values()) {
+      expect(row).toMatchObject({
+        archived_by_id: null,
+        work_branch: null,
+        merged_done_at: null,
+        check_again_on: null,
+        check_again_reason: null,
+      });
+    }
+
+    // Existing projects keep archiving off; a new project gets no database default either.
+    expect(await rows(sql`select distinct archive_after_days from project`)).toEqual([
+      { archive_after_days: null },
+    ]);
+    await db.execute(sql`insert into project (workspace_id, key, name) values (${NORTHWIND}, 'NEW', 'New')`);
+    expect(await rows(sql`select archive_after_days from project where key = 'NEW'`)).toEqual([
+      { archive_after_days: null },
+    ]);
+    await db.execute(sql`update project set archive_after_days = 14 where id = ${PAY}`);
+    await expect(
+      db.execute(sql`update project set archive_after_days = 0 where id = ${PAY}`),
+    ).rejects.toThrow();
+    await expect(
+      db.execute(sql`update project set archive_after_days = 366 where id = ${PAY}`),
+    ).rejects.toThrow();
+
+    // Old activity rows have no cause; the git origin is allowed from now on.
+    expect(await rows(sql`select count(*)::int as count from activity where cause is not null`)).toEqual([
+      { count: 0 },
+    ]);
+    await db.execute(sql`
+      insert into activity (workspace_id, project_id, task_id, type, changes, origin, origin_ref, cause)
+      values (${NORTHWIND}, ${PAY}, ${open}, 'task.updated', '[{"field":"status","from":"in_progress","to":"in_review"}]'::jsonb,
+        'git', 'https://github.com/northwind/payments/pull/482',
+        ${JSON.stringify({
+          kind: 'pull_request',
+          provider: 'github',
+          number: 482,
+          url: 'https://github.com/northwind/payments/pull/482',
+          title: 'Retry webhooks',
+          event: 'opened',
+          by: 'claude-dev',
+        })}::jsonb)`);
+    await expect(
+      db.execute(sql`insert into activity (workspace_id, project_id, task_id, type, origin)
+        values (${NORTHWIND}, ${PAY}, ${open}, 'task.updated', 'forge')`),
+    ).rejects.toThrow();
+
+    // The linked project gets a repository link, its requests and their task links.
+    await db.execute(sql`insert into repository_link (workspace_id, project_id, repository_key, webhook_id)
+      values (${NORTHWIND}, ${PAY}, 'github.com/northwind/payments', 'hook-pay-m7')`);
+    expect(
+      await rows(
+        sql`select close_on_merge, connection_id, moves_from is not null as moves from repository_link`,
+      ),
+    ).toEqual([{ close_on_merge: true, connection_id: null, moves: true }]);
+    const request = await db.execute<{ id: string }>(sql`
+      insert into pull_request (workspace_id, project_id, number, title, state, head_branch, base_branch, web_url,
+        opened_at, host_updated_at, body_keys)
+      values (${NORTHWIND}, ${PAY}, 482, 'Retry webhooks', 'open', 'feat/retries', 'main',
+        'https://github.com/northwind/payments/pull/482', '2026-11-26T09:00:00Z', '2026-11-26T09:00:00Z',
+        array['PAY-5'])
+      returning id`);
+    const requestId = request.rows[0]?.id as string;
+    await db.execute(sql`insert into task_pull_request (task_id, pull_request_id, via_branch, via_description)
+      values (${open}, ${requestId}, true, true)`);
+    expect(
+      await rows(sql`select via_branch, via_description, via_hand, removed_at from task_pull_request`),
+    ).toEqual([{ via_branch: true, via_description: true, via_hand: false, removed_at: null }]);
+
+    // Deleting the project takes its link, requests and task links with it.
+    await db.execute(sql`delete from project where id = ${PAY}`);
+    for (const table of ['repository_link', 'pull_request', 'task_pull_request']) {
+      expect(await rows(sql`select count(*)::int as count from ${sql.identifier(table)}`), table).toEqual([
+        { count: 0 },
+      ]);
+    }
   });
 });

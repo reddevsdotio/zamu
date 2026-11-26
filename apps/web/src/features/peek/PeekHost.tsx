@@ -1,14 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import type { Task, TimelineItem, WorkItemProgress } from '@zamu/contracts';
-import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 import { Button as AriaButton } from 'react-aria-components';
 import { CommentMarkdown } from '~/features/comments/CommentMarkdown';
 import {
+  ARCHIVED_TEXT,
   AssigneePicker,
   CyclePicker,
   cycleLabel,
   DuePicker,
+  FIELD_PICKERS,
   type FieldPickerProps,
   LabelPicker,
   MilestonePicker,
@@ -16,18 +18,24 @@ import {
   PriorityPicker,
   StatusPicker,
 } from '~/features/task-fields';
+import { showFieldToast } from '~/features/task-fields/toast';
 import { useNow } from '~/features/tasks/clock';
 import { atTime, formatRelative } from '~/features/tasks/format';
 import { Markdown } from '~/features/tasks/Markdown';
 import { TaskFileBadge } from '~/features/tasks/MirroredTask';
-import { membersQuery, taskQuery, timelineQuery } from '~/features/tasks/queries';
+import { PullRequestsSection } from '~/features/tasks/PullRequestsSection';
+import { membersQuery, projectsQuery, taskQuery, timelineQuery } from '~/features/tasks/queries';
 import { projectOfKey } from '~/features/tasks/TaskPageRelations';
 import { progressOfItems, rememberTaskNavigation, type WorkItemKind, workItemNoun } from '~/features/views';
 import { useApi, useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
 import {
+  ArchivedTag,
   Avatar,
   Button,
+  CheckAgainChip,
+  CheckAgainReason,
   CloseGlyph,
+  checkAgainState,
   cn,
   DueChip,
   isEditableTarget,
@@ -36,9 +44,11 @@ import {
   localToday,
   PriorityGlyph,
   ProgressMark,
+  RequestMarker,
   Skeleton,
   StatusGlyph,
   SummaryBlock,
+  useHotkeys,
   type WorkAuthor,
 } from '~/ui';
 import { closePeek, movePeek, type PeekRequest, usePeek } from './store';
@@ -49,6 +59,10 @@ import { closePeek, movePeek, type PeekRequest, usePeek } from './store';
 // projects, read-only in mirrored ones, which the footer says); the description and the latest
 // comment. M6: both work-record counts as chips, and the final summary in place of the description
 // when the task has one (frame 023). J / K move it along the view's keys, Space or Esc close it, Enter opens the task view.
+// M7 (frame 101): the newest request as a chip, the check-again chip (its picker, also on Shift+W) with
+// the reason under the chips, and the Archived tag in the header of an archived task. ⇧P opens the task
+// view's paste field (PullRequestsSection) under the chips; a project without a repository, or an
+// archived task, gets the task view's toast instead.
 // Mounted once in the shell; the views open it through features/peek/store.ts.
 
 export function PeekHost() {
@@ -170,6 +184,7 @@ function Peek({ request }: { request: PeekRequest }) {
         {task ? <StatusGlyph status={task.status} /> : null}
         <span className="text-sm font-semibold text-fg-2 tabular-nums">{request.key}</span>
         {task?.backlog ? <TaskFileBadge task={task} /> : null}
+        {task?.archivedAt ? <ArchivedTag /> : null}
         <span className="flex-1" />
         <Button variant="secondary" size="sm" kbd="↵" onPress={open} aria-keyshortcuts="Enter">
           Open
@@ -284,6 +299,55 @@ function PropertyChip({
   );
 }
 
+/**
+ * The check-again chip (frame 101), which opens the check-again picker; Shift+W opens it too, over the
+ * chip or, without a day, over the chips row. Archived tasks show the chip read-only and take no key.
+ * Mirrored tasks may hold a day: it is not a Backlog.md field.
+ */
+function CheckAgainField({ task, today }: { task: Task; today: string | null }) {
+  const [open, setOpen] = useState(false);
+  const chipRef = useRef<HTMLButtonElement>(null);
+  const placeholderRef = useRef<HTMLSpanElement>(null);
+  const Picker = FIELD_PICKERS.checkAgain as ((props: FieldPickerProps) => ReactNode) | undefined;
+  const editable = Picker != null && task.archivedAt == null;
+  useHotkeys({ 'Shift+w': editable ? () => setOpen(true) : null });
+  const on = task.checkAgain?.on;
+  return (
+    <>
+      {on ? (
+        editable ? (
+          <AriaButton
+            ref={chipRef}
+            aria-label="Check again"
+            onPress={() => setOpen(true)}
+            className={cn(
+              chip,
+              'cursor-pointer outline-none hover:bg-bg-grp focus-visible:shadow-[var(--focus-ring)]',
+            )}
+          >
+            <CheckAgainChip on={on} today={today} className="text-sm" />
+          </AriaButton>
+        ) : (
+          <span className={chip}>
+            <CheckAgainChip on={on} today={today} className="text-sm" />
+          </span>
+        )
+      ) : (
+        <span ref={placeholderRef} aria-hidden className="w-0 self-stretch" />
+      )}
+      {editable && Picker ? (
+        <Picker
+          targets={task}
+          isOpen={open}
+          onOpenChange={setOpen}
+          triggerRef={on ? chipRef : placeholderRef}
+          placement="bottom start"
+        />
+      ) : null}
+    </>
+  );
+}
+
 function PeekBody({ task, isMirrored }: { task: Task; isMirrored: boolean }) {
   const api = useApi();
   const now = useNow();
@@ -302,6 +366,35 @@ function PeekBody({ task, isMirrored }: { task: Task; isMirrored: boolean }) {
   const summaryTime = summaryAt ? sentenceTime(time(summaryAt)) : '';
   const criteria = progressOfItems(task.criteria);
   const doneItems = progressOfItems(task.doneItems);
+  const checkAgain = task.checkAgain ?? null;
+  const request = task.pullRequests?.[0];
+
+  // ⇧P: link a pull request, as in the task view (the same field and the same refusals).
+  const repository = useQuery({
+    ...projectsQuery(api),
+    select: (data) => {
+      const project = data.items.find((item) => item.key === task.project.key);
+      return project ? (project.repository ?? null) : undefined;
+    },
+  }).data;
+  const [linking, setLinking] = useState(false);
+  const [linkingKey, setLinkingKey] = useState(task.key);
+  if (linkingKey !== task.key) {
+    // J / K moved the peek to another task: the field closes.
+    setLinkingKey(task.key);
+    setLinking(false);
+  }
+  const startLinking = () => {
+    if (task.archivedAt) showFieldToast({ text: ARCHIVED_TEXT, tone: 'error' });
+    else if (repository === null) {
+      showFieldToast({
+        text: `${task.project.name} has no repository. Link one in the project settings first.`,
+        tone: 'error',
+      });
+    } else setLinking(true);
+  };
+  useHotkeys({ 'Shift+p': startLinking });
+
   return (
     <>
       <h2 className="m-0 font-serif text-xl leading-tight font-medium text-balance">{task.title}</h2>
@@ -328,6 +421,16 @@ function PeekBody({ task, isMirrored }: { task: Task; isMirrored: boolean }) {
         ))}
         <WorkItemChip kind="criteria" progress={criteria} />
         <WorkItemChip kind="done" progress={doneItems} />
+        {request ? (
+          <span className={chip} data-request-chip="">
+            <RequestMarker request={request} className="text-sm" />
+          </span>
+        ) : task.workBranch ? (
+          <span className={chip} data-request-chip="">
+            <RequestMarker className="text-sm" />
+          </span>
+        ) : null}
+        <CheckAgainField task={task} today={today ?? null} />
         {task.dueDate ? (
           <PropertyChip task={task} Picker={DuePicker} label="Due date" readOnly={isMirrored}>
             <DueChip
@@ -356,6 +459,24 @@ function PeekBody({ task, isMirrored }: { task: Task; isMirrored: boolean }) {
           </PropertyChip>
         ) : null}
       </div>
+      {linking ? (
+        // The section's own top margin is for the task view; here it sits right under the chips.
+        <div className="[&>section>div:first-child]:mt-0" data-peek-link="">
+          <PullRequestsSection
+            task={task}
+            projectName={task.project.name}
+            isLinking
+            onLinkingChange={setLinking}
+          />
+        </div>
+      ) : null}
+      {checkAgain ? (
+        <CheckAgainReason>
+          {today && checkAgainState(checkAgain.on, today) === 'waiting'
+            ? `Why it waits: ${checkAgain.reason}`
+            : checkAgain.reason}
+        </CheckAgainReason>
+      ) : null}
       {summary ? (
         <SummaryBlock variant="plain" time={summaryTime || null} {...summaryByline(task)}>
           <Markdown source={summary} size="page" variant={isMirrored ? 'backlog' : 'default'} />

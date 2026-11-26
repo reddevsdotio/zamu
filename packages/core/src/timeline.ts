@@ -41,6 +41,9 @@ const FILTER_KINDS: Record<TimelineFilter, ReadonlySet<TimelineItem['kind']>> = 
  * with origin app is the system (the hourly cycle job). Hidden tasks keep their timeline.
  * M6: notes come back as items of kind note. `show` (default all) keeps comments, notes or
  * history (activity) only; `counts` gives the size of each filter, deleted entries included.
+ * M7: entries without an actor name who acted in `system` (the git host of a request event with
+ * origin git and the request URL in originRef, Zamu's jobs, or Backlog.md) and why in `cause`.
+ * Archived tasks keep their timeline.
  */
 export async function listTaskTimeline(
   { db }: DbContext,

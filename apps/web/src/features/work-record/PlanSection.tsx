@@ -30,8 +30,11 @@ export interface PlanSectionProps {
 
 export function PlanSection({ task, day }: PlanSectionProps) {
   const plan = task.plan ?? '';
-  const readOnly = (task.locked?.length ?? 0) > 0;
-  const [open, setOpen] = useState(() => readOnly || !FINISHING.includes(task.status));
+  const mirrored = (task.locked?.length ?? 0) > 0;
+  // M7: an archived task shows its plan read-only, and no plan at all when it has none.
+  const archived = task.archivedAt != null;
+  const readOnly = mirrored || archived;
+  const [open, setOpen] = useState(() => mirrored || !FINISHING.includes(task.status));
   const [editing, setEditing] = useState(false);
   const update = useWorkRecordUpdate(task.key);
 
@@ -58,6 +61,7 @@ export function PlanSection({ task, day }: PlanSectionProps) {
   }
 
   if (!plan.trim()) {
+    if (archived) return null;
     return (
       <section aria-label="Plan" className="flex flex-col">
         <div className="mt-6 mb-1.5 flex items-center gap-2 text-sm text-fg-2">
@@ -80,7 +84,7 @@ export function PlanSection({ task, day }: PlanSectionProps) {
   }
 
   const author = metaAuthor(task.planMeta);
-  const fromFile = readOnly || (task.planMeta?.origin === 'backlog' && !task.planMeta.author);
+  const fromFile = mirrored || (task.planMeta?.origin === 'backlog' && !task.planMeta.author);
   const size = planLabel(plan);
   const { lines } = planSize(plan);
   // Collapsed: "8 steps, by claude-dev"; open, the full byline sits at the right (frames 001, 003).

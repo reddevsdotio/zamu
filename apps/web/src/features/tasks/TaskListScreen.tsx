@@ -37,7 +37,9 @@ import {
   useUrlTaskFilter,
   useViewCommands,
   type ViewLayout,
+  withoutHiddenWaiting,
 } from '~/features/views';
+import { ArchiveSelectionButton } from '~/features/views/archive';
 import { useApi, useWorkspaceId, useWorkspaceSlug } from '~/lib/workspace';
 import {
   Banner,
@@ -53,6 +55,7 @@ import {
   STATUS_LABELS,
   useHotkeys,
 } from '~/ui';
+import { useArchiveActions } from './archive';
 import { useNow } from './clock';
 import { describeError } from './errors';
 import { formatDay } from './format';
@@ -178,15 +181,27 @@ export function describeTaskFilter(filter: TaskFilter, fields: readonly FilterFi
       case 'cycle':
         parts.push(`is in ${or(optionNames(configOf(field), ids))}`);
         break;
+      // M7
+      case 'checkAgain':
+        parts.push(
+          filter.checkAgain === 'ready' ? 'is ready to check again' : 'is waiting to be checked again',
+        );
+        break;
+      case 'archived':
+        parts.push(filter.archived === 'only' ? 'is archived' : 'is archived or active');
+        break;
     }
   }
   if (filter.q?.trim()) parts.push(`matches "${filter.q.trim()}"`);
   return parts;
 }
 
-/** Status grouping without a status filter: these start folded and load when unfolded. */
+/**
+ * Status grouping without a status filter: these start folded and load when unfolded. Not while archived
+ * tasks are shown (M7): most of them are Done, so folding would hide what was asked for.
+ */
 function initialCollapsed(statusGrouping: boolean, filter: TaskFilter): Set<string> {
-  return new Set<string>(statusGrouping && !filter.status ? LAZY_STATUSES : []);
+  return new Set<string>(statusGrouping && !filter.status && !filter.archived ? LAZY_STATUSES : []);
 }
 
 export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
@@ -207,6 +222,7 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
   const viewerId = useQuery(meQuery(api)).data?.user.id ?? null;
   const now = useNow();
   const today = useMemo(() => (now == null ? '' : localToday(new Date(now))), [now]);
+  const { restore: restoreTasks } = useArchiveActions();
 
   // ---- Filter, display options, search text --------------------------------------------------------
   const [urlFilter, setFilter] = useUrlTaskFilter();
@@ -230,7 +246,7 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
   const searchRef = usePageSearchRef();
 
   // ---- Data ------------------------------------------------------------------------------------------
-  const collapseScope = `${display.groupBy}|${filter.status?.join(',') ?? ''}|${showHidden}`;
+  const collapseScope = `${display.groupBy}|${filter.status?.join(',') ?? ''}|${showHidden}|${filter.archived ?? ''}`;
   const [collapsedState, setCollapsedState] = useState(() => ({
     scope: collapseScope,
     set: initialCollapsed(statusGrouping, filter),
@@ -270,8 +286,15 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: lazyKey stands for lazyItems' contents
   const groups = useMemo(() => {
     const at = now == null ? undefined : new Date(now);
+    // M7: "Waiting tasks: Hidden" leaves out tasks whose check-again day is still ahead.
     const visible = (items: readonly TaskListItem[]) =>
-      at ? hideOldDone(items, display.hideDoneAfterDays, at) : [...items];
+      at
+        ? hideOldDone(
+            withoutHiddenWaiting(items, display, today || null).tasks,
+            display.hideDoneAfterDays,
+            at,
+          )
+        : [...items];
     if (showHidden) return hiddenListGroup(main.data?.items ?? []);
     const pendingCounts: Partial<Record<TaskStatus, number>> = {};
     if (statusGrouping && !filter.status) {
@@ -329,6 +352,7 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
     statusGrouping,
     showHidden,
     now,
+    today,
     viewerId,
     members,
     labels,
@@ -889,6 +913,7 @@ export function TaskListScreen({ projectKey, search }: TaskListScreenProps) {
         onGroupToggle={onGroupToggle}
         onGroupAdd={showHidden ? undefined : onGroupAdd}
         onRowFocus={onRowFocus}
+        onRestore={(row) => void restoreTasks([row.task.key])}
         footer={
           mirrored && !showHidden && hiddenCount > 0 ? (
             <p className="m-0 flex items-center gap-1.5 px-4.5 py-4 text-sm text-fg-3">
@@ -1058,6 +1083,7 @@ function ActionBar({
               </Button>
             </span>
           ))}
+          <ArchiveSelectionButton keys={selectedKeys} />
           <span aria-hidden className="mx-1 h-5.5 w-px bg-line" />
           <span ref={refs.more} className="inline-flex">
             <MenuTrigger>

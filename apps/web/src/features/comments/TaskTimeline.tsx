@@ -27,6 +27,7 @@ import { useApi } from '~/lib/workspace';
 import { Avatar, Banner, Button, cn, NoteItem, Popover, Skeleton, SourceTag } from '~/ui';
 import { CommentBox } from './CommentBox';
 import { CommentMarkdown } from './CommentMarkdown';
+import { type CauseContext, describeCause, HOST_MARKS, mergedEntryOf, systemName, systemOf } from './causes';
 import { useDeleteComment, useUpdateComment } from './queries';
 
 // A task's history (frames 051, 054, 057; M6 013 to 018): one-line events, comment cards and work notes in
@@ -36,7 +37,8 @@ import { useDeleteComment, useUpdateComment } from './queries';
 // entries under "23 earlier · Show all". Agent comments say who they act for and carry a side rule.
 // Authors edit their comments in place and delete them after a confirmation; deleted comments leave a
 // dashed line. Times render after hydration. Entries a Backlog.md refresh wrote read "… in the file" with
-// the commit; a mirrored task also shows the project's import and the detach.
+// the commit; a mirrored task also shows the project's import and the detach. M7: entries without an
+// actor name the git host or Zamu with a square mark, and say why after a dot (causes.ts).
 
 /** The filter stays as set while moving between tasks. */
 let filterChoice: TimelineFilter = 'all';
@@ -77,6 +79,8 @@ export interface TaskTimelineProps {
   file?: string | null;
   /** The comment box, drawn after the last entry. */
   composer?: ReactNode;
+  /** M7: the task's status, requests and merge flag, for the reasons after system lines. */
+  context?: CauseContext;
   className?: string;
 }
 
@@ -122,6 +126,7 @@ export function TaskTimeline({
   branch,
   file,
   composer,
+  context,
   className,
 }: TaskTimelineProps) {
   const api = useApi();
@@ -149,6 +154,10 @@ export function TaskTimeline({
   // Short histories show the bare filters (frames 004, 021); long ones their counts (013 to 015).
   const showCounts = counts != null && counts.all > FOLD_AFTER;
   const sourceVisibility = filter === 'all' ? 'hover' : 'always';
+  const causeContext: CauseContext = {
+    ...context,
+    mergedEntryId: taskItems ? mergedEntryOf(taskItems) : null,
+  };
 
   // Bring a just-sent comment into view once it is in the list.
   const revealReady = revealId != null && shown?.some((item) => item.id === revealId) === true;
@@ -199,6 +208,7 @@ export function TaskTimeline({
                       time={time}
                       branch={branch}
                       sourceVisibility={sourceVisibility}
+                      context={causeContext}
                     />
                   ) : item.kind === 'note' ? (
                     <TimelineNote
@@ -281,12 +291,32 @@ function ActorAvatar({ actor }: { actor: Pick<UserRef, 'name' | 'kind'> | null }
   return <Avatar name={actor.name} kind={actor.kind} decorative />;
 }
 
+/**
+ * M7: a git host or Zamu in the history (m7.css .sys-av): a quiet square with its letters, so it never
+ * reads as a person (round) or an agent (filled square).
+ */
+function SystemMark({ letters }: { letters: string }) {
+  return (
+    <span
+      aria-hidden
+      data-kind="system"
+      // The letters are part of the mark, like an avatar's initials: their size follows the mark.
+      style={{ fontSize: letters.length > 1 ? 7.5 : 8.5 }}
+      className="grid size-4.5 shrink-0 place-items-center rounded-[5px] bg-bg-lane leading-none font-bold tracking-tight text-fg-2"
+    >
+      {letters}
+    </span>
+  );
+}
+
 function EventLine({
   type,
   origin,
   actor,
+  mark,
   who,
   children,
+  cause,
   at,
   time,
   source,
@@ -295,6 +325,10 @@ function EventLine({
   type: string;
   origin?: string;
   actor: Pick<UserRef, 'name' | 'kind'> | null;
+  /** M7: letters of a system actor's square (GH, Z) in place of the avatar. */
+  mark?: string;
+  /** M7: why, after a dot: "#482 opened by claude-dev". */
+  cause?: string | null;
   /** Bold: "claude-dev for Ana", "Backlog.md". Omitted for sentences without an actor. */
   who?: string;
   children: ReactNode;
@@ -315,11 +349,12 @@ function EventLine({
         hasSource && sourceVisibility === 'hover' && '-mx-1.5 -my-1 rounded-sm px-1.5 py-1 hover:bg-bg-grp',
       )}
     >
-      <ActorAvatar actor={actor} />
+      {mark ? <SystemMark letters={mark} /> : <ActorAvatar actor={actor} />}
       <span className="min-w-0 flex-1 truncate">
         {who ? <b className="font-medium text-fg-2">{who}</b> : null}
         {who ? ' ' : null}
         {children}
+        {cause ? <span data-part="cause"> · {cause}</span> : null}
       </span>
       {hasSource ? (
         <SourceTag
@@ -353,6 +388,9 @@ function describeBacklogActivity(activity: Activity, branch: string | null | und
   const visibility = describeVisibilityChange(activity.type, branch);
   if (visibility) return visibility;
   if (activity.type === 'task.created') return 'added this from the file';
+  // M7: the file moved into or out of archive/tasks/ (or the legacy completed/).
+  if (activity.type === 'task.archived') return 'archived this in the file';
+  if (activity.type === 'task.unarchived') return 'restored this from the archive in the file';
   const phrases = [
     activity.changes.length ? describeActivity(activity) : null,
     describeBacklogFields(activity.backlogFields),
@@ -368,11 +406,13 @@ function ActivityLine({
   time,
   branch,
   sourceVisibility,
+  context,
 }: {
   activity: Activity & { kind: 'activity' };
   time: (value: string) => string;
   branch?: string | null;
   sourceVisibility: 'hover' | 'always';
+  context: CauseContext;
 }) {
   const base = {
     type: activity.type,
@@ -380,6 +420,7 @@ function ActivityLine({
     time,
     source: activity.source,
     sourceVisibility,
+    cause: describeCause(activity, context),
   };
   if (activity.origin === 'backlog') {
     // A refresh: the file's author is unknown, so the Backlog.md actor speaks (or the person who
@@ -398,11 +439,24 @@ function ActivityLine({
   }
   const visibility = describeVisibilityChange(activity.type, branch);
   if (!activity.actor) {
+    if (activity.type === 'cycle.ended') {
+      return (
+        <EventLine {...base} actor={null}>
+          {describeCycleEnded(activity)}
+        </EventLine>
+      );
+    }
+    // M7: the git host of a request event, or Zamu's own jobs.
+    const system = systemOf(activity) ?? { kind: 'zamu' as const };
     return (
-      <EventLine {...base} actor={null} who={activity.type === 'cycle.ended' ? undefined : 'System'}>
-        {activity.type === 'cycle.ended'
-          ? describeCycleEnded(activity)
-          : (visibility ?? describeActivity(activity))}
+      <EventLine
+        {...base}
+        {...(activity.origin ? { origin: activity.origin } : {})}
+        actor={null}
+        mark={system.kind === 'git' ? HOST_MARKS[system.provider] : system.kind === 'zamu' ? 'Z' : undefined}
+        who={systemName(system)}
+      >
+        {visibility ?? describeActivity(activity)}
       </EventLine>
     );
   }

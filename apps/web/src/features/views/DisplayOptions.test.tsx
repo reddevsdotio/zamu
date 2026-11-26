@@ -1,9 +1,17 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DisplayButton } from './DisplayOptions';
 import { requestDisplayOptions } from './requests';
-import { renderWithQuery, VIEWER, viewsWorkspace } from './testing';
+import { inWorkspace, newQueryClient, renderWithQuery, VIEWER, viewsWorkspace } from './testing';
 import { displayStorageKey, resetDisplayOptionsForTests, useDisplayOptions } from './useDisplayOptions';
 
 /** Shows the options a view reads, next to the Display button that changes them. */
@@ -18,6 +26,9 @@ function View({ projectKey, view }: { projectKey: string | null; view: 'list' | 
         cards: options.boardSubtasks,
         milestone: options.properties.milestone,
         criteria: options.properties.criteria,
+        pullRequest: options.properties.pullRequest,
+        checkAgain: options.properties.checkAgain,
+        waiting: options.waiting,
       })}
     </output>
   );
@@ -47,6 +58,9 @@ describe('display options', () => {
       cards: 'expandable',
       milestone: false,
       criteria: false,
+      pullRequest: false,
+      checkAgain: true,
+      waiting: 'dimmed',
     });
     expect(screen.getByTestId('options-board')).toHaveAttribute('data-default', 'true');
 
@@ -67,6 +81,9 @@ describe('display options', () => {
       cards: 'cards',
       milestone: true,
       criteria: false,
+      pullRequest: false,
+      checkAgain: true,
+      waiting: 'dimmed',
     });
     expect(screen.getByTestId('options-board')).toHaveAttribute('data-default', 'false');
     expect(read('list')).toMatchObject({ orderBy: 'priority' });
@@ -147,7 +164,8 @@ describe('display options', () => {
     const chips = within(within(dialog).getByLabelText('Shown on rows')).getAllByRole('button');
     const names = chips.map((chip) => chip.textContent);
     expect(names.indexOf('Criteria')).toBe(names.indexOf('Subtasks') + 1);
-    expect(names.indexOf('Due date')).toBe(names.indexOf('Criteria') + 1);
+    // M7's Pull request and Check again sit between Criteria and Due date.
+    expect(names.indexOf('Due date')).toBe(names.indexOf('Criteria') + 3);
 
     const criteria = within(dialog).getByRole('button', { name: 'Criteria', pressed: false });
     await user.click(criteria);
@@ -158,6 +176,71 @@ describe('display options', () => {
       localStorage.getItem(displayStorageKey(viewsWorkspace.id, VIEWER.id, 'HBR', 'list')) ?? 'null',
     );
     expect(stored).toMatchObject({ properties: { criteria: true } });
+  });
+
+  it('offers M7 chips and Waiting tasks, and saves them for the view', async () => {
+    const user = userEvent.setup();
+    await renderWithQuery(
+      <>
+        <DisplayButton projectKey="HBR" view="board" />
+        <View projectKey="HBR" view="board" />
+      </>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Display options' });
+    // Design call 13: the request marker is off by default, the check-again chip on.
+    expect(within(dialog).getByRole('button', { name: 'Pull request', pressed: false })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Check again', pressed: true })).toBeInTheDocument();
+    // Without a router (no URL filter) "Archived tasks" is left out.
+    expect(within(dialog).queryByRole('button', { name: /Archived tasks$/ })).toBeNull();
+
+    const waiting = within(dialog).getByRole('button', { name: /Waiting tasks$/ });
+    expect(waiting).toHaveTextContent('Shown, dimmed');
+    await user.click(waiting);
+    const options = await screen.findAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual(['Shown', 'Shown, dimmed', 'Hidden']);
+    await user.click(screen.getByRole('option', { name: 'Hidden' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Pull request', pressed: false }));
+    expect(read('board')).toMatchObject({ waiting: 'hidden', pullRequest: true, checkAgain: true });
+    const stored = JSON.parse(
+      localStorage.getItem(displayStorageKey(viewsWorkspace.id, VIEWER.id, 'HBR', 'board')) ?? 'null',
+    );
+    expect(stored).toMatchObject({ waiting: 'hidden', properties: { pullRequest: true } });
+  });
+
+  it('shows archived tasks through the Archived filter in the URL', async () => {
+    const user = userEvent.setup();
+    const queryClient = newQueryClient();
+    const { meQuery } = await import('~/features/tasks/queries');
+    await queryClient.prefetchQuery(meQuery(viewsWorkspace.api));
+    const root = createRootRoute();
+    const list = createRoute({
+      getParentRoute: () => root,
+      path: '/w/$workspace/p/$projectKey',
+      component: () => <DisplayButton projectKey="HBR" view="list" />,
+    });
+    const router = createRouter({
+      routeTree: root.addChildren([list]),
+      history: createMemoryHistory({ initialEntries: ['/w/acme/p/HBR?status=todo'] }),
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        {inWorkspace(<RouterProvider router={router} />)}
+      </QueryClientProvider>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'Display' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Display options' });
+    const archived = within(dialog).getByRole('button', { name: /Archived tasks$/ });
+    expect(archived).toHaveTextContent('Hidden');
+    await user.click(archived);
+    await user.click(await screen.findByRole('option', { name: 'Shown' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ status: 'todo', archived: 'only' }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: /Archived tasks$/ })).toHaveTextContent('Shown'),
+    );
+    await user.click(within(dialog).getByRole('button', { name: /Archived tasks$/ }));
+    await user.click(await screen.findByRole('option', { name: 'Hidden' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ status: 'todo' }));
   });
 
   it('opens from the palette', async () => {

@@ -1,8 +1,9 @@
 # Using the app
 
-This page covers the web app as it is since 0.10.0: workspaces, the sidebar, Home, the list and the board,
-the task view and the peek, the work record, the command palette, the four task fields (labels, due dates,
-blockers and subtasks) and Task defaults. The keys are in [keyboard.md](keyboard.md).
+This page covers the web app: workspaces, the sidebar, Home, the list and the board, the task view and the
+peek, the work record, pull requests on tasks, the archive, check-again days, the command palette, the four
+task fields (labels, due dates, blockers and subtasks) and Task defaults. The keys are in
+[keyboard.md](keyboard.md).
 
 ## Workspaces
 
@@ -85,19 +86,31 @@ The Dashboard, My tasks and Projects pages are gone. Their old links open Home.
 
 Home (`/w/<slug>/`) shows what needs attention, across every project you can see in the workspace. It has
 three tabs:
-- **Mine**: tasks in review that wait on you, unanswered comments that mention you, and your own open
-  tasks that are blocked, overdue or simply assigned to you. Your tasks are the ones assigned to you, and
-  the ones you created that nobody holds yet.
-- **Everyone**: tasks in review, blocked, overdue and due this week, across the workspace.
+- **Mine**: tasks in review that wait on you, tasks a merge closed while items were open, your tasks whose
+  check-again day has come, unanswered comments that mention you, and your own open tasks that are
+  blocked, overdue or simply assigned to you. Your tasks are the ones assigned to you, and the ones you
+  created that nobody holds yet.
+- **Everyone**: tasks in review, merged with open criteria, blocked, overdue and due this week, across the
+  workspace.
 - **Agents**: one card per agent (working or idle, its current task, what it did today and its last
   actions), and "Waiting on a person": questions and review requests from agents that nobody answered yet.
 
-Each task shows once, in the first group it fits, in this order: Needs your review, Mentions, Blocked,
-Overdue, Assigned to you. Mine and Everyone start with a deadlines strip: milestones and cycles that end
-within 2 days, and tasks due within 2 days or overdue. "All clear" means nothing waits.
+Each task shows once, in the first group it fits, in this order: Needs your review, Merged with open
+criteria, Check again, Mentions, Blocked, Overdue, Assigned to you. Mine and Everyone start with a deadlines
+strip: milestones and cycles that end within 2 days, and tasks due within 2 days or overdue. "All clear"
+means nothing waits.
 
-The count after Home in the sidebar is Mine's review, mentions, blocked and overdue items. Items leave on
-their own when the reason clears: answer the comment, finish the review, close the blocker.
+The count after Home in the sidebar is Mine's review, merged with open criteria, check again, mentions,
+blocked and overdue items. Items leave on their own when the reason clears: answer the comment, finish the
+review, close the blocker, settle the open items, clear or move the check-again day.
+- **Merged with open criteria** holds Done tasks that a merged pull request closed while a criterion or done
+  item was still open (see [Pull requests on tasks](#pull-requests-on-tasks)). On Mine a task shows to the
+  same person as Needs your review: the responsible person of the agent that holds it, else whoever created
+  it. It leaves the group once every item is checked or waived, or when the task is reopened.
+- **Check again** holds your open tasks whose check-again day is today or past (see
+  [Check again](#check-again)). A task here shows in no later group.
+
+Archived tasks never show on Home.
 
 A task in "Needs your review" that has acceptance criteria shows how many are settled, such as "4 of 6
 criteria".
@@ -114,7 +127,8 @@ The header row holds the project name, the switch, Filter, Display, search (/), 
 that mirrors Backlog.md, it also shows the mirror's state and Refresh now.
 
 **Filter** adds conditions: status, priority, assignee, labels, due date (overdue, due soon, has a due date,
-no due date), blocked, milestone and cycle. Active filters show as chips under the header, with the number
+no due date), blocked, milestone, cycle, Waiting and Ready to check (the check-again day is ahead, or has
+come), and Archived. Active filters show as chips under the header, with the number
 of matching tasks and Clear. Filters live in the page address, so a link keeps them.
 
 **Display** sets how the view looks. You can change:
@@ -125,6 +139,9 @@ of matching tasks and Clear. Filters live in the page address, so a link keeps t
 - subtasks: nested under their parent in the list, or as their own cards on the board;
 - empty groups or columns, shown or hidden;
 - "Hide done tasks after" a number of days (14 by default);
+- "Waiting tasks", the tasks whose check-again day is ahead: Shown, "Shown, dimmed" (the default) or
+  Hidden. A board column that hides some ends with a line such as "2 waiting, hidden";
+- "Archived tasks": Hidden (the default) or Shown, the same as the Archived filter;
 - which properties rows and cards show.
 
 Display options are saved for you, per project and per view. Reset to default puts them back. By default
@@ -135,16 +152,19 @@ The Criteria chip under "Shown on rows" and "Shown on cards" adds the criteria m
 shows after the subtask progress as "4/6", the acceptance criteria checked of the total, and fills in once
 none is open. A task without criteria shows nothing.
 
+Two more chips there: Check again (on by default) shows the check-again day, and Pull request (off by
+default) shows the newest linked request with its number and state.
+
 In the list, Enter or a click opens the task view. Space opens the peek. ← and → on a group row fold and
 unfold it. On the board, drag a card to another column, or press Shift+← and Shift+→. Shift+J and Shift+K
 move a card up and down when the order is Manual. ⌘Z (Ctrl+Z) undoes the last move from the toast.
 
 ### Selecting several tasks
 
-X selects the task under the cursor, Shift+click or Shift+↓ and Shift+↑ extend the selection, and ⌘A
-selects everything in the view. With two or more tasks selected, a bar at the bottom changes their status,
-assignee, labels, priority, due date, milestone or cycle in one go. The task keys (S, P, A, L, Shift+D …) act
-on the whole selection too. Esc clears it.
+X selects the task under the cursor, Shift+click or Shift+↓ and Shift+↑ extend the selection, and ⌘A selects
+everything in the view. With two or more tasks selected, a bar at the bottom changes their status, assignee,
+labels, priority, due date, milestone or cycle in one go, or archives them (Shift+E). The task keys (S, P, A,
+L, Shift+D …) act on the whole selection too. Esc clears it.
 
 Changes to several tasks work in native projects only. In a mirrored project the bar offers Copy keys, Copy
 links and Open in Backlog.md.
@@ -154,11 +174,11 @@ links and Open in Backlog.md.
 ![The task view of CHK-1, with its subtasks, the task it blocks and the properties sidebar](images/task-view-light.png)
 
 A task opens as a full page at `/w/acme/p/PAY/PAY-142`. On the left, from the top: the title, the final
-summary when there is one, the Markdown description, the acceptance criteria, the definition of done, the
-plan, the Subtasks and Blocked by boxes, then the activity and the comment box (M). The properties are on the
-right: status, priority, assignee, Criteria and Done items, labels, due date, parent, milestone and cycle,
-each with its picker. Criteria and Done items show their counts, and a click moves to the list. The work
-record has its own section below.
+summary when there is one, the Markdown description, the pull requests, the acceptance criteria, the
+definition of done, the plan, the Subtasks and Blocked by boxes, then the activity and the comment box (M).
+The properties are on the right: status, priority, assignee, Criteria and Done items, Pull request, Check
+again, labels, due date, parent, milestone and cycle, each with its picker. Criteria and Done items show their
+counts, and a click moves to the list. The work record has its own section below.
 
 E edits the title and D the description. J and K go to the next and previous task of the list or board you
 opened it from ("12 of 40 in List"). Esc goes back there, with the task still under the cursor. Copy link
@@ -219,6 +239,94 @@ under All and always under Notes and History.
 People write notes too: N opens the comment box in note mode, M in comment mode, and the Note switch in the
 box changes between them.
 
+## Pull requests on tasks
+
+When a project links its repository (Settings > Repository, see [repositories.md](repositories.md)), the
+task view lists the task's pull requests (merge requests on GitLab) between the description and the
+criteria: the host, the number, the title, how the request was linked and its state, Open, Draft, Merged or
+Closed. A click opens the request on the host.
+
+A request links to a task in three ways:
+- **By branch**: an agent started the task with `zamu` from a git branch, and the request was opened from
+  that branch. Until a request exists, the task view shows the branch line under the description.
+- **By description**: the request's description has a line such as `Closes: PAY-142, PAY-150`.
+- **By hand**: Shift+P, or "Link a pull request" in the task view or the peek, opens a field. Paste the
+  request's address: the field shows the request before you link it, and Enter links it. An address from
+  another repository is refused with "That request is in another repository.", and one that is not a request
+  with the reason.
+
+Point at a request and press its remove button to unlink it, with Undo in the toast. A request removed by
+hand stays off the task: neither the branch nor a `Closes:` line brings it back, linking it by hand does.
+
+Requests move their tasks:
+- opened, reopened or marked ready: tasks in Backlog, Todo or In progress go to In review. Drafts link and
+  move nothing;
+- merged into the default branch: tasks go to Done, when the project closes on merge and no other request
+  of the task is still open;
+- merged into another branch, or closed without merging: nothing moves.
+
+The history names the host and the request: "GitHub moved this to In review · #482 opened by claude-dev".
+In a project that mirrors Backlog.md, requests link and show but never move a task.
+
+A merge moves a task to Done even when criteria or done items are still open. The task then carries the line
+"Merged with 2 open criteria" ("Merged with 3 open items" when done items are open too) and shows on Home
+under "Merged with open criteria". Check or waive the items, or reopen the task, and the line goes away.
+
+The Pull request row in the properties shows the newest request and how many more there are ("+3"). Rows
+and cards show it when the Pull request chip is on in Display.
+
+## Archive
+
+Archiving takes a task out of the list, the board, Home, the dashboard and every count, and keeps all of it.
+Milestone and cycle progress keep counting archived tasks, so archiving never lowers a progress bar, and a
+parent's subtask progress counts them too.
+
+**Archive after.** Each project's Settings > Archive has "Archive finished tasks": Done and Canceled tasks
+are archived a set number of days after they reached that status, by a job that runs every night at 02:30
+in the server's `APP_TIME_ZONE`. Owners and admins turn it on or off and set the days, 1 to 365. Before you
+save, the page says how many tasks the next run would archive. New projects start with 14 days. Projects
+from before the upgrade start with it off. The job leaves alone tasks a merge closed with items still open
+(see [Pull requests on tasks](#pull-requests-on-tasks)). The history names Zamu as the one who archived
+them.
+
+**By hand.** Shift+E archives the open task or the selected ones, from the list, the board or the task view;
+the action bar has Archive too. Anyone who can edit the task can archive it, in any status, agents included
+(`zamu tasks archive`). The toast says "3 tasks archived" with Undo, and ⌘Z undoes while it shows.
+
+**Finding archived tasks.** The Archived filter, or Display > "Archived tasks" set to Shown, adds them to the
+list. Their rows have a quiet title and "Archived Nov 12", and Restore on hover. Search and the command
+palette list archived tasks last, tagged Archived; "Show archived tasks in Payments" in the palette opens the
+list with the filter on. A link to an archived task opens it.
+
+**An archived task is read-only.** The task view starts with a bar, "Archived on Nov 12, 14 days after it
+was done. It stays out of lists, boards and counts.", and Restore (Shift+E). Its fields are locked, and the
+comment box says to restore the task first: comments and notes are refused too. Restore brings the task back
+to lists and boards with its status. A restored Done or Canceled task counts its days again from the
+restore.
+
+In a project that mirrors Backlog.md, the files decide: a task file under `archive/tasks/` (or the older
+`completed/`) is archived here, and moving it back restores it. There is no archive setting and no Archive
+button there. See [backlog-md.md](backlog-md.md#archived-tasks).
+
+## Check again
+
+A check-again day says when to look at a task again and why it waits, for example "Waiting for the bank to
+send the new host and key". Use it instead of leaving a task In progress while it waits on someone outside
+the team.
+
+Shift+W, or Check again in the properties, opens the picker. Type a day ("dec 3", "in 2 weeks"), pick In a
+week, In two weeks or In a month, or a day in the calendar, then say why. The reason is required, up to 200
+characters, and Enter sets both. Clear takes the day off. Any day works, past days included.
+
+While the day is ahead the task is waiting: rows and cards show a grey chip, "Until Dec 3", and Display >
+"Waiting tasks" shows them dimmed by default. From the day on the chip reads "Check again: today", then
+"Check again: yesterday" and "Check again: 3 days ago", and the task shows on your Home under Check again
+when it is yours. The chip never uses the overdue colour.
+
+The day stays until someone changes or clears it, or the task moves to Done or Canceled, which clears it with
+a line in the history. The Waiting and Ready to check filters list the tasks on either side of the day. Days
+follow the server's `APP_TIME_ZONE`. Mirrored tasks can have a day too: it is not a Backlog.md field.
+
 ## Task defaults
 
 Settings > Task defaults, in a project's settings, holds the project's definition of done: the done items
@@ -232,7 +340,7 @@ changes no code. In a project that mirrors Backlog.md the defaults apply once it
 ⌘K (Ctrl+K) opens the palette from any page. Type to find:
 - pages: Home, and the list, board, milestones, cycles and settings of each project;
 - projects: G then P opens the palette on projects only;
-- tasks, by key (`PAY-142`) or by words of the title;
+- tasks, by key (`PAY-142`) or by words of the title. Archived tasks come last, tagged Archived;
 - actions: create a task or a project, switch the theme, collapse the sidebar, open the shortcut list.
   Create task "…" starts quick create with the words you typed as the title;
 - workspaces: "Switch to Globex" for each of your other workspaces, "New workspace" and "Go to workspace
@@ -301,5 +409,6 @@ and the work record (criteria, done items, plan and final summary, with the file
 one "Notes from the file" block). Every field that comes from the files is read-only. A small Backlog.md
 badge in the task view links to the file, and a lock shows when you point at a field or try to change it.
 Fields with no place here sit in "From the file" at the bottom of the properties. Comments and cycles stay
-editable. Owners and admins can switch such a project to Zamu, which makes every field editable. See
+editable, and so is the check-again day. A task whose file sits under `archive/tasks/` is archived here.
+Owners and admins can switch such a project to Zamu, which makes every field editable. See
 [backlog-md.md](backlog-md.md).

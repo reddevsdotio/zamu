@@ -166,7 +166,7 @@ matches the version installed, and the block that `zamu agents` writes stays sho
 ```sh
 zamu instructions                # overview: the work record, the rules, the exit codes
 zamu instructions creating       # search before creating; criteria that can be tested
-zamu instructions working        # the plan when work starts, a note after each step, check only what is proven
+zamu instructions working        # start from the work branch, the plan, notes, Closes: lines, check-again days
 zamu instructions finishing      # the final summary, stopping at In review, the final report
 ```
 
@@ -175,7 +175,8 @@ A typical loop for an agent:
 ```sh
 zamu dashboard --json                     # reviews, mentions of the agent, stalled work, deadlines
 zamu tasks list --mine --status todo --cycle current --json
-zamu tasks show PAY-142 --json            # criteria, done items, plan, summary and history
+zamu tasks show PAY-142 --json            # criteria, done items, plan, summary, requests and history
+git switch -c claude/pay-142-retry-queue  # the branch the pull request will come from
 zamu tasks update PAY-142 --status in_progress --plan - < plan.md
 zamu notes add PAY-142 "Retry queue written and tested"
 zamu tasks update PAY-142 --check-ac 1 --check-ac 2 --check-dod 1
@@ -183,7 +184,8 @@ zamu tasks update PAY-142 --final-summary - --status in_review < summary.md
 ```
 
 `--mine` lists the tasks assigned to the key's owner across every project the key can read. Add `--project`
-to narrow it to one or more projects.
+to narrow it to one or more projects. Archived tasks are left out of every list unless you pass
+`--archived include` or `--archived only`.
 
 Tell the agent about the exit codes so it can react without parsing text:
 
@@ -200,8 +202,10 @@ Tell the agent about the exit codes so it can react without parsing text:
 
 Exit code 6 covers the problem codes `TASK_MIRRORED`, `MILESTONE_MIRRORED`, `PROJECT_MIRRORED`,
 `LABEL_MIRRORED`, `PROJECT_NOT_EMPTY`, `BACKLOG_PAUSED` and `BACKLOG_DETACHED`. Other conflicts, such as two
-edits racing, a blocker loop (`DEPENDENCY_LOOP`), a label name the project has (`LABEL_EXISTS`) or a task
-finished with open items (`OPEN_ITEMS`), stay on 1. See [Backlog.md mirrors](#backlogmd-mirrors) and
+edits racing, a blocker loop (`DEPENDENCY_LOOP`), a label name the project has (`LABEL_EXISTS`), a task
+finished with open items (`OPEN_ITEMS`) or a write to an archived task (`TASK_ARCHIVED`), stay on 1, and so
+do the refused request addresses (`REQUEST_OTHER_REPOSITORY`, `NOT_A_REQUEST`). A request the host doesn't
+know (`REQUEST_NOT_FOUND`) exits with 3. See [Backlog.md mirrors](#backlogmd-mirrors) and
 [Offline queue](#offline-queue).
 
 ## The work record
@@ -260,12 +264,82 @@ zamu sends two headers with every request: `x-zamu-machine`, the machine name (`
 name), and `x-zamu-branch`, the git branch checked out in the current folder when there is one. The server
 stores them on history entries and notes. The web app shows them as "build-box · feat/payout-retries" under
 the History filter, and `zamu tasks show` prints them at the end of each line. Values are cut to 100
-characters. The web app sends neither header.
+characters. The web app sends neither header. The branch also becomes the task's work branch when the
+command starts the task (see [Pull requests](#pull-requests)).
+
+## Pull requests
+
+When the project links its repository (see [repositories.md](repositories.md)), Zamu reads the
+repository's pull requests (merge requests on GitLab), links them to tasks and moves the tasks. An agent
+gets this for free by working the usual way:
+1. **Start the task from its branch.** Create or switch to the branch first, then run
+   `zamu tasks update PAY-142 --status in_progress` (or `zamu tasks create ... --status in_progress`) in the
+   clone. zamu sends the branch as `x-zamu-branch`, and the server records it as the task's work branch. A
+   request opened from that branch links to the task, also when it was opened earlier. The default branch is
+   never recorded; a later start from another branch replaces it.
+2. **Name the other tasks in the description.** When one request covers several tasks, add a line such as
+   `Closes: PAY-142, PAY-150` to its description. Keys of other projects are ignored.
+3. **Stop at In review.** Opening the request (or marking a draft ready) moves its tasks to In review on its
+   own. When the project closes on merge, the merge into the default branch moves them to Done; leave that
+   step to the merge. `zamu projects show` says whether the project closes on merge.
+
+Drafts link without moving anything. A merge moves a task to Done even with open items; the task is then
+flagged "Merged with 2 open criteria" and shows on its person's Home, so settle the items before the
+merge.
+
+Link or unlink a request by hand:
+
+```sh
+zamu pr link PAY-142 https://github.com/northwind/payments/pull/482
+zamu pr link PAY-142 https://gitlab.example.com/northwind/payments/-/merge_requests/12 --dry-run
+zamu pr unlink PAY-142 482            # also #482, or !12 on GitLab
+zamu projects show PAY                # repository, close on merge, webhook, hourly check, archive days
+```
+
+`--dry-run` shows the request as it would link and writes nothing. A link made by hand acts on the
+request's state like an event: linking an open request moves the task to In review. A request from another
+repository fails with `REQUEST_OTHER_REPOSITORY`, an address that is not a request with `NOT_A_REQUEST`
+(both exit 1), and one the host doesn't know with `REQUEST_NOT_FOUND` (exit 3). An unlinked request stays
+off the task: neither the branch nor a `Closes:` line brings it back, only `zamu pr link`.
+
+`zamu tasks show` lists the work branch and each request with its number, title, state, how it was linked
+and its address. History lines name the host for request events: "GitHub moved this to In review · #482
+opened by claude-dev".
+
+## Check-again days and the archive
+
+When a task waits on something outside your control, set a day to look at it again instead of leaving it In
+progress with no word:
+
+```sh
+zamu tasks update PAY-142 --check-again 2026-12-03 --reason "Waiting for the bank's answer"
+zamu tasks update PAY-142 --no-check-again
+zamu tasks list --mine --waiting          # the day is still ahead
+zamu tasks list --mine --ready-to-check   # the day has come
+```
+
+The reason is required: a day without one exits 1 before anything is sent. `--reason` belongs to the
+`--check-again`, `--waive-ac` or `--waive-dod` typed before it. Moving the task to Done or Canceled clears
+the day. Once the day comes, the task shows on its person's Home under Check again.
+
+Archived tasks are out of lists and refuse every write, comments and notes included (`TASK_ARCHIVED`, exit
+1). Projects can archive closed tasks on their own after a number of days; agents can archive and restore
+by hand too:
+
+```sh
+zamu tasks archive PAY-140 PAY-141        # up to 100 keys, all or nothing
+zamu tasks restore PAY-140
+zamu tasks list --project PAY --archived only
+```
+
+Tasks of a mirrored project follow Backlog.md's `archive/tasks/` folder: archiving or restoring one exits
+with 6 and says which folder to move the file to.
 
 ## Offline queue
 
 When the server doesn't answer within 5 seconds, zamu stores some writes on an existing task in a local
-queue instead of failing: checking, unchecking or waiving items, a status change, and a note or comment. It
+queue instead of failing: checking, unchecking or waiving items, a status change, a check-again day, a note
+or comment, archiving and restoring, and `zamu pr link` (not `--dry-run`) and `zamu pr unlink`. It
 prints "Queued: the server didn't answer. It will be sent on your next zamu command." and exits with code 7;
 every other write, such as creating a task, fails as before. The next zamu command that reaches the server
 sends the queued writes first, oldest first, and skips a queued status change when the task moved in the
@@ -537,11 +611,16 @@ breaking change ships as `zamu.v2`. The Zod schemas live in `packages/contracts`
 | `zamu.v1.workspaces`        | `{ items: [{ url, workspace, default, current }], source }`                            |
 | `zamu.v1.dashboard`         | `{ scope, generatedAt, groups, projects, agents }` (see Dashboard above)               |
 | `zamu.v1.projects.list`     | `{ items: Project[] }` with open counts per status                                     |
+| `zamu.v1.projects.show`     | `{ project, repository }`: `repository` is null when the key can't read the settings   |
 | `zamu.v1.projects.delete`   | `{ deleted }`: the key of the deleted project                                          |
 | `zamu.v1.tasks.list`        | `{ items: TaskListItem[], nextCursor, counts }`                                        |
 | `zamu.v1.tasks.show`        | `{ task: Task, activity: Activity[], timeline, timelineCounts }`                       |
 | `zamu.v1.tasks.create`      | `Task`                                                                                 |
 | `zamu.v1.tasks.update`      | `Task`                                                                                 |
+| `zamu.v1.tasks.archive`     | `{ items: TaskListItem[] }`, in the order sent                                         |
+| `zamu.v1.tasks.restore`     | `{ items: TaskListItem[] }`, in the order sent                                         |
+| `zamu.v1.pr.link`           | `{ task, pullRequest, dryRun }`                                                        |
+| `zamu.v1.pr.unlink`         | `{ task, number }`                                                                     |
 | `zamu.v1.comments.list`     | `{ items: Comment[] }`                                                                 |
 | `zamu.v1.comments.add`      | `Comment`                                                                              |
 | `zamu.v1.comments.edit`     | `Comment`                                                                              |
@@ -580,7 +659,13 @@ of `parent`. Since 0.9.0 a task carries its work record: `criteria` and `doneIte
 `{ number, text, state, waivedReason, waivedBy, locked }`, with `state` `open`, `checked` or `waived`), `plan`,
 `finalSummary`, and `planMeta` and `finalSummaryMeta` (who last wrote them and when). List rows carry
 `criteriaProgress` and `doneProgress` (`{ settled, open, waived, total }`, where settled counts checked and
-waived items) and `hasFinalSummary`.
+waived items) and `hasFinalSummary`. Tasks also carry `workBranch`, `pullRequests` (each
+`{ provider, number, title, url, state, headBranch, baseBranch, author, mergedBy, how, linkedBy, ... }`,
+with `how` `branch`, `description` or `hand`), `checkAgain` (`{ on, reason }` or null), `closedAt`,
+`archivedAt`, `archivedBy` and `mergedOpen` (`{ at, openCriteria, openDoneItems }` or null). List rows carry
+`checkAgain`, `archivedAt`, `pullRequest` (the newest, `{ provider, number, title, url, state }`) and
+`pullRequestCount`. Activity entries made without a person carry `system`: the git host, Zamu (the nightly
+archive) or Backlog.md, and `cause` says why (a request event, or the archive setting).
 
 `zamu tasks list --project PAY --json`:
 

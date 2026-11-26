@@ -1,0 +1,416 @@
+{
+  "description": "GET /projects/:id/merge_requests/:iid in each state (merged with merge_user, merged on an older release with merged_by only, draft through work_in_progress, closed, not found) and GET /merge_requests ordered by update, with and without updated_after.",
+  "source": "Hand-written from the GitLab REST docs (merge_requests: get single MR, list project merge requests) on a made-up subgroup project; shapes trimmed.",
+  "exchanges": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests/74"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": 300000074,
+          "iid": 74,
+          "project_id": 61000001,
+          "title": "Add refunds endpoint",
+          "description": null,
+          "state": "merged",
+          "created_at": "2026-11-20T09:00:00.000Z",
+          "updated_at": "2026-11-24T18:05:01.000Z",
+          "merged_at": "2026-11-24T18:05:00.000Z",
+          "closed_at": null,
+          "closed_by": null,
+          "target_branch": "main",
+          "source_branch": "task/pay-74",
+          "author": {
+            "id": 11846,
+            "username": "claude-dev",
+            "name": "Claude Dev",
+            "state": "active"
+          },
+          "draft": false,
+          "merge_status": "can_be_merged",
+          "web_url": "https://gitlab.com/northwind/platform/payments/-/merge_requests/74",
+          "merge_user": {
+            "id": 96307,
+            "username": "ana-dev",
+            "name": "Ana Dev",
+            "state": "active"
+          },
+          "merged_by": {
+            "id": 96307,
+            "username": "ana-dev",
+            "name": "Ana Dev",
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests/72"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": 300000072,
+          "iid": 72,
+          "project_id": 61000001,
+          "title": "Older release merge",
+          "description": null,
+          "state": "merged",
+          "created_at": "2026-11-18T08:00:00.000Z",
+          "updated_at": "2026-11-19T08:00:01.000Z",
+          "merged_at": "2026-11-19T08:00:00.000Z",
+          "closed_at": null,
+          "closed_by": null,
+          "target_branch": "main",
+          "source_branch": "task/pay-72",
+          "author": {
+            "id": 11846,
+            "username": "claude-dev",
+            "name": "Claude Dev",
+            "state": "active"
+          },
+          "draft": false,
+          "merge_status": "can_be_merged",
+          "web_url": "https://gitlab.com/northwind/platform/payments/-/merge_requests/72",
+          "merged_by": {
+            "id": 96307,
+            "username": "ana-dev",
+            "name": "Ana Dev",
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests/71"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": 300000071,
+          "iid": 71,
+          "project_id": 61000001,
+          "title": "WIP: statements",
+          "description": null,
+          "state": "opened",
+          "created_at": "2026-11-18T08:00:00.000Z",
+          "updated_at": "2026-11-18T08:00:00.000Z",
+          "merged_at": null,
+          "closed_at": null,
+          "closed_by": null,
+          "target_branch": "main",
+          "source_branch": "task/pay-71",
+          "author": {
+            "id": 11846,
+            "username": "claude-dev",
+            "name": "Claude Dev",
+            "state": "active"
+          },
+          "merge_status": "can_be_merged",
+          "web_url": "https://gitlab.com/northwind/platform/payments/-/merge_requests/71",
+          "work_in_progress": true
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests/73"
+      },
+      "response": {
+        "status": 200,
+        "json": {
+          "id": 300000073,
+          "iid": 73,
+          "project_id": 61000001,
+          "title": "Try another payment provider",
+          "description": null,
+          "state": "closed",
+          "created_at": "2026-11-20T09:00:00.000Z",
+          "updated_at": "2026-11-22T09:30:00.000Z",
+          "merged_at": null,
+          "closed_at": "2026-11-22T09:30:00.000Z",
+          "closed_by": {
+            "id": 96307,
+            "username": "ana-dev",
+            "name": "Ana Dev",
+            "state": "active"
+          },
+          "target_branch": "main",
+          "source_branch": "task/pay-73",
+          "author": {
+            "id": 11846,
+            "username": "claude-dev",
+            "name": "Claude Dev",
+            "state": "active"
+          },
+          "draft": false,
+          "merge_status": "can_be_merged",
+          "web_url": "https://gitlab.com/northwind/platform/payments/-/merge_requests/73"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests/12"
+      },
+      "response": {
+        "status": 404,
+        "json": {
+          "message": "404 Not found"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests?state=all&order_by=updated_at&sort=desc&per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-page": "1",
+          "x-per-page": "100",
+          "x-total": "5",
+          "x-next-page": ""
+        },
+        "json": [
+          {
+            "id": 300000077,
+            "iid": 77,
+            "project_id": 61000001,
+            "title": "Retry failed card payments",
+            "description": "Closes: PAY-12",
+            "state": "opened",
+            "created_at": "2026-11-20T09:00:00.000Z",
+            "updated_at": "2026-11-25T16:40:00.000Z",
+            "merged_at": null,
+            "closed_at": null,
+            "closed_by": null,
+            "target_branch": "main",
+            "source_branch": "task/pay-77",
+            "author": {
+              "id": 11846,
+              "username": "claude-dev",
+              "name": "Claude Dev",
+              "state": "active"
+            },
+            "draft": false,
+            "merge_status": "can_be_merged",
+            "web_url": "https://gitlab.com/northwind/platform/payments/-/merge_requests/77"
+          },
+          {
+            "id": 300000076,
+            "iid": 76,
+            "project_id": 61000001,
+            "title": "Draft: split the ledger",
+            "description": null,
+            "state": "opened",
+            "created_at": "2026-11-20T09:00:00.000Z",
+            "updated_at": "2026-11-25T12:00:00.000Z",
+            "merged_at": null,
+            "closed_at": null,
+            "closed_by": null,
+            "target_branch": "main",
+            "source_branch": "task/pay-76",
+            "author": {
+              "id": 11846,
+              "username": "claude-dev",
+              "name": "Claude Dev",
+              "state": "active"
+            },
+            "draft": true,
+            "merge_status": "can_be_merged",
+            "web_url": "https://gitlab.com/northwind/platform/payments/-/merge_requests/76"
+          },
+          {
+            "id": 300000075,
+            "iid": 75,
+            "project_id": 61000001,
+            "title": "Being merged",
+            "description": null,
+            "state": "locked",
+            "created_at": "2026-11-20T09:00:00.000Z",
+            "updated_at": "2026-11-25T11:00:00.000Z",
+            "merged_at": null,
+            "closed_at": null,
+            "closed_by": null,
+            "target_branch": "main",
+            "source_branch": "task/pay-75",
+            "author": {
+              "id": 11846,
+              "username": "claude-dev",
+              "name": "Claude Dev",
+              "state": "active"
+            },
+            "draft": false,
+            "merge_status": "can_be_merged",
+            "web_url": "https://gitlab.com/northwind/platform/payments/-/merge_requests/75"
+          },
+          {
+            "id": 300000074,
+            "iid": 74,
+            "project_id": 61000001,
+            "title": "Add refunds endpoint",
+            "description": null,
+            "state": "merged",
+            "created_at": "2026-11-20T09:00:00.000Z",
+            "updated_at": "2026-11-24T18:05:01.000Z",
+            "merged_at": "2026-11-24T18:05:00.000Z",
+            "closed_at": null,
+            "closed_by": null,
+            "target_branch": "main",
+            "source_branch": "task/pay-74",
+            "author": {
+              "id": 11846,
+              "username": "claude-dev",
+              "name": "Claude Dev",
+              "state": "active"
+            },
+            "draft": false,
+            "merge_status": "can_be_merged",
+            "web_url": "https://gitlab.com/northwind/platform/payments/-/merge_requests/74",
+            "merge_user": {
+              "id": 96307,
+              "username": "ana-dev",
+              "name": "Ana Dev",
+              "state": "active"
+            },
+            "merged_by": {
+              "id": 96307,
+              "username": "ana-dev",
+              "name": "Ana Dev",
+              "state": "active"
+            }
+          },
+          {
+            "id": 300000073,
+            "iid": 73,
+            "project_id": 61000001,
+            "title": "Try another payment provider",
+            "description": null,
+            "state": "closed",
+            "created_at": "2026-11-20T09:00:00.000Z",
+            "updated_at": "2026-11-22T09:30:00.000Z",
+            "merged_at": null,
+            "closed_at": "2026-11-22T09:30:00.000Z",
+            "closed_by": {
+              "id": 96307,
+              "username": "ana-dev",
+              "name": "Ana Dev",
+              "state": "active"
+            },
+            "target_branch": "main",
+            "source_branch": "task/pay-73",
+            "author": {
+              "id": 11846,
+              "username": "claude-dev",
+              "name": "Claude Dev",
+              "state": "active"
+            },
+            "draft": false,
+            "merge_status": "can_be_merged",
+            "web_url": "https://gitlab.com/northwind/platform/payments/-/merge_requests/73"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://gitlab.com/api/v4/projects/northwind%2Fplatform%2Fpayments/merge_requests?state=all&order_by=updated_at&sort=desc&updated_after=2026-11-25T00:00:00.000Z&per_page=50"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "x-page": "1",
+          "x-per-page": "50",
+          "x-total": "3",
+          "x-next-page": ""
+        },
+        "json": [
+          {
+            "id": 300000077,
+            "iid": 77,
+            "project_id": 61000001,
+            "title": "Retry failed card payments",
+            "description": "Closes: PAY-12",
+            "state": "opened",
+            "created_at": "2026-11-20T09:00:00.000Z",
+            "updated_at": "2026-11-25T16:40:00.000Z",
+            "merged_at": null,
+            "closed_at": null,
+            "closed_by": null,
+            "target_branch": "main",
+            "source_branch": "task/pay-77",
+            "author": {
+              "id": 11846,
+              "username": "claude-dev",
+              "name": "Claude Dev",
+              "state": "active"
+            },
+            "draft": false,
+            "merge_status": "can_be_merged",
+            "web_url": "https://gitlab.com/northwind/platform/payments/-/merge_requests/77"
+          },
+          {
+            "id": 300000076,
+            "iid": 76,
+            "project_id": 61000001,
+            "title": "Draft: split the ledger",
+            "description": null,
+            "state": "opened",
+            "created_at": "2026-11-20T09:00:00.000Z",
+            "updated_at": "2026-11-25T12:00:00.000Z",
+            "merged_at": null,
+            "closed_at": null,
+            "closed_by": null,
+            "target_branch": "main",
+            "source_branch": "task/pay-76",
+            "author": {
+              "id": 11846,
+              "username": "claude-dev",
+              "name": "Claude Dev",
+              "state": "active"
+            },
+            "draft": true,
+            "merge_status": "can_be_merged",
+            "web_url": "https://gitlab.com/northwind/platform/payments/-/merge_requests/76"
+          },
+          {
+            "id": 300000075,
+            "iid": 75,
+            "project_id": 61000001,
+            "title": "Being merged",
+            "description": null,
+            "state": "locked",
+            "created_at": "2026-11-20T09:00:00.000Z",
+            "updated_at": "2026-11-25T11:00:00.000Z",
+            "merged_at": null,
+            "closed_at": null,
+            "closed_by": null,
+            "target_branch": "main",
+            "source_branch": "task/pay-75",
+            "author": {
+              "id": 11846,
+              "username": "claude-dev",
+              "name": "Claude Dev",
+              "state": "active"
+            },
+            "draft": false,
+            "merge_status": "can_be_merged",
+            "web_url": "https://gitlab.com/northwind/platform/payments/-/merge_requests/75"
+          }
+        ]
+      }
+    }
+  ]
+}

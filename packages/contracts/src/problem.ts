@@ -63,6 +63,18 @@ export const PROBLEM_CODES = [
   'SLUG_RESERVED',
   /** Leaving, removing or demoting the last owner of a workspace (409). */
   'LAST_OWNER',
+  // M7: archive and pull requests.
+  /** Any write to an archived task but restore, comments and notes included (409). Restore it first. */
+  'TASK_ARCHIVED',
+  /**
+   * A request URL of another repository than the project's (422). The body names the project's
+   * repository in `repository`.
+   */
+  'REQUEST_OTHER_REPOSITORY',
+  /** An address that is not a pull or merge request (422). */
+  'NOT_A_REQUEST',
+  /** A request the host does not know, or one not linked to the task (404). */
+  'REQUEST_NOT_FOUND',
 ] as const;
 export const ProblemCode = z.enum(PROBLEM_CODES);
 export type ProblemCode = z.infer<typeof ProblemCode>;
@@ -94,6 +106,10 @@ export const PROBLEM_STATUS: Record<ProblemCode, number> = {
   SLUG_TAKEN: 409,
   SLUG_RESERVED: 400,
   LAST_OWNER: 409,
+  TASK_ARCHIVED: 409,
+  REQUEST_OTHER_REPOSITORY: 422,
+  NOT_A_REQUEST: 422,
+  REQUEST_NOT_FOUND: 404,
 };
 
 export const PROBLEM_TITLES: Record<ProblemCode, string> = {
@@ -123,6 +139,10 @@ export const PROBLEM_TITLES: Record<ProblemCode, string> = {
   SLUG_TAKEN: 'Slug is taken',
   SLUG_RESERVED: 'Slug is reserved',
   LAST_OWNER: 'Workspace needs an owner',
+  TASK_ARCHIVED: 'Task is archived',
+  REQUEST_OTHER_REPOSITORY: 'Request is in another repository',
+  NOT_A_REQUEST: 'Not a pull or merge request',
+  REQUEST_NOT_FOUND: 'Request not found',
 };
 
 /** The codes of the Backlog.md mirror rules, for clients that treat them alike. */
@@ -188,6 +208,8 @@ export const ProblemData = z.object({
   loop: ProblemLoop.optional(),
   /** OPEN_ITEMS only: the open items, criteria first, each list by number. */
   openItems: z.array(OpenItem).optional(),
+  /** REQUEST_OTHER_REPOSITORY only: the project's repository, short form (github.com/northwind/payments). */
+  repository: z.string().optional(),
   ...MirroredProblemExtensions.shape,
 });
 export type ProblemData = z.infer<typeof ProblemData>;
@@ -195,8 +217,9 @@ export type ProblemData = z.infer<typeof ProblemData>;
 /**
  * Error body of every /api/v1 response with a 4xx or 5xx status, after RFC 9457 (problem details)
  * with these extensions: `code`, `requestId`, `issues`, `task` for TASK_CHANGED, `field`, `file`,
- * `backlogId`, `hint` for the *_MIRRORED codes (M3), `loop` for DEPENDENCY_LOOP (M5), and
- * `openItems` for OPEN_ITEMS (M6). The CLI prints it under `zamu.v1.error`.
+ * `backlogId`, `hint` for the *_MIRRORED codes (M3), `loop` for DEPENDENCY_LOOP (M5),
+ * `openItems` for OPEN_ITEMS (M6), and `repository` for REQUEST_OTHER_REPOSITORY (M7). The CLI
+ * prints it under `zamu.v1.error`.
  */
 export const Problem = z.object({
   type: z.string().default('about:blank'),
@@ -213,6 +236,8 @@ export const Problem = z.object({
   loop: ProblemLoop.optional(),
   /** OPEN_ITEMS only: what is still open, so clients can list it with the flags that settle it. */
   openItems: z.array(OpenItem).optional(),
+  /** REQUEST_OTHER_REPOSITORY only: the repository the project links, so clients can say which one. */
+  repository: z.string().optional(),
   ...MirroredProblemExtensions.shape,
 });
 export type Problem = z.output<typeof Problem>;
@@ -227,6 +252,7 @@ export function problem(
     instance?: string;
     task?: Problem['task'];
     openItems?: OpenItem[];
+    repository?: string;
   } & MirroredProblemExtensions = {},
 ): Problem {
   return {

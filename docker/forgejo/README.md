@@ -1,6 +1,7 @@
 # Test Forgejo
 
-A throwaway Forgejo 17 for the `@zamu/git-providers` integration tests and the M3 end-to-end tests.
+A throwaway Forgejo 17 for the `@zamu/git-providers` integration tests and the end-to-end specs that need a
+git host (Backlog.md, pull requests).
 
 ```sh
 eval "$(FORGEJO_PORT=3300 docker/forgejo/setup.sh)"   # sets FORGEJO_URL, FORGEJO_USER, FORGEJO_PASSWORD, FORGEJO_TOKEN

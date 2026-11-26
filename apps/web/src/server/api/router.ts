@@ -1,6 +1,8 @@
 // /api/v1 procedures. Each one hands the parsed input and the actor to a core service and returns
-// its result; the rules live in @zamu/core.
+// its result; the rules live in @zamu/core. M7: archiving, pull requests and repository settings.
 import {
+  archivePreview,
+  archiveTasks,
   bulkUpdateTasks,
   createComment,
   createCycle,
@@ -22,7 +24,9 @@ import {
   getHomeCounts,
   getMe,
   getMilestone,
+  getRepositorySettings,
   getTask,
+  linkPullRequest,
   listComments,
   listCycles,
   listLabels,
@@ -32,13 +36,18 @@ import {
   listTaskActivity,
   listTasks,
   listTaskTimeline,
+  newRepositoryWebhookSecret,
   requestBacklogRefresh,
+  restoreTasks,
+  syncRepositoryNow,
+  unlinkPullRequest,
   updateComment,
   updateCycle,
   updateLabel,
   updateMe,
   updateMilestone,
   updateProject,
+  updateRepositorySettings,
   updateTask,
 } from '@zamu/core';
 import { api } from './base';
@@ -56,6 +65,9 @@ export const router = api.router({
     update: api.projects.update.handler(({ context, input }) =>
       updateProject(context.core, context.actor, input),
     ),
+    archivePreview: api.projects.archivePreview.handler(({ context, input }) =>
+      archivePreview(context.core, context.actor, input),
+    ),
     delete: api.projects.delete.handler(({ context, input }) =>
       deleteProject(context.core, context.actor, input),
     ),
@@ -68,12 +80,26 @@ export const router = api.router({
     bulkUpdate: api.tasks.bulkUpdate.handler(({ context, input }) =>
       bulkUpdateTasks(context.core, context.actor, input),
     ),
+    archive: api.tasks.archive.handler(({ context, input }) =>
+      archiveTasks(context.core, context.actor, input),
+    ),
+    restore: api.tasks.restore.handler(({ context, input }) =>
+      restoreTasks(context.core, context.actor, input),
+    ),
     activity: api.tasks.activity.handler(({ context, input }) =>
       listTaskActivity(context.core, context.actor, input),
     ),
     timeline: api.tasks.timeline.handler(({ context, input }) =>
       listTaskTimeline(context.core, context.actor, input),
     ),
+  },
+  pullRequests: {
+    link: api.pullRequests.link.handler(({ context, input }) =>
+      linkPullRequest(context.core, context.actor, input),
+    ),
+    unlink: api.pullRequests.unlink.handler(async ({ context, input }) => {
+      await unlinkPullRequest(context.core, context.actor, input);
+    }),
   },
   comments: {
     list: api.comments.list.handler(({ context, input }) => listComments(context.core, context.actor, input)),
@@ -135,6 +161,20 @@ export const router = api.router({
     export: api.backlog.export.handler(({ context, input }) =>
       exportBacklog(context.core, context.actor, input),
     ),
+  },
+  repository: {
+    get: api.repository.get.handler(({ context, input }) =>
+      getRepositorySettings(context.core, context.actor, input),
+    ),
+    update: api.repository.update.handler(({ context, input }) =>
+      updateRepositorySettings(context.core, context.actor, input),
+    ),
+    newWebhookSecret: api.repository.newWebhookSecret.handler(({ context, input }) =>
+      newRepositoryWebhookSecret(context.core, context.actor, input),
+    ),
+    sync: api.repository.sync.handler(async ({ context, input }) => {
+      await syncRepositoryNow(context.core, context.actor, input);
+    }),
   },
   dashboard: {
     get: api.dashboard.get.handler(({ context, input }) => getDashboard(context.core, context.actor, input)),
