@@ -13,6 +13,9 @@ the agent, and the person it acts for. People use the web app; agents use the `z
 
 What works today:
 - First-run setup, email and password sign-in, single sign-on with OpenID Connect, invitations by link.
+- Several workspaces on one server, each with its own projects, members, agents and keys, and its pages
+  under `/w/<slug>/`. People switch between the ones they belong to; agents and keys belong to one, and the
+  CLI keeps a login per workspace.
 - Home, the page you land on: tasks in review, unanswered mentions, blocked and overdue work and your other
   tasks, grouped by why they need you, across every project. Tabs for you, the whole workspace and the
   agents, and a strip of close deadlines.
@@ -77,16 +80,16 @@ brew install reddevsdotio/tap/zamu
 
 ## Docs
 
-- [Using the app](docs/guide.md): the sidebar, Home, the list and the board, the task view and its work
-  record, the palette, labels, due dates, blockers and subtasks, and Task defaults.
-- [Keyboard shortcuts](docs/keyboard.md): every key, and what changed in 0.7.0 and 0.9.0.
+- [Using the app](docs/guide.md): workspaces, the sidebar, Home, the list and the board, the task view and
+  its work record, the palette, labels, due dates, blockers and subtasks, and Task defaults.
+- [Keyboard shortcuts](docs/keyboard.md): every key, and what changed in 0.7.0, 0.9.0 and 0.10.0.
 - [Self-hosting](docs/self-hosting.md): configuration, first run, ports, backups and upgrades.
-- [Agents](docs/agents.md): adding agents, scoping keys, installing and running `zamu`, the work record, the
-  offline queue, `--json` output.
+- [Agents](docs/agents.md): adding agents, scoping keys, installing and running `zamu`, logins for several
+  workspaces, the work record, the offline queue, `--json` output.
 - [Backlog.md](docs/backlog-md.md): git connections, mirrors and imports, mappings, webhooks, the switch to
   Zamu and the export.
 - [CLI reference](apps/cli/README.md): every `zamu` command and option.
-- [REST API](docs/api.md): authentication, errors, and the task, label and Home routes.
+- [REST API](docs/api.md): authentication, workspaces, errors, and the task, label and Home routes.
 
 ## Development
 
@@ -97,8 +100,15 @@ pnpm install
 cp .env.example .env                                   # then set BETTER_AUTH_SECRET
 docker compose -f docker-compose.dev.yml up -d db      # Postgres on localhost:5432
 pnpm --filter @zamu/db migrate
+pnpm --filter web seed                                 # optional: demo data, prints API keys
 pnpm dev                                               # web app on http://localhost:3000, plus the worker
 ```
+
+On a new database the seed creates the admin `ana@example.com` (password `dev-password-1234`), who owns two
+workspaces, Reddevs and Globex. Both have a project `PAY` and their own agent `claude-dev`. It prints
+`export` lines: `ZAMU_API_KEY` and `ZAMU_ADMIN_API_KEY` for Reddevs, `ZAMU_SECOND_API_KEY` and
+`ZAMU_SECOND_ADMIN_API_KEY` for Globex. Run it again at any time for new keys; it keeps what exists.
+`SEED_SECOND_WORKSPACE=0` leaves Globex out.
 
 Checks:
 
@@ -139,12 +149,19 @@ and the git settings the Backlog.md specs need (`e2e/stack.ts`).
   with no history lines, and that the key from 0.6.0 gets 401 (the old prefix is gone) while a new key starts
   with `zamu_live_`. Between 0.6.0 and the new image it moves to 0.8.0 when that release exists, and the new
   image's migration moves a mirrored task's criteria, done items, plan, notes and summary out of its
-  description into the work record, again with no history lines. The older images come from
-  `E2E_M1_IMAGE`, `E2E_M2_1_IMAGE`, `E2E_0_6_IMAGE` and `E2E_0_8_IMAGE` (pulled when missing), or are built
+  description into the work record, again with no history lines. After that it moves to 0.9.0 when that
+  release exists, and the new image keeps the workspace's slug, fills each person's last-used workspace and
+  redirects an old task link to `/w/<slug>/p/...`. The older images come from `E2E_M1_IMAGE`,
+  `E2E_M2_1_IMAGE`, `E2E_0_6_IMAGE`, `E2E_0_8_IMAGE` and `E2E_0_9_IMAGE` (pulled when missing), or are built
   once from git as `zamu:m1-0.1.1`, `zamu:m2.1-<ref>`, `zamu:release-0.6.0` and `zamu:release-<ref>`, which
-  takes a few minutes each the first time. The 0.8.0 step builds from the tag `0.8.0`, or from the ref in
-  `E2E_0_8_REF` (for example `0.8.0-rc.1`); with neither the tag nor one of the two variables, it is skipped
-  with a message.
+  takes a few minutes each the first time. The 0.8.0 and 0.9.0 steps build from the tags `0.8.0` and
+  `0.9.0`, or from the refs in `E2E_0_8_REF` and `E2E_0_9_REF` (for example `0.8.0-rc.1`); with neither the
+  tag nor one of the two variables, a step is skipped with a message.
+- `workspaces.spec.ts`: a second workspace with the same project key, created from the switcher; switching
+  with the switcher and the palette, two tabs on two workspaces, an invitation that opens its workspace,
+  leaving, the no-workspace page, changing the address with old links still working, deleting, the CLI
+  picking a login by the clone's remote, and `WORKSPACE_CREATION=owners` on a second web container
+  (`E2E_OWNERS_PORT`, default 3102).
 - `work-views.spec.ts`: the board with its display options, milestones, cycles, comments with mentions from
   the web and the CLI, the list keys around group rows, Home across two projects and the theme.
 - `backlog-mirror.spec.ts` and `backlog-import.spec.ts` (Playwright project `backlog-md`, after the others):
@@ -156,8 +173,9 @@ and the git settings the Backlog.md specs need (`e2e/stack.ts`).
   parser), deleting a mirrored project and import.
 
 `E2E_KEEP_STACK=1` keeps the stacks (and the Forgejo containers) running after the run, `E2E_SKIP_BUILD=1`
-reuses the last image, `E2E_COMPOSE_PROJECT`, `E2E_PORT`, `E2E_UPGRADE_PORT` and `ZAMU_IMAGE` change the
-project name, ports and image tag (use them when another checkout runs the suite on the same machine),
+reuses the last image, `E2E_COMPOSE_PROJECT`, `E2E_PORT`, `E2E_UPGRADE_PORT`, `E2E_OWNERS_PORT` and
+`ZAMU_IMAGE` change the project name, ports and image tag (use them when another checkout runs the suite on
+the same machine),
 `E2E_SKIP_UPGRADE=1` skips the upgrade test and `E2E_SKIP_BACKLOG=1` skips the Backlog.md specs.
 
 `pnpm dev` without `BETTER_AUTH_SECRET` prints the startup error once and keeps running; pages fail until

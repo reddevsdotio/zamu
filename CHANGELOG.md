@@ -1,5 +1,81 @@
 # Changelog
 
+## 0.10.0
+
+Several workspaces on one server. Every page lives under the workspace's slug, people switch between the
+workspaces they belong to, and the CLI keeps one login per workspace.
+
+### Added
+
+- Workspaces: one server holds several, each with its own projects, members, agents and API keys. Pages live
+  under `/w/<slug>/`, so a link always opens its own workspace and two tabs can show two workspaces. Project
+  and task keys are unique per workspace: two workspaces can each have a `PAY-1`.
+- The workspace menu lists every workspace you belong to under "Workspaces", with the current one checked.
+  Choosing another opens its Home. Below the list: "New workspace" (when you may create one), then
+  Workspace settings, Invite people, New project and New from Backlog.md as before.
+- Command palette: "Switch to <workspace>" for each of your other workspaces, "New workspace" and "Go to
+  workspace settings". No new keys.
+- The New workspace dialog: a Name, and an Address suggested from it that you can change, with "This
+  address is reserved. Pick another." or "The address … is taken. Pick another." under the field. Create
+  workspace (⌘Enter) opens the new workspace's Home, which starts with "Nothing to show yet": create a
+  project, then add an agent.
+- Settings > General, the first page of the workspace settings (Workspace settings and `/w/<slug>/settings`
+  open it). Owners and admins change the Name and the Address; old links keep working and open the new
+  address. Members see both read-only.
+- Leave workspace, in General: anyone can leave after a confirm, and loses their API keys for the
+  workspace.
+- Delete workspace, in General's danger zone, for owners: the confirm lists what goes ("Deletes Acme with 3
+  projects, 120 tasks, 2 agents and 4 API keys.") and asks you to type the address. There is no undo.
+- `/welcome`, for people signed in without a workspace: "Create a workspace" when the server allows it,
+  otherwise "Ask an owner for an invitation", and Sign out.
+- `WORKSPACE_CREATION`: `everyone` (the default) lets any person create a workspace, `owners` only people
+  who own one. Agents never can.
+- `OIDC_WORKSPACE`: the slug of the workspace that SSO auto sign-up joins and `OIDC_ADMIN_GROUPS` applies
+  to. Without it, the oldest workspace. Set before setup, the first workspace takes that slug.
+- API: the `x-zamu-workspace` header names the workspace of a request. A session acts in that workspace; a
+  key acts in its own and is refused with `403 WORKSPACE_MISMATCH` when the header names another. A person
+  outside the named workspace gets `403 NOT_A_MEMBER`. See [docs/api.md](docs/api.md#workspaces).
+- CLI: `zamu login` adds a login per server and workspace instead of replacing the stored one;
+  `zamu login --default`, `zamu workspaces [--default <slug>]`, `zamu logout --workspace <slug>` and
+  `zamu logout --all`; a global `--workspace <slug>` option on every command. Each command picks its login
+  from `--workspace`, `ZAMU_KEY`, the clone's git remote (cached in `$XDG_STATE_HOME/zamu/clones.json`) or
+  the default login. `zamu whoami` shows how it picked (`workspaceSource` in `--json`). See
+  [docs/agents.md](docs/agents.md#several-workspaces).
+- The dev seed adds a second workspace, Globex, with its own `PAY` project and its own `claude-dev`, and
+  prints `ZAMU_SECOND_API_KEY` and `ZAMU_SECOND_ADMIN_API_KEY` for it.
+
+### Changed
+
+- Links from 0.9 (`/p/…`, `/settings/…`, `/dashboard`, `/my-tasks`, `/projects`) and `/` redirect to the
+  same page in the workspace you used last. That workspace is stored on your account, so it is the same in
+  every browser and after signing out.
+- Accepting an invitation opens the workspace that sent it. Someone who already has an account joins with
+  "Join <workspace>" when signed in with the invited email, or "Sign in to join" when signed out; signed in
+  with another email, the page offers Sign out instead of accepting.
+- Workspace settings, in the sidebar and the workspace menu, opens General instead of Members.
+- Leave workspace is refused for the only owner ("You are the only owner of Acme, so you can't leave it.
+  Delete the workspace instead.") and for the responsible person of agents in the workspace ("You are
+  responsible for claude-dev here. Hand them to someone else or remove them first.").
+- Removing a person in Settings > Members is refused the same way while they are responsible for agents in
+  the workspace, with the agents named. A person who leaves or is removed loses their API keys for that
+  workspace only.
+- Better Auth's endpoints that create, change or delete workspaces and memberships answer 403 under
+  `/api/auth`. Invitations work as before.
+- Setup stays done once a workspace exists: creating more workspaces, or deleting the first while others
+  remain, never opens it again.
+- CLI: the config file holds a list of logins (`{ "version": 2, "logins" }`). A clone that matches several
+  logins stops with exit code 1 and lists the `--workspace` values; a key used for another workspace exits
+  with 4. Queued writes are sent with the login they were queued with, and remembered statuses are kept per
+  server and workspace.
+
+### Upgrading
+
+Back up the database, then upgrade as usual. Existing slugs stay the same unless they don't fit the new
+rules (2 to 40 lower-case letters, digits and single hyphens, starting with a letter, not a reserved word);
+those are rewritten and the old slug is kept as an alias. Each person's workspace used last starts as their
+oldest one. The CLI converts a 0.9 config file on the first command that reaches the server, and keeps
+using it as it is while offline.
+
 ## 0.9.0
 
 Agents record their work in Zamu. A task gains a work record, the CLI installs from npm and Homebrew, and a

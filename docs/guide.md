@@ -1,19 +1,79 @@
 # Using the app
 
-This page covers the web app as it is since 0.9.0: the sidebar, Home, the list and the board, the task view
-and the peek, the work record, the command palette, the four task fields (labels, due dates, blockers and
-subtasks) and Task defaults. The keys are in [keyboard.md](keyboard.md).
+This page covers the web app as it is since 0.10.0: workspaces, the sidebar, Home, the list and the board,
+the task view and the peek, the work record, the command palette, the four task fields (labels, due dates,
+blockers and subtasks) and Task defaults. The keys are in [keyboard.md](keyboard.md).
+
+## Workspaces
+
+A workspace holds projects, their tasks, members, agents and API keys. One server can hold several, and you
+can belong to more than one, with a role in each. Nothing crosses between them: Home, search, the palette
+and every list show the workspace you are in.
+
+Every page lives under the workspace's slug, such as `/w/acme/` for Home and `/w/acme/p/PAY/PAY-142` for a
+task. Two workspaces can each have a project `PAY`, and a link always opens the task of its own workspace.
+`/` opens the workspace you used last. Links from before 0.10 (`/p/PAY/PAY-142`, `/settings/members`) open
+the same page in the workspace you used last.
+
+Each browser tab stays in its own workspace, so two tabs can show two workspaces side by side. An invitation
+opens the workspace that sent it once you accept. If you already have an account, sign in with the invited
+email and choose "Join <workspace>" on the invitation page; signed out, the page offers "Sign in to join".
+
+### Switching and creating
+
+The workspace menu at the top of the sidebar lists every workspace you belong to under "Workspaces", with a
+check on the current one. Choose another to open its Home. In the command palette, "Switch to Globex" does
+the same, one command for each of your other workspaces.
+
+"New workspace" in the workspace menu or the palette opens the New workspace dialog: "You become its owner.
+Projects, members and API keys stay inside it." Type a Name, and the Address (the slug after `/w/`) is
+suggested from it; you can change it. Addresses are 2 to 40 lower-case letters, digits and hyphens, start
+with a letter and can't be a word the app uses, such as `settings` or `api`. The dialog says so under the
+field: "This address is reserved. Pick another." or "The address globex is taken. Pick another." An address
+another workspace used before is taken too. Create workspace (⌘Enter) opens the new workspace's Home, which
+starts with "Nothing to show yet" and two steps: create a project, then add an agent. On servers set to
+`WORKSPACE_CREATION=owners`, only people who already own a workspace see "New workspace"
+([self-hosting.md](self-hosting.md#workspaces)).
+
+Someone who belongs to no workspace, for example after leaving the last one, gets a page of their own. When
+the server allows it, it shows "Create a workspace" with the same Name and Address fields; otherwise it says
+"Ask an owner for an invitation", since the link in an invitation opens its workspace. Both show who is
+signed in and Sign out.
+
+### General settings
+
+General is the first page of the workspace settings: Workspace settings in the sidebar and the workspace
+menu, "Go to workspace settings" in the palette, and `/w/<slug>/settings` all open it.
+- **Name and Address**: owners and admins change them and press Save changes; members see them read-only.
+  Old links keep working after an address change: they open the same page at the new address, and the page
+  you are on moves there with the toast "Acme now lives at /w/acme-corp. Old links keep working." The old
+  address stays with the workspace for 90 days; after that another workspace may take it.
+- **Leave workspace**: "You lose access to its projects and tasks. Your API keys for it are deleted." It
+  asks "Leave Acme?" first. The only owner can't leave ("You are the only owner of Acme, so you can't leave
+  it. Delete the workspace instead."), and neither can the responsible person of agents in the workspace
+  until they hand the agents to someone else or remove them; the message names the agents.
+- **Delete workspace**, in the danger zone, for owners: it deletes the projects, tasks, agents and API keys
+  for every member, and can't be undone. The confirm, "Delete Acme?", lists what goes ("Deletes Acme with 3
+  projects, 120 tasks, 2 agents and 4 API keys.") and asks you to type the address. Afterwards the app
+  opens `/`, which lands in another of your workspaces or on the page above, and shows "Deleted Acme."
+
+In Settings > Members, removing a person who is the responsible person of agents in the workspace is
+refused the same way: "Tomás Berg is responsible for claude-dev here. Hand them to someone else or remove
+them first."
+
+Appearance is yours in every workspace. My keys lists your keys for the workspace you are in.
 
 ## Sidebar
 
 The sidebar on the left holds, from top to bottom:
-- the workspace menu (workspace settings, invite people, New project, New from Backlog.md);
+- the workspace menu: your workspaces, New workspace, Workspace settings, Invite people, New project and
+  New from Backlog.md;
 - Search or jump to, which opens the command palette (⌘K, Ctrl+K on Windows and Linux);
 - Home, with the number of things that need you;
 - your projects, by name, each with its number of open tasks. The current project expands to List, Board,
   Milestones, Cycles and Settings (Milestones and Cycles only when the project uses them). The "+" next to
   Projects creates a project or a project from Backlog.md;
-- Workspace settings;
+- Workspace settings, which opens General;
 - your menu: the theme (System, Light or Dark), My API keys, Keyboard shortcuts and Sign out.
 
 `[` collapses the sidebar to icons and back. The app remembers your choice. Below 1100 pixels wide, the
@@ -23,7 +83,8 @@ The Dashboard, My tasks and Projects pages are gone. Their old links open Home.
 
 ## Home
 
-Home (`/`) shows what needs attention, across every project you can see. It has three tabs:
+Home (`/w/<slug>/`) shows what needs attention, across every project you can see in the workspace. It has
+three tabs:
 - **Mine**: tasks in review that wait on you, unanswered comments that mention you, and your own open
   tasks that are blocked, overdue or simply assigned to you. Your tasks are the ones assigned to you, and
   the ones you created that nobody holds yet.
@@ -92,12 +153,12 @@ links and Open in Backlog.md.
 
 ![The task view of CHK-1, with its subtasks, the task it blocks and the properties sidebar](images/task-view-light.png)
 
-A task opens as a full page at `/p/PAY/PAY-142`. On the left, from the top: the title, the final summary when
-there is one, the Markdown description, the acceptance criteria, the definition of done, the plan, the
-Subtasks and Blocked by boxes, then the activity and the comment box (M). The properties are on the right:
-status, priority, assignee, Criteria and Done items, labels, due date, parent, milestone and cycle, each
-with its picker. Criteria and Done items show their counts, and a click moves to the list. The work record
-has its own section below.
+A task opens as a full page at `/w/acme/p/PAY/PAY-142`. On the left, from the top: the title, the final
+summary when there is one, the Markdown description, the acceptance criteria, the definition of done, the
+plan, the Subtasks and Blocked by boxes, then the activity and the comment box (M). The properties are on the
+right: status, priority, assignee, Criteria and Done items, labels, due date, parent, milestone and cycle,
+each with its picker. Criteria and Done items show their counts, and a click moves to the list. The work
+record has its own section below.
 
 E edits the title and D the description. J and K go to the next and previous task of the list or board you
 opened it from ("12 of 40 in List"). Esc goes back there, with the task still under the cursor. Copy link
@@ -173,7 +234,9 @@ changes no code. In a project that mirrors Backlog.md the defaults apply once it
 - projects: G then P opens the palette on projects only;
 - tasks, by key (`PAY-142`) or by words of the title;
 - actions: create a task or a project, switch the theme, collapse the sidebar, open the shortcut list.
-  Create task "…" starts quick create with the words you typed as the title.
+  Create task "…" starts quick create with the words you typed as the title;
+- workspaces: "Switch to Globex" for each of your other workspaces, "New workspace" and "Go to workspace
+  settings".
 
 On a task, or with tasks selected, the palette starts with their actions: Change status, Set priority,
 Assign, Add labels, Set due date, Move to milestone, Add to cycle, Add blocker, Add subtask, Assign to me,

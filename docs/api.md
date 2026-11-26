@@ -1,7 +1,8 @@
 # REST API
 
 The web app, the `zamu` CLI and your scripts use the same REST API at `/api/v1`. The server publishes the full
-OpenAPI document at `GET /api/v1/openapi.json`; this page is an overview, with what 0.7.0 and 0.9.0 added.
+OpenAPI document at `GET /api/v1/openapi.json`; this page is an overview, with what 0.7.0, 0.9.0 and 0.10.0
+added.
 
 ## Requests
 
@@ -39,6 +40,29 @@ Errors are RFC 9457 problems with a stable `code`:
 ```
 
 Quote `requestId` when you report a problem.
+
+## Workspaces
+
+A server can hold several workspaces, and every request acts in one of them. Project and task keys are
+unique within a workspace only: two workspaces can each have a project `PAY` and a task `PAY-1`.
+
+The optional header `x-zamu-workspace: <slug>` names the workspace (0.10.0). A slug the workspace used
+before still works, so a script keeps running after a rename.
+- An API key always acts in the workspace it was created in. The header may name that workspace; naming
+  another one is refused with `403 WORKSPACE_MISMATCH`, never a switch. `zamu` sends the header with every
+  request, so a key used for the wrong login fails loudly.
+- A session (the web app) acts in the workspace the header names. Without the header it acts in the
+  workspace the person used last, else in their oldest one. A person who is not a member of the named
+  workspace, or of any workspace, gets `403 NOT_A_MEMBER`. An unknown slug gets the same answer.
+
+`GET /me` returns the workspace as `{ id, name, slug }`. There are no routes to create, rename or delete
+workspaces; that happens in the web app.
+
+| Code                 | Status | When                                                                      |
+| -------------------- | ------ | ------------------------------------------------------------------------- |
+| `UNAUTHORIZED`       | 401    | No session or key, or the key is invalid, disabled or expired.            |
+| `NOT_A_MEMBER`       | 403    | A session whose person is not a member of the workspace the header names. |
+| `WORKSPACE_MISMATCH` | 403    | An API key sent with a header that names a workspace other than its own.  |
 
 ## Tasks
 

@@ -48,7 +48,7 @@ pnpm install
 cp .env.example .env                                # then set BETTER_AUTH_SECRET: openssl rand -base64 32
 docker compose -f docker-compose.dev.yml up -d db   # Postgres 18 on localhost:5432
 pnpm --filter @zamu/db migrate
-pnpm --filter web seed                              # optional: demo workspace, prints API keys
+pnpm --filter web seed                              # optional: two demo workspaces, prints API keys
 pnpm dev                                            # web app on http://localhost:3000, plus the worker
 ```
 
@@ -92,6 +92,11 @@ pnpm e2e                      # Playwright against a fresh Docker Compose stack
   own; a project owned by Zamu (imported, or switched in its settings) can be written back out as a copy with
   `zamu backlog export`. The server never writes to a repository.
 - A new API route starts in `packages/contracts`. The web app, the API and the CLI share those types.
+- Everything belongs to a workspace. Every core query filters by `actor.workspaceId`, directly or through a
+  row that does; a lookup by project key, task key, member name or email without it is a bug. Project and
+  task keys are unique per workspace only. Requests name the workspace with the `x-zamu-workspace` header:
+  a session acts in the workspace it names, and a key that is sent with another workspace's slug gets 403
+  `WORKSPACE_MISMATCH`.
 - Core services take a context object. They never read `process.env`; the apps read configuration once at
   startup.
 - Tests sit next to the code as `*.test.ts`. Web `*.test.tsx` files run in jsdom with Testing Library.
@@ -103,6 +108,15 @@ pnpm e2e                      # Playwright against a fresh Docker Compose stack
 
 - Screens live in `apps/web/src/features/<area>`. Routes are files in `apps/web/src/routes`;
   `routeTree.gen.ts` is generated, so never edit it by hand.
+- Every page lives under `routes/_app/w/$workspace/`, so links, `navigate` and `redirect` pass the
+  `workspace` param (`useWorkspaceSlug()` in `~/lib/workspace`). The layout route resolves the slug and sets
+  `context.api` for loaders; components use `useApi()`. Both are the workspace's client, which sends the
+  header, and its query helpers, whose keys start with `['w', slug]`. Query builders take that set as an
+  argument (`taskQuery(api, key)`); features import only types from `~/lib/orpc`.
+- Server functions take `{ workspace, input }`: validate with `inWorkspace(Schema)` and resolve the actor
+  with `runInWorkspace(data.workspace, …)` from `~/lib/server-fn`.
+- Test screens with `testWorkspace(fakeClient)` and `renderInWorkspace()` from `~/lib/testing` instead of
+  mocking `~/lib/orpc`: they render under the Acme workspace with keys under `['w', 'acme']`.
 - Build screens from the kit in `apps/web/src/ui` and import it from `~/ui`. Run `pnpm dev` and open
   http://localhost:3000/__ui (add `?theme=dark`) to see every component.
 - Style with Tailwind utilities that map to `apps/web/src/styles/tokens.css`. Tailwind's default colours,

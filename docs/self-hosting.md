@@ -42,11 +42,25 @@ Edit `.env`:
 | `APP_ENCRYPTION_KEY`      | no       | none                    | Encrypts git tokens. Without it, git connections and Backlog.md mirrors are off. See [below](#git-connections-and-backlogmd). |
 | `GIT_ALLOW_PRIVATE_HOSTS` | no       | `false`                 | `true` lets git connections reach hosts on private networks.                                                                  |
 | `GIT_HTTP_HOSTS`          | no       | none                    | Comma-separated git hosts reached over plain HTTP. For test containers only.                                                  |
+| `WORKSPACE_CREATION`      | no       | `everyone`              | Who may create a workspace: `everyone` or `owners`. See [Workspaces](#workspaces).                                            |
 
 `DATABASE_URL` and `TEST_DATABASE_URL` in `.env` are for local development. Compose ignores them: the
 containers reach Postgres as `db` on their own network.
 
 If you change `PORT`, change the port in `BETTER_AUTH_URL` and `PUBLIC_URL` too.
+
+### Workspaces
+
+One server holds as many workspaces as people create. Each has its own projects, members, agents and API
+keys, and its pages live under `/w/<slug>/`. A person can belong to several and switch between them in the
+web app; an agent and an API key belong to one.
+
+`WORKSPACE_CREATION` decides who may create one:
+- `everyone` (the default): any person signed in.
+- `owners`: only people who already own a workspace. Everyone else joins through invitations.
+
+Agents never create workspaces, and the REST API and the CLI have no route for it. Any other value stops
+the server at start with a message.
 
 ### Time zone and cycle ends
 
@@ -220,7 +234,10 @@ Open `BETTER_AUTH_URL` in a browser. A new server sends you to the setup page:
    {name}" when [single sign-on](#single-sign-on-oidc) is configured.
 2. Name the workspace, usually your team or company.
 
-You land on Home, signed in. Setup runs once; afterwards `/setup` sends visitors to sign in.
+You land on Home, signed in. Setup runs once; afterwards `/setup` sends visitors to sign in. It stays done
+when more workspaces are created and when the first one is deleted while others remain: people without a
+workspace get a screen that lets them create one (when `WORKSPACE_CREATION` allows it) or tells them to ask
+an owner for an invitation.
 
 Nobody can sign up on their own. To add people, go to Settings > Members > Invite person, pick a role and copy
 the invitation link. No email is sent: share the link yourself. It works once and expires after a week.
@@ -253,6 +270,7 @@ these variables the server uses email and password only.
 | `OIDC_ADMIN_GROUPS`  | none                   | Comma-separated groups whose members are workspace admins.          |
 | `OIDC_GROUPS_CLAIM`  | `groups`               | Claim with the user's groups. Authentik sends `groups`.             |
 | `OIDC_TRUST_EMAIL`   | `false`                | `true`: treat the provider's email as verified. See below.          |
+| `OIDC_WORKSPACE`     | the oldest workspace   | Slug of the workspace that auto sign-up and admin groups apply to.  |
 | `PASSWORD_LOGIN`     | `enabled`              | `disabled`: SSO only. Needs the three `OIDC_*` credentials.         |
 
 SSO is on when `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` are all set.
@@ -270,6 +288,11 @@ SSO is on when `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` are all 
   accept an invitation). If people can change their own email at the provider, someone you let in could set
   another person's address and sign in as them. Turn it on only when emails at the provider are managed by
   admins, or when everyone the provider admits is trusted.
+- `OIDC_WORKSPACE`: SSO works for every workspace, but auto sign-up and admin groups apply to one of them:
+  the workspace with this slug (an old slug of it works too), else the oldest workspace. Invitations still
+  open the workspace that sent them, and admin groups don't change roles in other workspaces. Set before
+  setup, the first workspace takes this slug. Once setup is done, a slug that names no workspace stops the
+  server at start.
 - `PASSWORD_LOGIN=disabled` removes the password form from sign-in, setup and invitations, and the server
   refuses password sign-in. API keys (agents, the CLI) keep working.
 
@@ -288,7 +311,8 @@ What SSO does:
 
 The server checks the configuration when it starts and exits with a message listing every problem, for
 example `PASSWORD_LOGIN=disabled` without SSO, only some of the three `OIDC_*` credentials, a malformed
-`OIDC_ISSUER`, an `OIDC_TRUST_EMAIL` other than `true` or `false`, an invalid `TRUSTED_IP_HEADERS`, or a
+`OIDC_ISSUER`, an `OIDC_TRUST_EMAIL` other than `true` or `false`, an `OIDC_WORKSPACE` that names no
+workspace, a `WORKSPACE_CREATION` other than `everyone` or `owners`, an invalid `TRUSTED_IP_HEADERS`, or a
 `BETTER_AUTH_SECRET` shorter than 32 characters: `docker compose logs web` shows it.
 
 ### Authentik
@@ -407,6 +431,14 @@ mirrored or imported from Backlog.md out of its stored Backlog.md data into the 
 from git and writes no history lines, and the next refresh of each mirror changes nothing for files that
 did not change. Display options and the sidebar state are kept in each browser, so people start on the
 defaults.
+
+Upgrading from 0.9 to 0.10 puts every page under the workspace's slug: `/p/PAY/PAY-142` becomes
+`/w/<slug>/p/PAY/PAY-142`. Old links, bookmarks included, redirect (307) to the same page in the workspace
+the person used last. The migration keeps every slug that is valid in a URL (2 to 40 lower-case letters,
+digits and single hyphens, starting with a letter, not a reserved word such as `api` or `settings`). A slug
+that isn't is rewritten, and the old one is kept as an alias when it can be. Each person's workspace used
+last starts as their oldest one. Logins stored by `zamu` 0.9 are converted on the first command that
+reaches the server ([agents.md](agents.md#several-workspaces)).
 
 The end-to-end suite checks these paths: it starts 0.1.1 and adds data, switches to 0.3.0 and adds more, to
 0.6.0 and sets up a Backlog.md mirror, then switches to the new image and checks the mirror's backfill.
