@@ -113,7 +113,7 @@ describe('UpdateProjectInput', () => {
     const result = UpdateProjectInput.safeParse({ project: 'PAY' });
     expect(result.success).toBe(false);
     expect(result.error?.issues[0]?.message).toBe(
-      'Change at least one of key, name, description, usesMilestones, usesCycles, repository or defaultDoneItems',
+      'Change at least one of key, name, description, usesMilestones, usesCycles, repository, defaultDoneItems or archiveAfterDays',
     );
   });
 

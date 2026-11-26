@@ -13,6 +13,7 @@ import {
   WorkItemNumber,
 } from './entities';
 import {
+  ArchiveAfterDays,
   AuthId,
   BacklogMode,
   CalendarDate,
@@ -25,6 +26,7 @@ import {
   GitProvider,
   LabelColor,
   LabelId,
+  MAX_CHECK_AGAIN_REASON_LENGTH,
   MAX_CYCLE_DAYS,
   MAX_LABEL_NAME_LENGTH,
   MilestoneId,
@@ -119,6 +121,23 @@ export type TaskPosition = z.output<typeof TaskPosition>;
 export const HIDDEN_FILTERS = ['only', 'include'] as const;
 export const HiddenFilter = z.enum(HIDDEN_FILTERS);
 export type HiddenFilter = z.infer<typeof HiddenFilter>;
+
+/**
+ * M7: archived tasks. Lists leave them out unless asked (exclude, the default): `include` lists
+ * them with the rest, `only` lists just them.
+ */
+export const ARCHIVED_FILTERS = ['exclude', 'include', 'only'] as const;
+export const ArchivedFilter = z.enum(ARCHIVED_FILTERS);
+export type ArchivedFilter = z.infer<typeof ArchivedFilter>;
+export const DEFAULT_ARCHIVED_FILTER = 'exclude' satisfies ArchivedFilter;
+
+/**
+ * M7: check-again days. waiting: the day is after today. ready: the day is today or past (Ready to
+ * check). set: any day. none: no day. Today is in APP_TIME_ZONE.
+ */
+export const CHECK_AGAIN_FILTERS = ['waiting', 'ready', 'set', 'none'] as const;
+export const CheckAgainFilter = z.enum(CHECK_AGAIN_FILTERS);
+export type CheckAgainFilter = z.infer<typeof CheckAgainFilter>;
 
 export const TASK_LIST_ORDERS = ['list', 'board'] as const;
 /** list: status, priority desc, updated desc (M1). board: status, then rank. */
@@ -302,6 +321,31 @@ function checkItemOperations(list: string, ops: ItemOperations, ctx: z.Refinemen
 }
 
 // ---------------------------------------------------------------------------
+// Check again (M7)
+// ---------------------------------------------------------------------------
+
+/** Why to look at the task again: one line, trimmed, 1 to 200 characters. Required with the day. */
+export const CheckAgainReason = z
+  .string()
+  .trim()
+  .min(1, 'Say why to check again')
+  .max(MAX_CHECK_AGAIN_REASON_LENGTH, `Keep it to ${MAX_CHECK_AGAIN_REASON_LENGTH} characters or fewer`)
+  .refine((value) => !/[\r\n]/.test(value), 'Keep it on one line');
+
+/**
+ * A check-again day with its reason; both are required. Any day may be set, past days included.
+ * On PATCH /tasks/{key}, null clears it.
+ */
+export const CheckAgainInput = z.object(
+  {
+    on: CalendarDate,
+    reason: CheckAgainReason,
+  },
+  { error: 'Give a day and a reason' },
+);
+export type CheckAgainInput = z.output<typeof CheckAgainInput>;
+
+// ---------------------------------------------------------------------------
 // Projects
 // ---------------------------------------------------------------------------
 
@@ -331,6 +375,11 @@ export const UpdateProjectInput = z
      * existing tasks keep theirs.
      */
     defaultDoneItems: WorkItemTexts.optional(),
+    /**
+     * M7: archive Done and Canceled tasks this many days after they closed (1 to 365); null turns
+     * archiving off. Mirrored projects get 409 PROJECT_MIRRORED: Backlog.md's archive folder decides.
+     */
+    archiveAfterDays: ArchiveAfterDays.nullable().optional(),
   })
   .refine(
     requireOneOf([
@@ -341,11 +390,12 @@ export const UpdateProjectInput = z
       'usesCycles',
       'repository',
       'defaultDoneItems',
+      'archiveAfterDays',
     ]),
     {
       message:
-        'Change at least one of key, name, description, usesMilestones, usesCycles, repository or ' +
-        'defaultDoneItems',
+        'Change at least one of key, name, description, usesMilestones, usesCycles, repository, ' +
+        'defaultDoneItems or archiveAfterDays',
     },
   );
 export type UpdateProjectInput = z.output<typeof UpdateProjectInput>;
@@ -394,6 +444,10 @@ export const ListTasksInput = z.object({
   topLevel: QueryBoolean.optional(),
   /** M5: only the subtasks of this task (an app key). */
   parent: TaskKeyInput.optional(),
+  /** M7: see ArchivedFilter. Omitted: exclude (archived tasks are left out). */
+  archived: ArchivedFilter.optional(),
+  /** M7: see CheckAgainFilter. */
+  checkAgain: CheckAgainFilter.optional(),
   /** list (default) or board; ignored when `sort` is set. */
   order: TaskListOrder.default('list'),
   /**
@@ -462,6 +516,8 @@ export const CreateTaskInput = z.object({
   skipDefaultDoneItems: z.boolean().optional(),
   /** M6: the implementation plan, Markdown. */
   plan: WorkText.optional(),
+  /** M7: a day to look at the task again, with its reason. Omitted or null: none. */
+  checkAgain: CheckAgainInput.nullable().optional(),
 });
 export type CreateTaskInput = z.output<typeof CreateTaskInput>;
 
@@ -527,6 +583,11 @@ export const UpdateTaskInput = z
     /** M6: the final summary, Markdown; null clears it. */
     finalSummary: WorkText.nullable().optional(),
     /**
+     * M7: a day to look at the task again with its reason (both required); null clears it. Moving
+     * the task to Done or Canceled clears it too.
+     */
+    checkAgain: CheckAgainInput.nullable().optional(),
+    /**
      * The updatedAt the caller last saw. When the stored task is newer, the update fails with
      * TASK_CHANGED (409) and the current task. Compared at millisecond precision.
      */
@@ -562,11 +623,13 @@ export const UpdateTaskInput = z
       ...DONE_ITEM_OPERATION_FIELDS,
       'plan',
       'finalSummary',
+      'checkAgain',
     ]),
     {
       message:
         'Change at least one of title, description, status, priority, assignee, milestone, cycle, ' +
-        'position, labels, dueDate, parent, blockers, criteria, done items, plan or finalSummary',
+        'position, labels, dueDate, parent, blockers, criteria, done items, plan, finalSummary or ' +
+        'checkAgain',
     },
   )
   .refine((value) => value.labels === undefined || (!value.addLabels && !value.removeLabels), {
@@ -648,6 +711,117 @@ export const BulkUpdateTasksInput = z
     message: 'Change at least one of status, priority, assignee, milestone, cycle, dueDate or labels',
   });
 export type BulkUpdateTasksInput = z.output<typeof BulkUpdateTasksInput>;
+
+// ---------------------------------------------------------------------------
+// Archive and pull requests (M7)
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /tasks/archive and POST /tasks/restore: up to MAX_BULK_TASKS app keys, all or nothing, in
+ * one transaction with one activity row per task. Tasks of a mirrored project fail the request with
+ * TASK_MIRRORED (Backlog.md's archive folder decides). Returns the tasks in the order sent.
+ */
+export const ArchiveTasksInput = z.object({
+  keys: z
+    .array(TaskKeyInput)
+    .min(1, 'Pick at least one task')
+    .max(MAX_BULK_TASKS, `Change ${MAX_BULK_TASKS} tasks or fewer at once`)
+    .transform((keys) => [...new Set(keys)]),
+});
+export type ArchiveTasksInput = z.output<typeof ArchiveTasksInput>;
+
+export const RestoreTasksInput = ArchiveTasksInput;
+export type RestoreTasksInput = ArchiveTasksInput;
+
+/** Longest request URL accepted, in characters. */
+export const MAX_REQUEST_URL_LENGTH = 500;
+
+function isWebAddress(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'https:' || url.protocol === 'http:') && url.hostname !== '';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The web address of a pull or merge request, as pasted. Only the form is checked here; core reads
+ * it with parseRequestUrl and answers 422 NOT_A_REQUEST or REQUEST_OTHER_REPOSITORY.
+ */
+export const PullRequestUrl = z
+  .string()
+  .trim()
+  .min(1, 'Paste the pull request address')
+  .max(MAX_REQUEST_URL_LENGTH)
+  .refine(isWebAddress, 'Use the address of a pull or merge request, starting with https://');
+
+/**
+ * POST /tasks/{key}/pull-requests: links a request of the project's repository by hand. dryRun
+ * returns the request as it would link (the preview) or the refusal, and writes nothing.
+ */
+export const LinkPullRequestInput = z.object({
+  key: TaskRefInput,
+  project: TaskRefProject,
+  url: PullRequestUrl,
+  dryRun: z.boolean().optional(),
+});
+export type LinkPullRequestInput = z.output<typeof LinkPullRequestInput>;
+
+/** The host's number of a request: #482, or the iid of a GitLab merge request. Path text coerces. */
+export const PullRequestNumber = z.coerce
+  .number<number>({ error: 'Use the request number, like 482' })
+  .int('Use the request number, like 482')
+  .min(1, 'Use the request number, like 482')
+  .max(2_147_483_647);
+
+/**
+ * DELETE /tasks/{key}/pull-requests/{number}: removes the link. It never comes back by branch or
+ * description; linking it by hand again restores it.
+ */
+export const UnlinkPullRequestInput = z.object({
+  key: TaskRefInput,
+  project: TaskRefProject,
+  number: PullRequestNumber,
+});
+export type UnlinkPullRequestInput = z.output<typeof UnlinkPullRequestInput>;
+
+/** GET /projects/{project}/repository, POST .../webhook-secret and POST .../sync. */
+export const RepositoryProjectInput = z.object({
+  project: ProjectKeyInput,
+});
+export type RepositoryProjectInput = z.output<typeof RepositoryProjectInput>;
+
+export const GetRepositorySettingsInput = RepositoryProjectInput;
+export type GetRepositorySettingsInput = RepositoryProjectInput;
+export const NewRepositoryWebhookSecretInput = RepositoryProjectInput;
+export type NewRepositoryWebhookSecretInput = RepositoryProjectInput;
+export const SyncRepositoryInput = RepositoryProjectInput;
+export type SyncRepositoryInput = RepositoryProjectInput;
+
+/**
+ * PATCH /projects/{project}/repository (owners and admins). connectionId picks the token Zamu
+ * reads with (a connection for the repository's host); null reads it as a public repository.
+ * closeOnMerge turns the Done step of a merge on or off. The repository URL itself changes with
+ * PATCH /projects/{project}.
+ */
+export const UpdateRepositoryInput = z
+  .object({
+    project: ProjectKeyInput,
+    connectionId: GitConnectionId.nullable().optional(),
+    closeOnMerge: z.boolean().optional(),
+  })
+  .refine(requireOneOf(['connectionId', 'closeOnMerge']), {
+    message: 'Change at least one of connectionId or closeOnMerge',
+  });
+export type UpdateRepositoryInput = z.output<typeof UpdateRepositoryInput>;
+
+/** GET /projects/{project}/archive-preview?days=N. Query strings carry the number as text. */
+export const ArchivePreviewInput = z.object({
+  project: ProjectKeyInput,
+  days: z.coerce.number<number>().pipe(ArchiveAfterDays),
+});
+export type ArchivePreviewInput = z.output<typeof ArchivePreviewInput>;
 
 // ---------------------------------------------------------------------------
 // Labels (M5): /projects/{project}/labels

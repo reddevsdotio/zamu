@@ -14,7 +14,7 @@ function procedures(router: unknown, path: string[] = []): [string, AnyContractP
 const all = procedures(contract);
 
 describe('contract', () => {
-  it('exposes exactly the M1 to M6 routes under /api/v1', () => {
+  it('exposes exactly the M1 to M7 routes under /api/v1', () => {
     const routes = Object.fromEntries(
       all.map(([name, procedure]) => {
         const { method, path } = procedure['~orpc'].route;
@@ -28,13 +28,18 @@ describe('contract', () => {
       'projects.create': 'POST /api/v1/projects',
       'projects.update': 'PATCH /api/v1/projects/{project}',
       'projects.delete': 'DELETE /api/v1/projects/{project}',
+      'projects.archivePreview': 'GET /api/v1/projects/{project}/archive-preview',
       'tasks.list': 'GET /api/v1/tasks',
       'tasks.get': 'GET /api/v1/tasks/{key}',
       'tasks.create': 'POST /api/v1/tasks',
       'tasks.update': 'PATCH /api/v1/tasks/{key}',
       'tasks.bulkUpdate': 'POST /api/v1/tasks/bulk',
+      'tasks.archive': 'POST /api/v1/tasks/archive',
+      'tasks.restore': 'POST /api/v1/tasks/restore',
       'tasks.activity': 'GET /api/v1/tasks/{key}/activity',
       'tasks.timeline': 'GET /api/v1/tasks/{key}/timeline',
+      'pullRequests.link': 'POST /api/v1/tasks/{key}/pull-requests',
+      'pullRequests.unlink': 'DELETE /api/v1/tasks/{key}/pull-requests/{number}',
       'comments.list': 'GET /api/v1/tasks/{key}/comments',
       'comments.create': 'POST /api/v1/tasks/{key}/comments',
       'comments.update': 'PATCH /api/v1/comments/{id}',
@@ -56,6 +61,10 @@ describe('contract', () => {
       'backlog.status': 'GET /api/v1/projects/{project}/backlog',
       'backlog.refresh': 'POST /api/v1/projects/{project}/backlog/refresh',
       'backlog.export': 'GET /api/v1/projects/{project}/backlog/export',
+      'repository.get': 'GET /api/v1/projects/{project}/repository',
+      'repository.update': 'PATCH /api/v1/projects/{project}/repository',
+      'repository.newWebhookSecret': 'POST /api/v1/projects/{project}/repository/webhook-secret',
+      'repository.sync': 'POST /api/v1/projects/{project}/repository/sync',
       'dashboard.get': 'GET /api/v1/dashboard',
       'dashboard.counts': 'GET /api/v1/dashboard/counts',
       'home.get': 'GET /api/v1/home',
@@ -89,6 +98,10 @@ describe('contract', () => {
         'DEPENDENCY_LOOP',
         'SUBTASK_DEPTH',
         'NOT_SAME_PROJECT',
+        'TASK_ARCHIVED',
+        'REQUEST_OTHER_REPOSITORY',
+        'NOT_A_REQUEST',
+        'REQUEST_NOT_FOUND',
       ]),
     );
   });
@@ -105,7 +118,7 @@ describe('contract', () => {
     }
   });
 
-  it('returns 201 from creates, 202 from backlog refreshes, 204 from milestone, label and project deletes, else 200', () => {
+  it('returns 201 from creates, 202 from refreshes and syncs, 204 from deletes and unlinks, else 200', () => {
     const created = all
       .filter(([, procedure]) => procedure['~orpc'].route.successStatus === 201)
       .map(([name]) => name);
@@ -120,8 +133,16 @@ describe('contract', () => {
     const noContent = all
       .filter(([, procedure]) => procedure['~orpc'].route.successStatus === 204)
       .map(([name]) => name);
-    expect(noContent.sort()).toEqual(['labels.delete', 'milestones.delete', 'projects.delete']);
-    expect(contract.backlog.refresh['~orpc'].route.successStatus).toBe(202);
+    expect(noContent.sort()).toEqual([
+      'labels.delete',
+      'milestones.delete',
+      'projects.delete',
+      'pullRequests.unlink',
+    ]);
+    const accepted = all
+      .filter(([, procedure]) => procedure['~orpc'].route.successStatus === 202)
+      .map(([name]) => name);
+    expect(accepted.sort()).toEqual(['backlog.refresh', 'repository.sync']);
     // Comment deletes are soft and return the comment, so the CLI can print it.
     expect(contract.comments.delete['~orpc'].route.successStatus).toBeUndefined();
   });

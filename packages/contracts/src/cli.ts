@@ -15,14 +15,18 @@ import {
   Me,
   MilestoneList,
   MilestoneWithProgress,
+  Project,
   ProjectList,
+  PullRequestLink,
+  RepositorySettings,
   Task,
+  TaskBulkResult,
   TaskListPage,
   TimelineCounts,
   TimelineItem,
   WorkspaceRef,
 } from './entities';
-import { ProjectKey, ProjectKeyInput, TaskStatus, Timestamp, WorkspaceId } from './primitives';
+import { ProjectKey, ProjectKeyInput, TaskKey, TaskStatus, Timestamp, WorkspaceId } from './primitives';
 import { Problem } from './problem';
 
 // Versioned `zamu ... --json` output. Every result is { "schema": "zamu.v1.<name>", "data": ... }.
@@ -184,11 +188,19 @@ export const CLI_QUEUE_DIR = 'zamu';
 export const CLI_QUEUE_FILE_NAME = 'queue.json';
 
 /**
- * The calls a queued write replays: tasks.update for checking, unchecking or waiving items and for
- * a status change on an existing task; comments.create for a note. Creating tasks, other writes and
- * reads are never queued.
+ * The calls a queued write replays: tasks.update for checking, unchecking or waiving items, for a
+ * status change and (M7) for a check-again day on an existing task; comments.create for a note;
+ * and (M7) tasks.archive, tasks.restore, pullRequests.link and pullRequests.unlink. Creating tasks,
+ * other writes and reads are never queued.
  */
-export const CLI_QUEUE_PROCEDURES = ['tasks.update', 'comments.create'] as const;
+export const CLI_QUEUE_PROCEDURES = [
+  'tasks.update',
+  'comments.create',
+  'tasks.archive',
+  'tasks.restore',
+  'pullRequests.link',
+  'pullRequests.unlink',
+] as const;
 export const CliQueueProcedure = z.enum(CLI_QUEUE_PROCEDURES);
 export type CliQueueProcedure = z.infer<typeof CliQueueProcedure>;
 
@@ -272,6 +284,15 @@ export const cliDataSchemas = {
   'projects.list': ProjectList,
   /** zamu projects delete <KEY> --confirm <KEY> (0.6.0) */
   'projects.delete': z.object({ deleted: ProjectKey }),
+  /**
+   * zamu projects show [KEY] (M7): the project (archiveAfterDays included) and its repository
+   * settings (connection, close on merge, webhook and hourly check); repository is null when the
+   * caller can't read them.
+   */
+  'projects.show': z.object({
+    project: Project,
+    repository: RepositorySettings.nullable(),
+  }),
   /** zamu tasks list [--mine] [--project ...] [--milestone ...] [--cycle ...] */
   'tasks.list': TaskListPage,
   /**
@@ -287,8 +308,30 @@ export const cliDataSchemas = {
   }),
   /** zamu tasks create */
   'tasks.create': Task,
-  /** zamu tasks update */
+  /**
+   * zamu tasks update. From M7 the task carries workBranch, pullRequests, checkAgain, closedAt,
+   * archivedAt, archivedBy and mergedOpen, and tasks.list rows the compact pullRequest,
+   * pullRequestCount, checkAgain and archivedAt.
+   */
   'tasks.update': Task,
+  /** zamu tasks archive <keys...> (M7): the archived tasks, in the order given. */
+  'tasks.archive': TaskBulkResult,
+  /** zamu tasks restore <keys...> (M7): the restored tasks, in the order given. */
+  'tasks.restore': TaskBulkResult,
+  /**
+   * zamu pr link <task> <url> [--dry-run] (M7): the request as linked, or with --dry-run as it
+   * would link (nothing written).
+   */
+  'pr.link': z.object({
+    task: TaskKey,
+    pullRequest: PullRequestLink,
+    dryRun: z.boolean(),
+  }),
+  /** zamu pr unlink <task> <number> (M7): the link removed. */
+  'pr.unlink': z.object({
+    task: TaskKey,
+    number: z.number().int().positive(),
+  }),
   /** zamu comments list */
   'comments.list': CommentList,
   /** zamu comments add */

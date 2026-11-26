@@ -591,13 +591,26 @@ export const BACKLOG_TRIGGER_LABELS: Record<BacklogTrigger, string> = {
   poll: 'hourly check',
 };
 
-/** Who wrote an activity row: the app (a person, an agent or the system) or a Backlog.md refresh. */
-export const ACTIVITY_ORIGINS = ['app', 'backlog'] as const;
+/**
+ * Who wrote an activity row: the app (a person, an agent or the system), a Backlog.md refresh, or
+ * (M7) a git host event about a pull or merge request (origin git, originRef the request URL).
+ */
+export const ACTIVITY_ORIGINS = ['app', 'backlog', 'git'] as const;
 export const ActivityOrigin = z.enum(ACTIVITY_ORIGINS);
 export type ActivityOrigin = z.infer<typeof ActivityOrigin>;
 
 /** Name shown for activity a Backlog.md refresh wrote (actor null, origin backlog). */
 export const BACKLOG_ACTOR_NAME = 'Backlog.md';
+
+/** M7: name shown for activity Zamu's own jobs wrote (actor null, origin app): the archive job, cycle ends. */
+export const ZAMU_ACTOR_NAME = 'Zamu';
+
+/** M7: name shown for activity a git host wrote (actor null, origin git), per provider. */
+export const GIT_ACTOR_NAMES: Record<GitProvider, string> = {
+  github: 'GitHub',
+  gitlab: 'GitLab',
+  gitea: 'Forgejo',
+};
 
 /**
  * Task fields Backlog.md owns while the project mirrors. Contract field names. M5 adds labels,
@@ -684,6 +697,40 @@ export function dueState(dueDate: string | null, status: TaskStatus, today: stri
   if (dueDate === today) return 'today';
   return cycleLengthDays(today, dueDate) - 1 <= DUE_SOON_DAYS ? 'soon' : 'future';
 }
+
+// ---------------------------------------------------------------------------
+// Archive and check-again days (M7)
+// ---------------------------------------------------------------------------
+
+/** project.archiveAfterDays: Done and Canceled tasks are archived this many days after they closed. */
+export const ARCHIVE_AFTER_DAYS_MIN = 1;
+export const ARCHIVE_AFTER_DAYS_MAX = 365;
+/** What new projects start with. Projects from before M7 start with archiving off (null). */
+export const DEFAULT_ARCHIVE_AFTER_DAYS = 14;
+
+export const ArchiveAfterDays = z
+  .number()
+  .int('Use a whole number of days')
+  .min(ARCHIVE_AFTER_DAYS_MIN, `Use ${ARCHIVE_AFTER_DAYS_MIN} to ${ARCHIVE_AFTER_DAYS_MAX} days`)
+  .max(ARCHIVE_AFTER_DAYS_MAX, `Use ${ARCHIVE_AFTER_DAYS_MIN} to ${ARCHIVE_AFTER_DAYS_MAX} days`);
+
+/** Longest check-again reason, in characters after trimming. */
+export const MAX_CHECK_AGAIN_REASON_LENGTH = 200;
+
+/**
+ * waiting: the check-again day is after today. ready: it is today or has passed. Today is the day in
+ * APP_TIME_ZONE; days compare as strings because CalendarDate is YYYY-MM-DD.
+ */
+export const CHECK_AGAIN_STATES = ['waiting', 'ready'] as const;
+export const CheckAgainState = z.enum(CHECK_AGAIN_STATES);
+export type CheckAgainState = z.infer<typeof CheckAgainState>;
+
+export function checkAgainState(on: string, today: string): CheckAgainState {
+  return on > today ? 'waiting' : 'ready';
+}
+
+/** Longest work branch kept on a task, in characters. */
+export const MAX_WORK_BRANCH_LENGTH = 255;
 
 // ---------------------------------------------------------------------------
 // Theme

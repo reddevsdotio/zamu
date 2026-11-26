@@ -158,8 +158,8 @@ describe('Home', () => {
 
   it('lists the groups of each tab in order', () => {
     expect(HOME_GROUPS_BY_TAB).toEqual({
-      mine: ['review', 'mentions', 'blocked', 'overdue', 'assigned'],
-      everyone: ['review', 'blocked', 'overdue', 'dueThisWeek'],
+      mine: ['review', 'mergedOpen', 'checkAgain', 'mentions', 'blocked', 'overdue', 'assigned'],
+      everyone: ['review', 'mergedOpen', 'blocked', 'overdue', 'dueThisWeek'],
       agents: ['waiting'],
     });
   });
@@ -174,7 +174,7 @@ describe('Home', () => {
   });
 
   it('needs at least one blocker on a blocked reason, and known pills', () => {
-    const base = homeMineFixture.groups[2]?.items[0];
+    const base = homeMineFixture.groups.find((group) => group.key === 'blocked')?.items[0];
     if (!base) throw new Error('fixture has no blocked item');
     expect(HomeItem.safeParse({ ...base, reason: { kind: 'blocked', blockers: [] } }).success).toBe(false);
     expect(HomeItem.safeParse({ ...base, reason: { kind: 'blocked', blockers: [null] } }).success).toBe(true);
@@ -261,7 +261,7 @@ describe('M5 inputs', () => {
     }
     const none = UpdateTaskInput.safeParse({ key: 'PAY-142' });
     expect(none.error?.issues[0]?.message).toBe(
-      'Change at least one of title, description, status, priority, assignee, milestone, cycle, position, labels, dueDate, parent, blockers, criteria, done items, plan or finalSummary',
+      'Change at least one of title, description, status, priority, assignee, milestone, cycle, position, labels, dueDate, parent, blockers, criteria, done items, plan, finalSummary or checkAgain',
     );
     const both = UpdateTaskInput.safeParse({ key: 'PAY-142', labels: ['a'], addLabels: ['b'] });
     expect(both.error?.issues).toEqual([
