@@ -7,7 +7,7 @@
 // the other specs.
 import { type BrowserContext, expect, type Page, request, test } from '@playwright/test';
 import { createCli, parseJson } from './cli';
-import { addAgent, admin, api, collectPageErrors, homeURL, settle, signInAsAdmin } from './session';
+import { addAgent, admin, api, collectPageErrors, homeURL, settle, signInAsAdmin, w } from './session';
 import { baseURL } from './stack';
 
 const project = { name: 'Billing', key: 'BIL' };
@@ -185,7 +185,7 @@ test('the agent moves a task to In review and mentions its person from the CLI',
 });
 
 test('after a reload both show in Mine, and the sidebar count matches /home/counts', async () => {
-  await page.goto('/');
+  await page.goto(w());
   await settle(page);
   await expect(group('Needs your review').locator(`a[data-task-key="${reviewTask.key}"]`)).toBeVisible();
   await expect(row(reviewTask.key)).toContainText(reviewTask.title);

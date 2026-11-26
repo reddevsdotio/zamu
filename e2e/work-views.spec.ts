@@ -5,7 +5,7 @@
 // the admin from the M1 flow, or sets the server up itself when it runs alone.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { createCli, parseJson } from './cli';
-import { addAgent, admin, api, collectPageErrors, homeURL, settle, signInAsAdmin } from './session';
+import { addAgent, admin, api, collectPageErrors, homeURL, settle, signInAsAdmin, w } from './session';
 import { baseURL } from './stack';
 
 const checkout = { name: 'Checkout', key: 'CHK' };
@@ -148,7 +148,7 @@ test('seed two projects through the API and add an agent', async () => {
 });
 
 test('board: Manual order and empty columns from Display; Shift+→ moves a card, Ctrl+Z undoes, Shift+J reorders', async () => {
-  await page.goto(`/p/${checkout.key}?view=board`);
+  await page.goto(w(`/p/${checkout.key}?view=board`));
   await settle(page);
   await expect(page.getByRole('region', { name: 'Todo, 5 tasks' })).toBeVisible();
 
@@ -205,7 +205,7 @@ test('board: Manual order and empty columns from Display; Shift+→ moves a card
   await settle(page);
   await page.keyboard.press('v');
   await expect(page.getByRole('region', { name: /^Todo, / })).toBeVisible();
-  await page.goto(`/p/${checkout.key}`);
+  await page.goto(w(`/p/${checkout.key}`));
   await settle(page);
   await expect(page.getByRole('region', { name: /^Todo, / })).toBeVisible();
 });
@@ -223,7 +223,7 @@ test('board: drag a card to In review', async () => {
 });
 
 test('milestone: create, assign in the task view, turns Active when its task starts', async () => {
-  await page.goto(`/p/${checkout.key}/milestones`);
+  await page.goto(w(`/p/${checkout.key}/milestones`));
   await settle(page);
   await page.getByRole('button', { name: 'New milestone' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'New milestone' });
@@ -233,7 +233,7 @@ test('milestone: create, assign in the task view, turns Active when its task sta
   await expect(dialog).toBeHidden();
   await expect(milestoneRow('Launch')).toContainText('Planned');
 
-  await page.goto(`/p/${checkout.key}/CHK-2`);
+  await page.goto(w(`/p/${checkout.key}/CHK-2`));
   await settle(page);
   const milestone = properties().getByRole('button', { name: 'Milestone' });
   await milestone.click();
@@ -251,7 +251,7 @@ test('milestone: create, assign in the task view, turns Active when its task sta
     .click();
   await expect(status).toContainText('In progress');
 
-  await page.goto(`/p/${checkout.key}/milestones`);
+  await page.goto(w(`/p/${checkout.key}/milestones`));
   await settle(page);
   await expect(milestoneRow('Launch')).toContainText('Active');
   const task = await taskOf('CHK-2');
@@ -259,7 +259,7 @@ test('milestone: create, assign in the task view, turns Active when its task sta
 });
 
 test('cycle: create one starting today, end it early, unfinished tasks roll over', async () => {
-  await page.goto(`/p/${checkout.key}/cycles`);
+  await page.goto(w(`/p/${checkout.key}/cycles`));
   await settle(page);
   await page.getByRole('button', { name: 'New cycle' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'New cycle' });
@@ -286,7 +286,7 @@ test('cycle: create one starting today, end it early, unfinished tasks roll over
   const done = cli.run(['tasks', 'update', 'CHK-4', '--status', 'done', '--json']);
   expect(done.code, done.stdout + done.stderr).toBe(0);
 
-  await page.goto(`/p/${checkout.key}/cycles/1`);
+  await page.goto(w(`/p/${checkout.key}/cycles/1`));
   await settle(page);
   await page.getByRole('button', { name: 'End cycle' }).click();
   const end = page.getByRole('dialog', { name: 'End Cycle 1 now?' });
@@ -296,7 +296,7 @@ test('cycle: create one starting today, end it early, unfinished tasks roll over
   await expect(end).toBeHidden();
 
   // The completed cycle page keeps the record of what moved.
-  await page.goto(`/p/${checkout.key}/cycles/1`);
+  await page.goto(w(`/p/${checkout.key}/cycles/1`));
   await settle(page);
   const cycle = page.getByRole('region', { name: 'Cycle 1' });
   await expect(cycle.getByText('Cycle · completed')).toBeVisible();
@@ -313,7 +313,7 @@ test('cycle: create one starting today, end it early, unfinished tasks roll over
 });
 
 test('comments: mention from the web, from the CLI as the agent, edit and delete', async () => {
-  await page.goto(`/p/${checkout.key}/CHK-1`);
+  await page.goto(w(`/p/${checkout.key}/CHK-1`));
   await settle(page);
   const history = page.getByRole('region', { name: 'Activity' });
   await expect(history).toBeVisible();
@@ -383,7 +383,7 @@ test('comments: mention from the web, from the CLI as the agent, edit and delete
 
 test('task list keys: Down skips a group row, Left collapses the group, Right expands it', async () => {
   // The board test left the board as the remembered view: G then L opens the list (and pins it).
-  await page.goto(`/p/${checkout.key}/milestones`);
+  await page.goto(w(`/p/${checkout.key}/milestones`));
   await settle(page);
   await page.keyboard.press('g');
   await page.keyboard.press('l');
@@ -473,7 +473,7 @@ test('Home lists your tasks from both projects and opens them in the task view',
 });
 
 test('theme: Dark from the account menu survives a reload with no flash', async () => {
-  await page.goto('/');
+  await page.goto(w());
   await settle(page);
   await page.getByRole('button', { name: `${admin.name}: account menu` }).click();
   const account = page.getByRole('dialog', { name: 'Account' });
@@ -489,7 +489,7 @@ test('theme: Dark from the account menu survives a reload with no flash', async 
   await page.reload();
   await settle(page);
   await expect(page.locator('html')).toHaveClass(/\bdark\b/);
-  await page.goto('/settings/appearance');
+  await page.goto(w('/settings/appearance'));
   await settle(page);
   await expect(page.getByRole('radio', { name: 'Dark' })).toBeChecked();
 

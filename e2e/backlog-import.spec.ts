@@ -9,7 +9,7 @@
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { createCli, parseJson } from './cli';
 import { addConnection, dockerAvailable, type Forgejo, readTree, startForgejo } from './forgejo';
-import { addAgent, api, collectPageErrors, settle, signInAsAdmin } from './session';
+import { addAgent, api, collectPageErrors, settle, signInAsAdmin, w } from './session';
 import { baseURL, forgejoAliases, mainStack, repoRoot } from './stack';
 
 const repo = 'backlog-demo';
@@ -98,7 +98,7 @@ test('import: the five setup steps on an empty project linked to the repository'
     await addAgent(page, similarAgent, [project.key]);
   }
 
-  await page.goto(`/p/${project.key}/backlog-setup?mode=import`);
+  await page.goto(w(`/p/${project.key}/backlog-setup?mode=import`));
   await settle(page);
   await expect(page.getByRole('heading', { name: `Import Backlog.md into ${project.name}` })).toBeVisible();
 
@@ -226,7 +226,7 @@ test('after the import every field is editable and the numbering continues', asy
   });
   expect(created.key).toBe(`${project.key}-788`);
 
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await expect(page.getByRole('button', { name: /^Backlog\.md: / })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'New task', exact: true })).toBeEnabled();

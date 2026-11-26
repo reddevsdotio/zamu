@@ -5,6 +5,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { forgejoNames, removeForgejo } from './forgejo';
+import { removeOwnersWeb } from './owners-web';
 import {
   baseURL,
   cliPath,
@@ -31,6 +32,8 @@ export default async function globalSetup(): Promise<void> {
   console.log(`[e2e] removing any previous ${composeProject} stack and its volume`);
   // A kept run (E2E_KEEP_STACK=1) leaves the Backlog.md specs' Forgejo attached to the stack network.
   for (const name of forgejoNames) removeForgejo(name, mainStack.network);
+  // So does the workspaces spec's second web container.
+  removeOwnersWeb();
   compose(['down', '-v', '--remove-orphans'], { quiet: true });
 
   if (!skipBuild) {

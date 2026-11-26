@@ -5,11 +5,13 @@
 // date, a dependency and a parent into its Backlog.md block, and a task's acceptance criteria, definition of
 // done, plan, notes and summary into its description, and an agent gets a pm_live_ API key), then to 0.8.0 when
 // that release exists (the rename: the mirror keeps working and the sections stay in the description), then
-// to the image globalSetup built: the M5 migrations run (on 0.8.0 when that step ran), the backfill turns the
-// mirror's block into native labels, due date, blockers and parent with no activity rows, the M6 migration
-// moves the sections out of the description into the work record, again with no activity rows, the next
-// refresh changes nothing, and every task key and route still works. The rename to Zamu dropped the pm_live_
-// prefix with no fallback, so the 0.6.0 API key gets 401 and a new key starts with zamu_live_.
+// to 0.9.0 when that release exists (the M6 migration moves the sections out of the description into the work
+// record, with no activity rows), then to the image globalSetup built: the M5 migrations run (on 0.8.0 when
+// that step ran), the backfill turns the mirror's block into native labels, due date, blockers and parent with
+// no activity rows, the M6 migration runs unless 0.9.0 ran it, the next refresh changes nothing, and every task
+// key and route still works. The rename to Zamu dropped the pm_live_ prefix with no fallback, so the 0.6.0 API
+// key gets 401 and a new key starts with zamu_live_. The workspaces migration keeps the workspace's slug, fills
+// in the workspace each user used last, and the pre-0.10 URLs redirect to the same page under /w/<slug>/.
 //
 // Older images, each used when it is already local:
 //   M1    E2E_M1_IMAGE (pulled if it is not local, for example from a private registry after
@@ -23,6 +25,8 @@
 //   0.8.0 E2E_0_8_IMAGE (pulled likewise), else zamu:release-<ref>, built once from E2E_0_8_REF or the git
 //         tag 0.8.0. Without the image variable and with no such ref, the 0.8.0 step is skipped with a
 //         message and the next step upgrades from 0.6.0.
+//   0.9.0 E2E_0_9_IMAGE (pulled likewise), else zamu:release-<ref>, built once from E2E_0_9_REF or the git
+//         tag 0.9.0. Skipped the same way when neither exists.
 // Builds use git archive, so the checkout is untouched. The mirror reads from a Forgejo container (e2e/forgejo.ts)
 // attached to the upgrade stack's network. E2E_SKIP_UPGRADE=1 skips this spec.
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -31,7 +35,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type BrowserContext, expect, type Page, request, test } from '@playwright/test';
 import { addConnection, type Forgejo, startForgejo } from './forgejo';
-import { addAgent, api, settle, setUpServer, signInAsAdmin } from './session';
+import { addAgent, api, settle, setUpServer, signInAsAdmin, w } from './session';
 import {
   composeProject,
   createStack,
@@ -62,6 +66,16 @@ const release0_8Missing =
     : `The git ref ${release0_8Ref} does not exist, so the 0.8.0 step is skipped and the next step upgrades ` +
       'straight from 0.6.0. Tag the release, or set E2E_0_8_IMAGE (an image) or E2E_0_8_REF (a git ref such ' +
       'as 0.8.0-rc.1) to run it.';
+/** The work record (M6), the release before workspaces in the URL. E2E_0_9_REF picks another ref. */
+const RELEASE_0_9_TAG = '0.9.0';
+const release0_9Ref = process.env.E2E_0_9_REF ?? RELEASE_0_9_TAG;
+const release0_9Image = process.env.E2E_0_9_IMAGE ?? `zamu:release-${release0_9Ref}`;
+const release0_9Missing =
+  process.env.E2E_0_9_IMAGE || gitRefExists(release0_9Ref)
+    ? null
+    : `The git ref ${release0_9Ref} does not exist, so the 0.9.0 step is skipped and the next step upgrades ` +
+      'from the release before it. Tag the release, or set E2E_0_9_IMAGE (an image) or E2E_0_9_REF (a git ' +
+      'ref such as 0.9.0-rc.1) to run it.';
 const upgradePort = process.env.E2E_UPGRADE_PORT ?? '3101';
 /** API key prefix up to 0.7.0. The current build no longer accepts it. */
 const OLD_API_KEY_PREFIX = 'pm_live_';
@@ -240,6 +254,8 @@ const repository = 'https://gitlab.com/reddevs/operations.git';
 let forgejo: Forgejo | undefined;
 /** Timeline length of each mirrored task before the M5 upgrade. */
 const timelineBefore: Record<string, number> = {};
+/** The one workspace, read from the database on the last release before this build. */
+let workspaceBefore: { id: string; slug: string } | undefined;
 
 const byKey = (a: { key: string }, b: { key: string }) => a.key.localeCompare(b.key);
 
@@ -285,6 +301,23 @@ function migrateState(): string {
     .trim();
 }
 
+/** Runs one SQL query in the stack's Postgres and returns its rows, tab-separated, one per line. */
+function sql(query: string): string[] {
+  const output = stack.compose(
+    ['exec', '-T', 'db', 'psql', '-U', 'postgres', '-d', 'zamu', '-tA', '-F', '\t', '-c', query],
+    { quiet: true },
+  );
+  return output.split('\n').filter((line) => line.trim() !== '');
+}
+
+/** The id and slug of the stack's only workspace, straight from the database (every release has the table). */
+function readWorkspace(): { id: string; slug: string } {
+  const rows = sql('select id, slug from organization');
+  expect(rows).toHaveLength(1);
+  const [id = '', slug = ''] = (rows[0] ?? '').split('\t');
+  return { id, slug };
+}
+
 /** Moves the stack to another image: compose recreates migrate, web and worker, and migrate runs first. */
 async function switchTo(image: string): Promise<void> {
   stack.image = image;
@@ -314,6 +347,8 @@ test.beforeAll(async ({ browser }) => {
   ensureImage(release0_6Image, Boolean(process.env.E2E_0_6_IMAGE), RELEASE_0_6_TAG);
   if (release0_8Missing) console.log(`[e2e] ${release0_8Missing}`);
   else ensureImage(release0_8Image, Boolean(process.env.E2E_0_8_IMAGE), release0_8Ref);
+  if (release0_9Missing) console.log(`[e2e] ${release0_9Missing}`);
+  else ensureImage(release0_9Image, Boolean(process.env.E2E_0_9_IMAGE), release0_9Ref);
   stack.compose(['down', '-v', '--remove-orphans'], { quiet: true });
   console.log(`[e2e] starting ${stack.project} on ${m1Image} at ${upgradeURL}`);
   await startStack();
@@ -530,7 +565,7 @@ test('0.6.0: the M3 and M4 migrations keep every key; a Backlog.md mirror reads 
 
   // A mirror through the 0.6.0 setup: a git connection, a project linked to the repository, the five steps.
   const host = forgejo as Forgejo;
-  await addConnection(page, host, 'Forgejo · e2e upgrade');
+  await addConnection(page, host, 'Forgejo · e2e upgrade', '/settings/connections');
   await api(page.request, 'POST', '/projects', { ...infra, repository: host.repositoryUrl(infraRepo) });
   await page.goto(`/p/${infra.key}/backlog-setup?mode=mirror`);
   await settle(page);
@@ -559,8 +594,12 @@ test('0.6.0: the M3 and M4 migrations keep every key; a Backlog.md mirror reads 
   for (const key of infraKeys) timelineBefore[key] = await timelineLength(key);
 
   // An agent key with the 0.6.0 prefix, which works on 0.6.0. The current build refuses it.
-  oldApiKey = await addAgent(page, 'upgrade-agent-0-6', ['OPS'], OLD_API_KEY_PREFIX);
+  oldApiKey = await addAgent(page, 'upgrade-agent-0-6', ['OPS'], {
+    prefix: OLD_API_KEY_PREFIX,
+    membersPath: '/settings/members',
+  });
   expect(await meStatusWithKey(oldApiKey)).toBe(200);
+  workspaceBefore = readWorkspace();
 });
 
 test('0.8.0: the rename keeps the mirror, and the sections stay in the description', async () => {
@@ -582,19 +621,67 @@ test('0.8.0: the rename keeps the mirror, and the sections stay in the descripti
   // The first refresh on 0.8.0 reads the same files and changes nothing.
   await refreshMirror();
   for (const key of infraKeys) expect(await timelineLength(key), key).toBe(timelineBefore[key]);
+  workspaceBefore = readWorkspace();
+});
+
+test('0.9.0: the work record migration moves the sections out of the description', async () => {
+  test.skip(release0_9Missing !== null, release0_9Missing ?? '');
+  test.setTimeout(6 * 60_000);
+  await switchTo(release0_9Image);
+  await signInAsAdmin(page);
+
+  expect(await meStatusWithKey(oldApiKey)).toBe(401);
+  // The M6 migration ran here: INF-3's sections are its work record now, with no history lines.
+  const certs = await api<MirroredTask>(page.request, 'GET', '/tasks/INF-3');
+  expect(certs.description?.trim()).toBe('Certificates rotate before they expire.');
+  expect(certs.criteria).toHaveLength(2);
+  for (const key of infraKeys) expect(await timelineLength(key), key).toBe(timelineBefore[key]);
+
+  // 0.9.0 has one workspace and no slug in its URLs: the same slug as before, pages at the old paths.
+  const me = await api<{ workspace: { id: string; slug: string } }>(page.request, 'GET', '/me');
+  expect(me.workspace).toMatchObject(workspaceBefore ?? {});
+  await page.goto('/p/OPS/OPS-1');
+  await settle(page);
+  await expect(page).toHaveURL(`${upgradeURL}/p/OPS/OPS-1`);
+  await expect(page.getByText('Rotated on the primary; replicas next.').first()).toBeVisible();
+  workspaceBefore = readWorkspace();
 });
 
 test('this build: the M5 migrations backfill the mirror, and every key and route still works', async () => {
   test.setTimeout(6 * 60_000);
   await switchTo(currentImage);
+
+  // The workspaces migration, read before anyone signs in (opening a workspace records it as used last):
+  // the workspace keeps its slug and needs no alias, and every user's last workspace is their membership.
+  const workspace = readWorkspace();
+  expect(workspace).toEqual(workspaceBefore);
+  const slug = workspace.slug;
+  expect(sql('select slug from workspace_slug_alias')).toEqual([]);
+  const users = sql(
+    'select u.email, coalesce(u.last_workspace_id::text, \'none\') from "user" u order by u.email',
+  ).map((row) => row.split('\t'));
+  // The admin and the agent added on 0.6.0, both members of the workspace.
+  expect(users.length).toBeGreaterThanOrEqual(2);
+  for (const [email, last] of users) expect(last, email).toBe(workspace.id);
+
   await signInAsAdmin(page);
+  const me = await api<{ workspace: { id: string; slug: string } }>(page.request, 'GET', '/me');
+  expect(me.workspace).toMatchObject(workspace);
+
+  // A pre-0.10 task link opens the same task under the workspace.
+  await page.goto('/p/OPS/OPS-1');
+  await expect(page).toHaveURL(`${upgradeURL}/w/${slug}/p/OPS/OPS-1`, { timeout: 15_000 });
+  await settle(page);
+  await expect(page.getByText('Rotated on the primary; replicas next.').first()).toBeVisible();
 
   // The rename to Zamu: the 0.6.0 pm_live_ key gets 401, and new keys start with zamu_live_ and work. The
   // key list shows 14 characters of the new key.
   expect(await meStatusWithKey(oldApiKey)).toBe(401);
-  const newApiKey = await addAgent(page, 'upgrade-agent', ['OPS']);
+  const newApiKey = await addAgent(page, 'upgrade-agent', ['OPS'], {
+    membersPath: w('/settings/members', slug),
+  });
   expect(await meStatusWithKey(newApiKey)).toBe(200);
-  await page.goto('/settings/api-keys');
+  await page.goto(w('/settings/api-keys', slug));
   await settle(page);
   await expect(page.getByText(`${newApiKey.slice(0, 14)}…`)).toBeVisible();
 
@@ -632,7 +719,8 @@ test('this build: the M5 migrations backfill the mirror, and every key and route
     { name: 'k8s', source: 'backlog', usageCount: 1 },
     { name: 'ops', source: 'backlog', usageCount: 2 },
   ]);
-  // The M6 migration moved INF-3's sections out of the description into the work record, read-only.
+  // The M6 migration (here or on 0.9.0) moved INF-3's sections out of the description into the work record,
+  // read-only.
   const certs = await api<MirroredTask>(page.request, 'GET', '/tasks/INF-3');
   expect(certs.description?.trim()).toBe('Certificates rotate before they expire.');
   expect(certs.criteria?.map(({ number, text, state, locked }) => ({ number, text, state, locked }))).toEqual(
@@ -691,11 +779,11 @@ test('this build: the M5 migrations backfill the mirror, and every key and route
     ['/settings/connections', 'Forgejo · e2e upgrade'],
   ];
   for (const [path, text] of pages) {
-    await page.goto(path);
+    await page.goto(w(path, slug));
     await settle(page);
     await expect(page.getByText(text).first(), path).toBeVisible();
   }
-  await page.goto('/p/OPS/settings');
+  await page.goto(w('/p/OPS/settings', slug));
   await settle(page);
   await expect(page.getByLabel('Repository')).toHaveValue(repository);
 });

@@ -4,7 +4,7 @@
 // project; Create task opens quick create. The tests build on each other, so they share one page and run in
 // order.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
-import { api, collectPageErrors, homeURL, settle, signInAsAdmin } from './session';
+import { api, collectPageErrors, homeURL, settle, signInAsAdmin, w } from './session';
 
 const project = { name: 'Commands', key: 'CMD' };
 const tasks = [
@@ -60,7 +60,7 @@ test('seed a project with two tasks', async () => {
 });
 
 test('Ctrl+K opens the palette; a task key finds the task and Enter opens it', async () => {
-  await page.goto('/');
+  await page.goto(w());
   await settle(page);
   await page.keyboard.press('Control+k');
   await expect(palette()).toBeVisible();
@@ -125,7 +125,7 @@ test('Change status: the Set status step, Backspace backs out, a status sets it'
 });
 
 test('in a list the actions apply to the selection', async () => {
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   await page.locator('[role="row"][data-task-key="CMD-1"]').focus();
   await page.keyboard.press('x');
@@ -146,7 +146,7 @@ test('in a list the actions apply to the selection', async () => {
 });
 
 test('G then P jumps to a project; Create task opens quick create', async () => {
-  await page.goto('/');
+  await page.goto(w());
   await expect(page).toHaveURL(homeURL);
   await settle(page);
   await blur();

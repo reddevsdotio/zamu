@@ -4,7 +4,7 @@
 // place; Display shows them as their own cards. The tests build on each other, so they share one page and run
 // in order.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
-import { admin, api, collectPageErrors, settle, signInAsAdmin } from './session';
+import { admin, api, collectPageErrors, settle, signInAsAdmin, w } from './session';
 
 const project = { name: 'Onboarding', key: 'ONB' };
 const parent = { key: 'ONB-1', title: 'Build the welcome flow' };
@@ -68,7 +68,7 @@ test('seed a parent assigned to the admin and another task', async () => {
 });
 
 test('Add subtask: a new one takes the parent assignee; an existing task joins', async () => {
-  await page.goto(`/p/${project.key}/${parent.key}`);
+  await page.goto(w(`/p/${project.key}/${parent.key}`));
   await settle(page);
   await subtasks().getByRole('button', { name: 'Add subtask' }).click();
   await expect(picker()).toBeVisible();
@@ -110,7 +110,7 @@ test('subtasks go one level deep', async () => {
 });
 
 test('the list nests subtasks under their parent', async () => {
-  await page.goto(`/p/${project.key}`);
+  await page.goto(w(`/p/${project.key}`));
   await settle(page);
   const grid = page.getByRole('treegrid', { name: `Tasks in ${project.name}` });
   const row = (key: string) => grid.locator(`[role="row"][data-task-key="${key}"]`);
@@ -122,7 +122,7 @@ test('the list nests subtasks under their parent', async () => {
 
 test('the board hides subtasks; the parent card counts them and expands in place', async () => {
   await api(page.request, 'PATCH', `/tasks/${existing.key}`, { status: 'done' });
-  await page.goto(`/p/${project.key}?view=board`);
+  await page.goto(w(`/p/${project.key}?view=board`));
   await settle(page);
   await expect.poll(cardKeys).toEqual([parent.key]);
   const card = page.locator(`[data-card-key="${parent.key}"]`);
@@ -143,7 +143,7 @@ test('the board hides subtasks; the parent card counts them and expands in place
 });
 
 test('Display: subtasks as their own cards, then back to the default', async () => {
-  await page.goto(`/p/${project.key}?view=board`);
+  await page.goto(w(`/p/${project.key}?view=board`));
   await settle(page);
   await page.getByRole('button', { name: 'Display' }).click();
   const display = page.getByRole('dialog', { name: 'Display options' });
