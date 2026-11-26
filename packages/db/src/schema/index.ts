@@ -2,3 +2,4 @@
 export * from './app';
 export * from './auth';
 export * from './backlog';
+export * from './workspaces';

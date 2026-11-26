@@ -1,6 +1,7 @@
 // Upgrade paths: a database migrated and filled under an older release keeps every row through the
 // later migrations, and each backfill fills what it should (M2 ranks in the M1 list order, M5 task
-// fields from Backlog.md blocks, the M6 work record from mirrored descriptions).
+// fields from Backlog.md blocks, the M6 work record from mirrored descriptions, and in 0.10 the
+// workspace each user used last and workspace slugs that fit the URL rules).
 import { cpSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -884,5 +885,187 @@ describe('M6 work record migration on a 0.8.0 database with a mirrored project',
         sql`insert into task_item (task_id, kind, position, text) values (${back1}, 'criterion', 1, 'Twice')`,
       ),
     ).rejects.toThrow();
+  });
+});
+
+/** Every migration released in 0.9.0, the last release with one workspace per instance. */
+const V0_9_0_MIGRATIONS = [...V0_8_0_MIGRATIONS, '20261125110203_m6_work_record'];
+
+/** Creates a database with the 0.9.0 migrations applied; returns it with a teardown. */
+async function database090(prefix: string) {
+  const folder = mkdtempSync(join(tmpdir(), 'zamu-0-9-0-migrations-'));
+  for (const name of V0_9_0_MIGRATIONS) {
+    cpSync(join(migrationsFolder, name), join(folder, name), { recursive: true });
+  }
+  const url = withDatabase(testServerUrl(), uniqueDatabaseName(prefix));
+  await createDatabase(url);
+  await migrateFrom(url, folder);
+  const handle = createDb(url);
+  return {
+    url,
+    db: handle.db,
+    close: async () => {
+      await handle.pool.end();
+      await dropDatabase(url);
+      rmSync(folder, { recursive: true, force: true });
+    },
+  };
+}
+
+describe('workspaces migration on a 0.9.0 database with two users and one workspace', () => {
+  let url: string;
+  let db: Db;
+  let close: () => Promise<void>;
+
+  const ANA = '0190a1b2-0000-7000-8000-0000000003a1';
+  const BEN = '0190a1b2-0000-7000-8000-0000000003a2';
+  const ACME = '0190a1b2-0000-7000-8000-0000000003b1';
+  const PAY = '0190a1b2-0000-7000-8000-0000000003c1';
+
+  beforeAll(async () => {
+    ({ url, db, close } = await database090('pm_test_upgrade_mw'));
+  });
+
+  afterAll(async () => {
+    await close?.();
+  });
+
+  async function rows(query: ReturnType<typeof sql>) {
+    const result = await db.execute<Record<string, unknown>>(query);
+    return result.rows;
+  }
+
+  it('keeps the slug, fills the workspace used last and adds the alias table', async () => {
+    await db.execute(sql`insert into "user" (id, name, email) values
+      (${ANA}, 'Ana', 'ana-mw@example.com'), (${BEN}, 'Ben', 'ben-mw@example.com')`);
+    // The slug 0.9 setup made from "Acme" with slugify.
+    await db.execute(sql`insert into organization (id, name, slug) values (${ACME}, 'Acme', 'acme')`);
+    await db.execute(sql`insert into member (organization_id, user_id, role, created_at) values
+      (${ACME}, ${ANA}, 'owner', '2026-11-01T09:00:00Z'), (${ACME}, ${BEN}, 'member', '2026-11-02T09:00:00Z')`);
+    await db.execute(
+      sql`insert into project (id, workspace_id, key, name) values (${PAY}, ${ACME}, 'PAY', 'Payments')`,
+    );
+    const before = await rowCounts(db);
+    const usersBefore = await rows(sql`select id, name, email, updated_at::text from "user" order by id`);
+
+    await migrateFrom(url, migrationsFolder);
+
+    expect(await rowCounts(db)).toEqual(before);
+    expect(await rows(sql`select id, name, slug from organization`)).toEqual([
+      { id: ACME, name: 'Acme', slug: 'acme' },
+    ]);
+    expect(await rows(sql`select count(*)::int as count from workspace_slug_alias`)).toEqual([{ count: 0 }]);
+    expect(await rows(sql`select id, last_workspace_id from "user" order by id`)).toEqual([
+      { id: ANA, last_workspace_id: ACME },
+      { id: BEN, last_workspace_id: ACME },
+    ]);
+    // The backfill does not touch updated_at.
+    expect(await rows(sql`select id, name, email, updated_at::text from "user" order by id`)).toEqual(
+      usersBefore,
+    );
+
+    // New rows: an alias per old slug, in the slug format, unique across workspaces.
+    await db.execute(sql`insert into workspace_slug_alias (slug, workspace_id) values ('acme-old', ${ACME})`);
+    expect(
+      await rows(sql`select slug, workspace_id, created_at is not null as dated from workspace_slug_alias`),
+    ).toEqual([{ slug: 'acme-old', workspace_id: ACME, dated: true }]);
+    await expect(
+      db.execute(sql`insert into workspace_slug_alias (slug, workspace_id) values ('acme-old', ${ACME})`),
+    ).rejects.toThrow();
+    for (const bad of ['Acme', 'a', '1acme', 'acme-', 'ac--me', 'ac_me', 'x'.repeat(41)]) {
+      await expect(
+        db.execute(sql`insert into workspace_slug_alias (slug, workspace_id) values (${bad}, ${ACME})`),
+        bad,
+      ).rejects.toThrow();
+    }
+
+    // Deleting the workspace drops its aliases and clears it as the workspace used last.
+    await db.execute(sql`delete from organization where id = ${ACME}`);
+    expect(await rows(sql`select count(*)::int as count from workspace_slug_alias`)).toEqual([{ count: 0 }]);
+    expect(await rows(sql`select distinct last_workspace_id from "user"`)).toEqual([
+      { last_workspace_id: null },
+    ]);
+  });
+});
+
+describe('workspaces migration on a 0.9.0 database with slugs outside the URL rules', () => {
+  let url: string;
+  let db: Db;
+  let close: () => Promise<void>;
+
+  beforeAll(async () => {
+    ({ url, db, close } = await database090('pm_test_upgrade_mw_slugs'));
+  });
+
+  afterAll(async () => {
+    await close?.();
+  });
+
+  async function rows(query: ReturnType<typeof sql>) {
+    const result = await db.execute<Record<string, unknown>>(query);
+    return result.rows;
+  }
+
+  const id = (n: number) => `0190a1b2-0000-7000-8000-0000000004${n.toString(16).padStart(2, '0')}`;
+  const LONG = `globex-${'industries-'.repeat(4)}a`;
+
+  it('rewrites each slug that breaks the rules, keeps the rest, and backfills from the oldest membership', async () => {
+    // Created in this order; a rewrite never takes a slug another workspace has.
+    const slugs = [
+      'Acme_Corp',
+      'acme-corp',
+      '2026-team',
+      'admin',
+      LONG,
+      'a',
+      'x--y',
+      'trailing-',
+      '---',
+      'initech',
+    ];
+    for (const [index, slug] of slugs.entries()) {
+      await db.execute(sql`insert into organization (id, name, slug, created_at)
+        values (${id(index + 1)}, ${`Workspace ${index + 1}`}, ${slug},
+          ${`2026-10-${String(index + 1).padStart(2, '0')}T09:00:00Z`}::timestamptz)`);
+    }
+    const CY = id(0xa1);
+    const DEE = id(0xa2);
+    const EVE = id(0xa3);
+    await db.execute(sql`insert into "user" (id, name, email) values
+      (${CY}, 'Cy', 'cy-mw@example.com'), (${DEE}, 'Dee', 'dee-mw@example.com'),
+      (${EVE}, 'Eve', 'eve-mw@example.com')`);
+    // Cy joined Initech first, then Acme Corp; Dee belongs nowhere; Eve's two memberships share a time.
+    await db.execute(sql`insert into member (id, organization_id, user_id, role, created_at) values
+      (${id(0xc1)}, ${id(1)}, ${CY}, 'member', '2026-11-03T09:00:00Z'),
+      (${id(0xc2)}, ${id(10)}, ${CY}, 'owner', '2026-11-01T09:00:00Z'),
+      (${id(0xc4)}, ${id(3)}, ${EVE}, 'member', '2026-11-05T09:00:00Z'),
+      (${id(0xc3)}, ${id(4)}, ${EVE}, 'member', '2026-11-05T09:00:00Z')`);
+
+    await migrateFrom(url, migrationsFolder);
+
+    expect(await rows(sql`select slug from organization order by created_at`)).toEqual(
+      [
+        'acme-corp-2',
+        'acme-corp',
+        'w-2026-team',
+        'admin-workspace',
+        'globex-industries-industries-industries',
+        'a-workspace',
+        'x-y',
+        'trailing',
+        'workspace',
+        'initech',
+      ].map((slug) => ({ slug })),
+    );
+    expect(LONG.length).toBeGreaterThan(40);
+    // Old slugs in the slug format stay as aliases; the others could never appear in a URL.
+    expect(await rows(sql`select slug, workspace_id from workspace_slug_alias order by slug`)).toEqual([
+      { slug: 'admin', workspace_id: id(4) },
+    ]);
+    expect(await rows(sql`select id, last_workspace_id from "user" order by id`)).toEqual([
+      { id: CY, last_workspace_id: id(10) },
+      { id: DEE, last_workspace_id: null },
+      { id: EVE, last_workspace_id: id(4) },
+    ]);
   });
 });

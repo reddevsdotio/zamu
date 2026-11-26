@@ -19,6 +19,8 @@ import {
   taskItem,
   taskLabel,
   user,
+  WORKSPACE_SLUG_MAX_LENGTH,
+  workspaceSlugAlias,
 } from '../src/schema';
 import { createTestDatabase, sharedTestDatabaseUrl, type TestDatabase } from './index';
 
@@ -92,6 +94,7 @@ describe('schema on a throwaway database', () => {
       'task_label',
       'user',
       'verification',
+      'workspace_slug_alias',
     ]);
   });
 
@@ -977,6 +980,72 @@ describe('M6 schema', () => {
         deferred: true,
       },
     ]);
+  });
+});
+
+describe('workspaces schema (0.10)', () => {
+  let database: TestDatabase;
+  let db: Db;
+
+  beforeAll(async () => {
+    database = await createTestDatabase();
+    db = database.db;
+  });
+
+  afterAll(async () => {
+    await database?.drop();
+  });
+
+  it('keeps old slugs per workspace, unique, in the slug format, and drops them with the workspace', async () => {
+    const { workspace } = await seed(db);
+    const [alias] = await db
+      .insert(workspaceSlugAlias)
+      .values({ slug: 'acme', workspaceId: workspace.id })
+      .returning();
+    expect(alias).toMatchObject({ slug: 'acme', workspaceId: workspace.id });
+    expect(alias?.createdAt).toBeInstanceOf(Date);
+    expect(
+      await pgErrorCode(db.insert(workspaceSlugAlias).values({ slug: 'acme', workspaceId: workspace.id })),
+    ).toBe('23505');
+    await db
+      .insert(workspaceSlugAlias)
+      .values({ slug: `a${'b'.repeat(WORKSPACE_SLUG_MAX_LENGTH - 1)}`, workspaceId: workspace.id });
+    for (const slug of [
+      'A1',
+      'a',
+      '9lives',
+      '-ab',
+      'ab-',
+      'a--b',
+      'a_b',
+      'a b',
+      `a${'b'.repeat(WORKSPACE_SLUG_MAX_LENGTH)}`,
+    ]) {
+      expect(
+        await pgErrorCode(db.insert(workspaceSlugAlias).values({ slug, workspaceId: workspace.id })),
+        slug,
+      ).toBe('23514');
+    }
+    await db.delete(organization).where(eq(organization.id, workspace.id));
+    expect(
+      await db.select().from(workspaceSlugAlias).where(eq(workspaceSlugAlias.workspaceId, workspace.id)),
+    ).toEqual([]);
+  });
+
+  it('remembers the workspace a user used last until it is deleted', async () => {
+    const { owner, workspace } = await seed(db);
+    expect(owner.lastWorkspaceId).toBeNull();
+    await db.update(user).set({ lastWorkspaceId: workspace.id }).where(eq(user.id, owner.id));
+    const [stored] = await db.select().from(user).where(eq(user.id, owner.id));
+    expect(stored?.lastWorkspaceId).toBe(workspace.id);
+    expect(
+      await pgErrorCode(
+        db.update(user).set({ lastWorkspaceId: crypto.randomUUID() }).where(eq(user.id, owner.id)),
+      ),
+    ).toBe('23503');
+    await db.delete(organization).where(eq(organization.id, workspace.id));
+    const [after] = await db.select().from(user).where(eq(user.id, owner.id));
+    expect(after?.lastWorkspaceId).toBeNull();
   });
 });
 

@@ -8,6 +8,8 @@
 // - user.kind is NOT NULL with a check constraint; session.active_organization_id and apikey.reference_id are uuid
 //   foreign keys; member has a unique (organization_id, user_id).
 // - user.theme (M2): the person's theme choice, with a check constraint. Better Auth does not read it.
+// - user.last_workspace_id (0.10): the workspace the person used last, so `/` lands there after a sign-in.
+//   Set null when that workspace is deleted. Better Auth does not read it.
 // - API-key rate limiting defaults to off (the plugin is configured with rateLimit.enabled = false).
 // - the generated v1 `relations()` blocks are replaced by defineRelations in ../relations.ts (Drizzle 1.0).
 import { sql } from 'drizzle-orm';
@@ -54,11 +56,16 @@ export const user = pgTable(
     theme: text('theme', { enum: ['system', 'light', 'dark'] })
       .default('system')
       .notNull(),
+    /** The workspace the person used last (0.10). Null until they open one, or once it is deleted. */
+    lastWorkspaceId: uuid('last_workspace_id').references((): AnyPgColumn => organization.id, {
+      onDelete: 'set null',
+    }),
   },
   (table) => [
     check('user_kind_check', sql`${table.kind} in ('person', 'agent')`),
     check('user_theme_check', sql`${table.theme} in ('system', 'light', 'dark')`),
     index('user_responsibleUserId_idx').on(table.responsibleUserId),
+    index('user_lastWorkspaceId_idx').on(table.lastWorkspaceId),
   ],
 );
 
@@ -117,7 +124,7 @@ export const verification = pgTable(
   (table) => [index('verification_identifier_idx').on(table.identifier)],
 );
 
-/** A workspace. */
+/** A workspace. Its slug names it in web URLs (`/w/<slug>/`); old slugs live in workspace_slug_alias. */
 export const organization = pgTable('organization', {
   id: id(),
   name: text('name').notNull(),
