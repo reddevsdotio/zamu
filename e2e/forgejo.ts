@@ -1,4 +1,4 @@
-// A throwaway Forgejo for the Backlog.md specs, started with docker/forgejo/setup.sh under its own compose
+// A throwaway Forgejo for the Backlog.md specs and the pull-request spec, started with docker/forgejo/setup.sh under its own compose
 // project and attached to the end-to-end stack's network under an alias (stack.forgejoAliases). The app reaches
 // it as http://<alias>:3000 and Forgejo delivers webhooks to http://web:3000.
 //
@@ -76,18 +76,27 @@ export interface Forgejo {
   /** Head commit of a branch, main by default. */
   head(repo: string, branch?: string): Promise<string>;
   /**
-   * Opens a pull request into main from a new branch that holds `changes` in one commit. Returns its number.
+   * Opens a pull request into main from a new branch that holds `changes` in one commit, with `body` as its
+   * description. Returns its number.
    */
   openPullRequest(
     repo: string,
-    request: { branch: string; title: string; changes: Record<string, string | null> },
+    request: { branch: string; title: string; body?: string; changes: Record<string, string | null> },
   ): Promise<number>;
+  /**
+   * Merges a pull request. Forgejo checks whether a new request can merge in the background, so this tries
+   * again while it answers that the check is still running.
+   */
+  mergePullRequest(repo: string, number: number): Promise<void>;
   /** Detaches Forgejo from the stack network, then removes the container and its data. */
   stop(): void;
 }
 
-/** Names of the Forgejo containers the Backlog.md specs and the upgrade test start (see stack.forgejoAliases). */
-export const forgejoNames = ['mirror', 'import', 'upgrade'] as const;
+/**
+ * Names of the Forgejo containers the Backlog.md specs, the pull-request spec and the upgrade test start (see
+ * stack.forgejoAliases).
+ */
+export const forgejoNames = ['mirror', 'import', 'pulls', 'upgrade'] as const;
 
 function forgejoProject(name: string): string {
   return `${composeProject}-forgejo-${name}`;
@@ -251,7 +260,7 @@ export async function startForgejo(name: string, network: string, alias: string)
       });
     },
     commit,
-    async openPullRequest(repo, { branch, title, changes }) {
+    async openPullRequest(repo, { branch, title, body, changes }) {
       await api('POST', `/repos/${user}/${repo}/branches`, {
         new_branch_name: branch,
         old_branch_name: 'main',
@@ -261,8 +270,21 @@ export async function startForgejo(name: string, network: string, alias: string)
         title,
         head: branch,
         base: 'main',
+        ...(body === undefined ? {} : { body }),
       });
       return pull.number;
+    },
+    async mergePullRequest(repo, number) {
+      const deadline = Date.now() + 60_000;
+      for (;;) {
+        try {
+          await api('POST', `/repos/${user}/${repo}/pulls/${number}/merge`, { Do: 'merge' });
+          return;
+        } catch (error) {
+          if (Date.now() > deadline) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+        }
+      }
     },
     stop,
   };

@@ -91,6 +91,7 @@ interface TaskShape {
   doneItems?: WorkItem[];
   plan?: string | null;
   finalSummary?: string | null;
+  archivedAt?: string | null;
 }
 interface MirroredTask extends TaskShape {
   backlog: { id: string; file: string | null; data: { implementationNotes?: string | null } } | null;
@@ -924,19 +925,27 @@ test('zamu backlog export writes the tasks into a git repository, and the folder
     expect(tree['tasks/pay-99 - Old-copy.md']).toBeUndefined();
     expect(clone.git(['status', '--porcelain', '-z']).split('\0')).toContain(` D ${stalePath}`);
 
-    // The folder parses with the same reader the mirror uses, and holds every visible task.
+    // The folder parses with the same reader the mirror uses, and holds every visible task: the active ones
+    // under tasks/, and PAY-3, archived since the mirror read it from archive/tasks/, back under archive/tasks/.
     const parsed = parseBacklogFolder(
       Object.entries(tree).map(([path, text]) => ({ path: `backlog/${path}`, text })),
       'backlog',
     );
-    const tasks = parsed.files.flatMap((file) => {
-      if (file.kind !== 'task') return [];
-      expect(file.result.ok, `${file.path}: ${JSON.stringify(file.result)}`).toBe(true);
-      return file.result.ok ? [file.result.value] : [];
-    });
+    const filesOf = (kind: 'task' | 'archived') =>
+      parsed.files.flatMap((file) => {
+        if (file.kind !== kind) return [];
+        expect(file.result.ok, `${file.path}: ${JSON.stringify(file.result)}`).toBe(true);
+        return file.result.ok ? [file.result.value] : [];
+      });
+    const tasks = filesOf('task');
     expect(tasks.map((task) => task.id.id).sort()).toEqual(
-      ['PAY-12', 'PAY-12.1', 'PAY-12.1.2', 'PAY-20', 'PAY-21', 'PAY-22', 'PAY-3'].sort(),
+      ['PAY-12', 'PAY-12.1', 'PAY-12.1.2', 'PAY-20', 'PAY-21', 'PAY-22'].sort(),
     );
+    expect((await taskOf(`${project.key}-3`)).archivedAt).not.toBeNull();
+    expect(filesOf('archived').map((task) => task.id.id)).toEqual(['PAY-3']);
+    expect(Object.keys(tree).filter((path) => path.startsWith('archive/tasks/'))).toEqual([
+      expect.stringMatching(/^archive\/tasks\/pay-3 - /),
+    ]);
     const parent = tasks.find((task) => task.id.id === 'PAY-12');
     expect(parent?.title).toBe('Webhook retries');
     expect(parent?.parentId ?? null).toBeNull();

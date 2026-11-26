@@ -6,12 +6,16 @@
 // done, plan, notes and summary into its description, and an agent gets a pm_live_ API key), then to 0.8.0 when
 // that release exists (the rename: the mirror keeps working and the sections stay in the description), then
 // to 0.9.0 when that release exists (the M6 migration moves the sections out of the description into the work
-// record, with no activity rows), then to the image globalSetup built: the M5 migrations run (on 0.8.0 when
-// that step ran), the backfill turns the mirror's block into native labels, due date, blockers and parent with
-// no activity rows, the M6 migration runs unless 0.9.0 ran it, the next refresh changes nothing, and every task
-// key and route still works. The rename to Zamu dropped the pm_live_ prefix with no fallback, so the 0.6.0 API
-// key gets 401 and a new key starts with zamu_live_. The workspaces migration keeps the workspace's slug, fills
-// in the workspace each user used last, and the pre-0.10 URLs redirect to the same page under /w/<slug>/.
+// record, with no activity rows), then to 0.10.0 when that release exists (the workspaces migration; a task is
+// finished there), then to the image globalSetup built: the M5 migrations run (on 0.8.0 when that step ran),
+// the backfill turns the mirror's block into native labels, due date, blockers and parent with no activity
+// rows, the M6 migration runs unless 0.9.0 ran it, the next refresh changes nothing, and every task key and
+// route still works. The rename to Zamu dropped the pm_live_ prefix with no fallback, so the 0.6.0 API key
+// gets 401 and a new key starts with zamu_live_. The workspaces migration (here, or on 0.10.0) keeps the
+// workspace's slug, fills in the workspace each user used last, and the pre-0.10 URLs redirect to the same
+// page under /w/<slug>/. The M7 migration leaves archiving off on every existing project (a new one archives
+// after 14 days) and fills in when each finished task was finished, and the Repository page of a project that
+// already had a repository works.
 //
 // Older images, each used when it is already local:
 //   M1    E2E_M1_IMAGE (pulled if it is not local, for example from a private registry after
@@ -27,6 +31,8 @@
 //         message and the next step upgrades from 0.6.0.
 //   0.9.0 E2E_0_9_IMAGE (pulled likewise), else zamu:release-<ref>, built once from E2E_0_9_REF or the git
 //         tag 0.9.0. Skipped the same way when neither exists.
+//   0.10.0 E2E_0_10_IMAGE (pulled likewise), else zamu:release-<ref>, built once from E2E_0_10_REF or the git
+//         tag 0.10.0. Skipped the same way when neither exists.
 // Builds use git archive, so the checkout is untouched. The mirror reads from a Forgejo container (e2e/forgejo.ts)
 // attached to the upgrade stack's network. E2E_SKIP_UPGRADE=1 skips this spec.
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -76,6 +82,16 @@ const release0_9Missing =
     : `The git ref ${release0_9Ref} does not exist, so the 0.9.0 step is skipped and the next step upgrades ` +
       'from the release before it. Tag the release, or set E2E_0_9_IMAGE (an image) or E2E_0_9_REF (a git ' +
       'ref such as 0.9.0-rc.1) to run it.';
+/** Several workspaces, the release before M7. E2E_0_10_REF picks another ref. */
+const RELEASE_0_10_TAG = '0.10.0';
+const release0_10Ref = process.env.E2E_0_10_REF ?? RELEASE_0_10_TAG;
+const release0_10Image = process.env.E2E_0_10_IMAGE ?? `zamu:release-${release0_10Ref}`;
+const release0_10Missing =
+  process.env.E2E_0_10_IMAGE || gitRefExists(release0_10Ref)
+    ? null
+    : `The git ref ${release0_10Ref} does not exist, so the 0.10.0 step is skipped and the next step upgrades ` +
+      'from the release before it. Tag the release, or set E2E_0_10_IMAGE (an image) or E2E_0_10_REF (a git ' +
+      'ref such as 0.10.0-rc.1) to run it.';
 const upgradePort = process.env.E2E_UPGRADE_PORT ?? '3101';
 /** API key prefix up to 0.7.0. The current build no longer accepts it. */
 const OLD_API_KEY_PREFIX = 'pm_live_';
@@ -256,6 +272,8 @@ let forgejo: Forgejo | undefined;
 const timelineBefore: Record<string, number> = {};
 /** The one workspace, read from the database on the last release before this build. */
 let workspaceBefore: { id: string; slug: string } | undefined;
+/** When OPS-5 was finished on 0.10.0 (when that step ran), for the M7 backfill of closedAt. */
+let finishedOn0_10: { from: number; to: number } | undefined;
 
 const byKey = (a: { key: string }, b: { key: string }) => a.key.localeCompare(b.key);
 
@@ -349,6 +367,8 @@ test.beforeAll(async ({ browser }) => {
   else ensureImage(release0_8Image, Boolean(process.env.E2E_0_8_IMAGE), release0_8Ref);
   if (release0_9Missing) console.log(`[e2e] ${release0_9Missing}`);
   else ensureImage(release0_9Image, Boolean(process.env.E2E_0_9_IMAGE), release0_9Ref);
+  if (release0_10Missing) console.log(`[e2e] ${release0_10Missing}`);
+  else ensureImage(release0_10Image, Boolean(process.env.E2E_0_10_IMAGE), release0_10Ref);
   stack.compose(['down', '-v', '--remove-orphans'], { quiet: true });
   console.log(`[e2e] starting ${stack.project} on ${m1Image} at ${upgradeURL}`);
   await startStack();
@@ -647,12 +667,41 @@ test('0.9.0: the work record migration moves the sections out of the description
   workspaceBefore = readWorkspace();
 });
 
+test('0.10.0: pages move under the workspace; a task is finished before the M7 migration', async () => {
+  test.skip(release0_10Missing !== null, release0_10Missing ?? '');
+  test.setTimeout(6 * 60_000);
+  await switchTo(release0_10Image);
+  await signInAsAdmin(page);
+
+  // The workspaces migration ran here: the same workspace and slug, pages under /w/<slug>/.
+  const workspace = readWorkspace();
+  expect(workspace).toEqual(workspaceBefore);
+  const me = await api<{ workspace: { id: string; slug: string } }>(page.request, 'GET', '/me');
+  expect(me.workspace).toMatchObject(workspace);
+  await page.goto('/p/OPS/OPS-1');
+  await expect(page).toHaveURL(`${upgradeURL}/w/${workspace.slug}/p/OPS/OPS-1`, { timeout: 15_000 });
+  await settle(page);
+  await expect(page.getByText('Rotated on the primary; replicas next.').first()).toBeVisible();
+
+  // 0.10.0 has no archive setting and no closing time.
+  const projects = await api<{ items: Record<string, unknown>[] }>(page.request, 'GET', '/projects');
+  expect(projects.items.find((item) => item.key === 'OPS')).not.toHaveProperty('archiveAfterDays');
+  const from = Date.now();
+  await api(page.request, 'PATCH', '/tasks/OPS-5', { status: 'done' });
+  finishedOn0_10 = { from: from - 1_000, to: Date.now() + 1_000 };
+  expect(await api<Record<string, unknown>>(page.request, 'GET', '/tasks/OPS-5')).not.toHaveProperty(
+    'closedAt',
+  );
+  workspaceBefore = workspace;
+});
+
 test('this build: the M5 migrations backfill the mirror, and every key and route still works', async () => {
   test.setTimeout(6 * 60_000);
   await switchTo(currentImage);
 
-  // The workspaces migration, read before anyone signs in (opening a workspace records it as used last):
-  // the workspace keeps its slug and needs no alias, and every user's last workspace is their membership.
+  // The workspaces migration (here, or on 0.10.0 when that step ran), read before anyone signs in on this
+  // build: the workspace keeps its slug and needs no alias, and every user's last workspace is their
+  // membership.
   const workspace = readWorkspace();
   expect(workspace).toEqual(workspaceBefore);
   const slug = workspace.slug;
@@ -786,4 +835,77 @@ test('this build: the M5 migrations backfill the mirror, and every key and route
   await page.goto(w('/p/OPS/settings', slug));
   await settle(page);
   await expect(page.getByLabel('Repository')).toHaveValue(repository);
+});
+
+test('this build: archiving is off on existing projects, finished tasks have closedAt, Repository works', async () => {
+  const slug = readWorkspace().slug;
+  // The M7 migration sets no archive days on the projects it finds; a new project archives after 14 days.
+  const projects = await api<{ items: { key: string; archiveAfterDays?: number | null }[] }>(
+    page.request,
+    'GET',
+    '/projects',
+  );
+  for (const key of ['OPS', 'INF']) {
+    expect(projects.items.find((item) => item.key === key)?.archiveAfterDays ?? null, key).toBeNull();
+  }
+  await api(page.request, 'POST', '/projects', { name: 'Billing', key: 'BIL' });
+  const created = await api<{ items: { key: string; archiveAfterDays?: number | null }[] }>(
+    page.request,
+    'GET',
+    '/projects',
+  );
+  expect(created.items.find((item) => item.key === 'BIL')?.archiveAfterDays).toBe(14);
+  // The preview of the nightly job reads the closing times: every task here was finished today.
+  expect(
+    await api<{ count: number }>(page.request, 'GET', '/projects/OPS/archive-preview?days=1'),
+  ).toMatchObject({ count: 0 });
+
+  // Every Done or Canceled task has the time it was finished, from the history where there is one; open
+  // tasks have none.
+  const closed: Record<string, string | null> = {};
+  const list = await api<{ items: TaskRef[] }>(page.request, 'GET', '/tasks?project=OPS&limit=100');
+  for (const item of list.items) {
+    closed[item.key] =
+      (await api<{ closedAt?: string | null }>(page.request, 'GET', `/tasks/${item.key}`)).closedAt ?? null;
+  }
+  const finished = list.items.filter((item) => item.status === 'done' || item.status === 'canceled');
+  expect(finished.map((item) => item.key).sort()).toEqual(
+    ['OPS-3', 'OPS-4', ...(finishedOn0_10 ? ['OPS-5'] : [])].sort(),
+  );
+  for (const item of list.items) {
+    if (finished.includes(item)) expect(closed[item.key], item.key).not.toBeNull();
+    else expect(closed[item.key], item.key).toBeNull();
+  }
+  if (finishedOn0_10) {
+    const at = Date.parse(closed['OPS-5'] ?? '');
+    expect(at).toBeGreaterThanOrEqual(finishedOn0_10.from);
+    expect(at).toBeLessThanOrEqual(finishedOn0_10.to);
+  }
+
+  // A project that had a repository before M7: its Repository page reads it, with no event yet and no
+  // connection (gitlab.com is read as a public repository). The mirror's switch stays off.
+  const settings = await api<{
+    repository: string | null;
+    provider: string | null;
+    connection: unknown;
+    closeOnMerge: boolean;
+    webhook: { url: string; lastStatus: string | null } | null;
+  }>(page.request, 'GET', '/projects/OPS/repository');
+  expect(settings).toMatchObject({ repository, provider: 'gitlab', connection: null, closeOnMerge: true });
+  expect(settings.webhook?.url).toMatch(new RegExp(`^${upgradeURL}/api/webhooks/repository/\\S+$`));
+  expect(settings.webhook?.lastStatus ?? null).toBeNull();
+  await page.goto(w('/p/OPS/settings/repository', slug));
+  await settle(page);
+  await expect(page.getByText('gitlab.com/reddevs/operations').first()).toBeVisible();
+  await expect(page.getByText('None: Zamu reads it as a public repository, without a token.')).toBeVisible();
+  await expect(page.locator('[data-status]').first()).toContainText('No event received yet.');
+  await expect(
+    page.getByRole('switch', { name: 'Close tasks when their pull request merges' }),
+  ).toBeChecked();
+  expect(
+    await api<{ mirrored: boolean; closeOnMerge: boolean }>(page.request, 'GET', '/projects/INF/repository'),
+  ).toMatchObject({ mirrored: true, closeOnMerge: false });
+  await page.goto(w('/p/OPS/settings/archive', slug));
+  await settle(page);
+  await expect(page.getByRole('switch', { name: 'Archive finished tasks' })).not.toBeChecked();
 });

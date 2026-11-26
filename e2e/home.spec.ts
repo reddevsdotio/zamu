@@ -254,7 +254,14 @@ test('the Everyone tab counts the whole workspace; the sidebar keeps the Mine co
   await page.getByRole('tab', { name: /^Everyone/ }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('everyone');
   const everyone = await home('everyone');
-  expect(everyone.groups.map((item) => item.key)).toEqual(['review', 'blocked', 'overdue', 'dueThisWeek']);
+  // M7 put "Merged with open criteria" after review.
+  expect(everyone.groups.map((item) => item.key)).toEqual([
+    'review',
+    'mergedOpen',
+    'blocked',
+    'overdue',
+    'dueThisWeek',
+  ]);
   const review = everyone.groups.find((item) => item.key === 'review');
   await expect.poll(() => groupCount('Needs review')).toBe(review?.total ?? 0);
   await expect(page.locator(`a[data-task-key="${reviewTask.key}"]`)).toBeVisible();

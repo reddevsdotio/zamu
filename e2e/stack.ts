@@ -5,8 +5,9 @@
 // The upgrade test (upgrade.spec.ts) starts a second stack from the same compose file under another project
 // name and port, first on older images and then on this checkout's image.
 //
-// The Backlog.md specs start a Forgejo container (e2e/forgejo.ts) and attach it to the stack's network, so the
-// app reaches it by a network alias over plain HTTP and Forgejo delivers webhooks to the web container. The
+// The Backlog.md specs and the pull-request spec start a Forgejo container (e2e/forgejo.ts) and attach it to the
+// stack's network, so the app reaches it by a network alias over plain HTTP and Forgejo delivers webhooks to the
+// web container. The
 // stack therefore runs with APP_ENCRYPTION_KEY, GIT_ALLOW_PRIVATE_HOSTS=true and those aliases in GIT_HTTP_HOSTS.
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -30,12 +31,14 @@ export const baseURL = (process.env.E2E_BASE_URL ?? `http://localhost:${port}`).
 export const image = process.env.ZAMU_IMAGE ?? 'zamu:e2e';
 
 /**
- * Network alias of each Forgejo on a stack network (see forgejo.ts): one per Backlog.md spec, and the upgrade
- * test's, which feeds the mirror it backfills.
+ * Network alias of each Forgejo on a stack network (see forgejo.ts): one per Backlog.md spec, the pull-request
+ * spec's and the upgrade test's, which feeds the mirror it backfills. The pull-request spec's alias has a dot:
+ * the task view's link field reads a pasted request address only when its host looks like a domain.
  */
 export const forgejoAliases = {
   mirror: 'forgejo-mirror',
   import: 'forgejo-import',
+  pulls: 'forgejo-pulls.test',
   upgrade: 'forgejo-upgrade',
 } as const;
 

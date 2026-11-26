@@ -1,4 +1,4 @@
-# Throwaway Forgejo for the git-providers integration tests and the M3 end-to-end tests.
+# Throwaway Forgejo for the git-providers integration tests and the end-to-end specs that need a git host.
 # Start it with setup.sh (creates an admin and a token), stop it with teardown.sh.
 # Nothing is persisted: the data volume is anonymous and teardown removes it.
 name: ${FORGEJO_PROJECT:-zamu-forgejo}
