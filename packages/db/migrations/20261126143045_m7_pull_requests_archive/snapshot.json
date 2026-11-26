@@ -1,0 +1,1966 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "7a2956b5-4d77-418d-9e34-0a98de87260d",
+  "prevIds": ["341f55ec-d6ab-4b91-a765-5cb44a1fb068"],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "public", "pull_request"],
+      "writes": [
+        "s|tbl|public.pull_request",
+        "n|tbl|public.pull_request",
+        "e|tbl|public.pull_request",
+        "n|rel|public.pull_request",
+        "n|type|public.pull_request",
+        "n|rel|public.pull_request_pkey",
+        "n|rel|public.pull_request_projectId_number_unique"
+      ],
+      "reads": ["n|sch|public"]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "public", "repository_link"],
+      "writes": [
+        "s|tbl|public.repository_link",
+        "n|tbl|public.repository_link",
+        "e|tbl|public.repository_link",
+        "n|rel|public.repository_link",
+        "n|type|public.repository_link",
+        "n|rel|public.repository_link_pkey"
+      ],
+      "reads": ["n|sch|public"]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "public", "task_pull_request"],
+      "writes": [
+        "s|tbl|public.task_pull_request",
+        "n|tbl|public.task_pull_request",
+        "e|tbl|public.task_pull_request",
+        "n|rel|public.task_pull_request",
+        "n|type|public.task_pull_request",
+        "n|rel|public.task_pull_request_pkey"
+      ],
+      "reads": ["n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "activity", "cause"],
+      "writes": ["s|col|public.activity.cause", "n|col|public.activity.cause", "e|col|public.activity.cause"],
+      "reads": ["n|tbl|public.activity", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "project", "archive_after_days"],
+      "writes": [
+        "s|col|public.project.archive_after_days",
+        "n|col|public.project.archive_after_days",
+        "e|col|public.project.archive_after_days"
+      ],
+      "reads": ["n|tbl|public.project", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "task", "work_branch"],
+      "writes": [
+        "s|col|public.task.work_branch",
+        "n|col|public.task.work_branch",
+        "e|col|public.task.work_branch"
+      ],
+      "reads": ["n|tbl|public.task", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "task", "closed_at"],
+      "writes": ["s|col|public.task.closed_at", "n|col|public.task.closed_at", "e|col|public.task.closed_at"],
+      "reads": ["n|tbl|public.task", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "task", "archived_at"],
+      "writes": [
+        "s|col|public.task.archived_at",
+        "n|col|public.task.archived_at",
+        "e|col|public.task.archived_at"
+      ],
+      "reads": ["n|tbl|public.task", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "task", "archived_by_id"],
+      "writes": [
+        "s|col|public.task.archived_by_id",
+        "n|col|public.task.archived_by_id",
+        "e|col|public.task.archived_by_id"
+      ],
+      "reads": ["n|tbl|public.task", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "task", "merged_done_at"],
+      "writes": [
+        "s|col|public.task.merged_done_at",
+        "n|col|public.task.merged_done_at",
+        "e|col|public.task.merged_done_at"
+      ],
+      "reads": ["n|tbl|public.task", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "task", "check_again_on"],
+      "writes": [
+        "s|col|public.task.check_again_on",
+        "n|col|public.task.check_again_on",
+        "e|col|public.task.check_again_on"
+      ],
+      "reads": ["n|tbl|public.task", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "task", "check_again_reason"],
+      "writes": [
+        "s|col|public.task.check_again_reason",
+        "n|col|public.task.check_again_reason",
+        "e|col|public.task.check_again_reason"
+      ],
+      "reads": ["n|tbl|public.task", "n|sch|public"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "task", "task_projectId_status_closedAt_idx"],
+      "writes": [
+        "s|idx|public.task_projectId_status_closedAt_idx",
+        "n|idx|public.task_projectId_status_closedAt_idx",
+        "e|idx|public.task_projectId_status_closedAt_idx",
+        "n|rel|public.task_projectId_status_closedAt_idx"
+      ],
+      "reads": [
+        "n|tbl|public.task",
+        "n|sch|public",
+        "n|col|public.task.project_id",
+        "n|col|public.task.status",
+        "n|col|public.task.closed_at"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "task", "task_assigneeId_checkAgainOn_idx"],
+      "writes": [
+        "s|idx|public.task_assigneeId_checkAgainOn_idx",
+        "n|idx|public.task_assigneeId_checkAgainOn_idx",
+        "e|idx|public.task_assigneeId_checkAgainOn_idx",
+        "n|rel|public.task_assigneeId_checkAgainOn_idx"
+      ],
+      "reads": [
+        "n|tbl|public.task",
+        "n|sch|public",
+        "n|col|public.task.assignee_id",
+        "n|col|public.task.check_again_on"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "task", "task_projectId_mergedDone_idx"],
+      "writes": [
+        "s|idx|public.task_projectId_mergedDone_idx",
+        "n|idx|public.task_projectId_mergedDone_idx",
+        "e|idx|public.task_projectId_mergedDone_idx",
+        "n|rel|public.task_projectId_mergedDone_idx"
+      ],
+      "reads": ["n|tbl|public.task", "n|sch|public", "n|col|public.task.project_id"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "task", "task_projectId_workBranch_idx"],
+      "writes": [
+        "s|idx|public.task_projectId_workBranch_idx",
+        "n|idx|public.task_projectId_workBranch_idx",
+        "e|idx|public.task_projectId_workBranch_idx",
+        "n|rel|public.task_projectId_workBranch_idx"
+      ],
+      "reads": [
+        "n|tbl|public.task",
+        "n|sch|public",
+        "n|col|public.task.project_id",
+        "n|col|public.task.work_branch"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "task", "task_projectId_archived_idx"],
+      "writes": [
+        "s|idx|public.task_projectId_archived_idx",
+        "n|idx|public.task_projectId_archived_idx",
+        "e|idx|public.task_projectId_archived_idx",
+        "n|rel|public.task_projectId_archived_idx"
+      ],
+      "reads": ["n|tbl|public.task", "n|sch|public", "n|col|public.task.project_id"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "pull_request", "pull_request_projectId_headBranch_idx"],
+      "writes": [
+        "s|idx|public.pull_request_projectId_headBranch_idx",
+        "n|idx|public.pull_request_projectId_headBranch_idx",
+        "e|idx|public.pull_request_projectId_headBranch_idx",
+        "n|rel|public.pull_request_projectId_headBranch_idx"
+      ],
+      "reads": [
+        "n|tbl|public.pull_request",
+        "n|sch|public",
+        "n|col|public.pull_request.project_id",
+        "n|col|public.pull_request.head_branch"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "repository_link", "repository_link_projectId_unique"],
+      "writes": [
+        "s|idx|public.repository_link_projectId_unique",
+        "n|idx|public.repository_link_projectId_unique",
+        "e|idx|public.repository_link_projectId_unique",
+        "n|rel|public.repository_link_projectId_unique"
+      ],
+      "reads": ["n|tbl|public.repository_link", "n|sch|public", "n|col|public.repository_link.project_id"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "repository_link", "repository_link_webhookId_unique"],
+      "writes": [
+        "s|idx|public.repository_link_webhookId_unique",
+        "n|idx|public.repository_link_webhookId_unique",
+        "e|idx|public.repository_link_webhookId_unique",
+        "n|rel|public.repository_link_webhookId_unique"
+      ],
+      "reads": ["n|tbl|public.repository_link", "n|sch|public", "n|col|public.repository_link.webhook_id"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "repository_link", "repository_link_connectionId_idx"],
+      "writes": [
+        "s|idx|public.repository_link_connectionId_idx",
+        "n|idx|public.repository_link_connectionId_idx",
+        "e|idx|public.repository_link_connectionId_idx",
+        "n|rel|public.repository_link_connectionId_idx"
+      ],
+      "reads": ["n|tbl|public.repository_link", "n|sch|public", "n|col|public.repository_link.connection_id"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "task_pull_request", "task_pull_request_pullRequestId_idx"],
+      "writes": [
+        "s|idx|public.task_pull_request_pullRequestId_idx",
+        "n|idx|public.task_pull_request_pullRequestId_idx",
+        "e|idx|public.task_pull_request_pullRequestId_idx",
+        "n|rel|public.task_pull_request_pullRequestId_idx"
+      ],
+      "reads": [
+        "n|tbl|public.task_pull_request",
+        "n|sch|public",
+        "n|col|public.task_pull_request.pull_request_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "task"],
+      "writes": [
+        "s|fk|public.task.task_archived_by_id_user_id_fkey",
+        "n|fk|public.task.task_archived_by_id_user_id_fkey",
+        "e|fk|public.task.task_archived_by_id_user_id_fkey",
+        "n|con|public.task.task_archived_by_id_user_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.task",
+        "n|sch|public",
+        "n|tbl|public.user",
+        "n|sch|public",
+        "n|col|public.task.archived_by_id",
+        "n|col|public.user.id",
+        "e|uniqueness|public.user.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "pull_request"],
+      "writes": [
+        "s|fk|public.pull_request.pull_request_workspace_id_organization_id_fkey",
+        "n|fk|public.pull_request.pull_request_workspace_id_organization_id_fkey",
+        "e|fk|public.pull_request.pull_request_workspace_id_organization_id_fkey",
+        "n|con|public.pull_request.pull_request_workspace_id_organization_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.pull_request",
+        "n|sch|public",
+        "n|tbl|public.organization",
+        "n|sch|public",
+        "n|col|public.pull_request.workspace_id",
+        "n|col|public.organization.id",
+        "e|uniqueness|public.organization.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "pull_request"],
+      "writes": [
+        "s|fk|public.pull_request.pull_request_project_id_project_id_fkey",
+        "n|fk|public.pull_request.pull_request_project_id_project_id_fkey",
+        "e|fk|public.pull_request.pull_request_project_id_project_id_fkey",
+        "n|con|public.pull_request.pull_request_project_id_project_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.pull_request",
+        "n|sch|public",
+        "n|tbl|public.project",
+        "n|sch|public",
+        "n|col|public.pull_request.project_id",
+        "n|col|public.project.id",
+        "e|uniqueness|public.project.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "repository_link"],
+      "writes": [
+        "s|fk|public.repository_link.repository_link_workspace_id_organization_id_fkey",
+        "n|fk|public.repository_link.repository_link_workspace_id_organization_id_fkey",
+        "e|fk|public.repository_link.repository_link_workspace_id_organization_id_fkey",
+        "n|con|public.repository_link.repository_link_workspace_id_organization_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.repository_link",
+        "n|sch|public",
+        "n|tbl|public.organization",
+        "n|sch|public",
+        "n|col|public.repository_link.workspace_id",
+        "n|col|public.organization.id",
+        "e|uniqueness|public.organization.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "repository_link"],
+      "writes": [
+        "s|fk|public.repository_link.repository_link_project_id_project_id_fkey",
+        "n|fk|public.repository_link.repository_link_project_id_project_id_fkey",
+        "e|fk|public.repository_link.repository_link_project_id_project_id_fkey",
+        "n|con|public.repository_link.repository_link_project_id_project_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.repository_link",
+        "n|sch|public",
+        "n|tbl|public.project",
+        "n|sch|public",
+        "n|col|public.repository_link.project_id",
+        "n|col|public.project.id",
+        "e|uniqueness|public.project.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "repository_link"],
+      "writes": [
+        "s|fk|public.repository_link.repository_link_connection_id_git_connection_id_fkey",
+        "n|fk|public.repository_link.repository_link_connection_id_git_connection_id_fkey",
+        "e|fk|public.repository_link.repository_link_connection_id_git_connection_id_fkey",
+        "n|con|public.repository_link.repository_link_connection_id_git_connection_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.repository_link",
+        "n|sch|public",
+        "n|tbl|public.git_connection",
+        "n|sch|public",
+        "n|col|public.repository_link.connection_id",
+        "n|col|public.git_connection.id",
+        "e|uniqueness|public.git_connection.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "task_pull_request"],
+      "writes": [
+        "s|fk|public.task_pull_request.task_pull_request_task_id_task_id_fkey",
+        "n|fk|public.task_pull_request.task_pull_request_task_id_task_id_fkey",
+        "e|fk|public.task_pull_request.task_pull_request_task_id_task_id_fkey",
+        "n|con|public.task_pull_request.task_pull_request_task_id_task_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.task_pull_request",
+        "n|sch|public",
+        "n|tbl|public.task",
+        "n|sch|public",
+        "n|col|public.task_pull_request.task_id",
+        "n|col|public.task.id",
+        "e|uniqueness|public.task.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "task_pull_request"],
+      "writes": [
+        "s|fk|public.task_pull_request.task_pull_request_pull_request_id_pull_request_id_fkey",
+        "n|fk|public.task_pull_request.task_pull_request_pull_request_id_pull_request_id_fkey",
+        "e|fk|public.task_pull_request.task_pull_request_pull_request_id_pull_request_id_fkey",
+        "n|con|public.task_pull_request.task_pull_request_pull_request_id_pull_request_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.task_pull_request",
+        "n|sch|public",
+        "n|tbl|public.pull_request",
+        "n|sch|public",
+        "n|col|public.task_pull_request.pull_request_id",
+        "n|col|public.pull_request.id",
+        "e|uniqueness|public.pull_request.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "task_pull_request"],
+      "writes": [
+        "s|fk|public.task_pull_request.task_pull_request_linked_by_id_user_id_fkey",
+        "n|fk|public.task_pull_request.task_pull_request_linked_by_id_user_id_fkey",
+        "e|fk|public.task_pull_request.task_pull_request_linked_by_id_user_id_fkey",
+        "n|con|public.task_pull_request.task_pull_request_linked_by_id_user_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.task_pull_request",
+        "n|sch|public",
+        "n|tbl|public.user",
+        "n|sch|public",
+        "n|col|public.task_pull_request.linked_by_id",
+        "n|col|public.user.id",
+        "e|uniqueness|public.user.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "task_pull_request"],
+      "writes": [
+        "s|fk|public.task_pull_request.task_pull_request_removed_by_id_user_id_fkey",
+        "n|fk|public.task_pull_request.task_pull_request_removed_by_id_user_id_fkey",
+        "e|fk|public.task_pull_request.task_pull_request_removed_by_id_user_id_fkey",
+        "n|con|public.task_pull_request.task_pull_request_removed_by_id_user_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.task_pull_request",
+        "n|sch|public",
+        "n|tbl|public.user",
+        "n|sch|public",
+        "n|col|public.task_pull_request.removed_by_id",
+        "n|col|public.user.id",
+        "e|uniqueness|public.user.id"
+      ]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": ["table", "public", "project"],
+      "writes": [
+        "s|ck|public.project.project_archive_after_days_check",
+        "n|ck|public.project.project_archive_after_days_check",
+        "e|ck|public.project.project_archive_after_days_check",
+        "n|con|public.project.project_archive_after_days_check"
+      ],
+      "reads": ["n|tbl|public.project", "n|sch|public", "n|col|public.project.archive_after_days"]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": ["table", "public", "task"],
+      "writes": [
+        "s|ck|public.task.task_work_branch_check",
+        "n|ck|public.task.task_work_branch_check",
+        "e|ck|public.task.task_work_branch_check",
+        "n|con|public.task.task_work_branch_check"
+      ],
+      "reads": ["n|tbl|public.task", "n|sch|public", "n|col|public.task.work_branch"]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": ["table", "public", "task"],
+      "writes": [
+        "s|ck|public.task.task_archived_check",
+        "n|ck|public.task.task_archived_check",
+        "e|ck|public.task.task_archived_check",
+        "n|con|public.task.task_archived_check"
+      ],
+      "reads": [
+        "n|tbl|public.task",
+        "n|sch|public",
+        "n|col|public.task.archived_at",
+        "n|col|public.task.archived_by_id"
+      ]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": ["table", "public", "task"],
+      "writes": [
+        "s|ck|public.task.task_check_again_check",
+        "n|ck|public.task.task_check_again_check",
+        "e|ck|public.task.task_check_again_check",
+        "n|con|public.task.task_check_again_check"
+      ],
+      "reads": [
+        "n|tbl|public.task",
+        "n|sch|public",
+        "n|col|public.task.check_again_on",
+        "n|col|public.task.check_again_reason"
+      ]
+    },
+    {
+      "statementType": "alter_check",
+      "statementTarget": ["table", "public", "activity"],
+      "writes": ["s|ck|public.activity.activity_origin_check"],
+      "reads": [
+        "n|tbl|public.activity",
+        "n|sch|public",
+        "n|col|public.activity.origin",
+        "e|col|public.activity.origin"
+      ],
+      "sqlHash": "5b2de35ee4d77f0d"
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "pull_request",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "repository_link",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "task_pull_request",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "activity",
+        "name": "cause",
+        "type": "jsonb",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "project",
+        "name": "archive_after_days",
+        "type": "smallint",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "work_branch",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "closed_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "archived_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "archived_by_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "merged_done_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "check_again_on",
+        "type": "date",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "check_again_reason",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "uuidv7()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "workspace_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "project_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "number",
+        "type": "integer",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "title",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "body_keys",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 1,
+        "default": "'{}'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "state",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "head_branch",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "base_branch",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "author",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "merged_by",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "web_url",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "opened_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "merged_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "closed_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "host_updated_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "uuidv7()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "workspace_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "project_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "repository_key",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "connection_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "default_branch",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "close_on_merge",
+        "type": "boolean",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "true",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "webhook_id",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "webhook_secret_ciphertext",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "webhook_last_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "webhook_last_status",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "synced_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "sync_cursor",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "sync_error",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "moves_from",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "task_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "pull_request_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "via_branch",
+        "type": "boolean",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "false",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "via_description",
+        "type": "boolean",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "false",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "via_hand",
+        "type": "boolean",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "false",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "linked_by_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "removed_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "removed_by_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "task_projectId_status_closedAt_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "project_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "status",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "closed_at",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": "\"archived_at\" is null and \"status\" in ('done', 'canceled')",
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "task_assigneeId_checkAgainOn_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "assignee_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "check_again_on",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": "\"check_again_on\" is not null",
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "task_projectId_mergedDone_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "project_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": "\"merged_done_at\" is not null",
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "task_projectId_workBranch_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "project_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "work_branch",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": "\"work_branch\" is not null",
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "task_projectId_archived_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "project_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": "\"archived_at\" is not null",
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "pull_request_projectId_headBranch_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "project_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "head_branch",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "repository_link_projectId_unique",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "project_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "repository_link_webhookId_unique",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "webhook_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "repository_link_connectionId_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "connection_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "task_pull_request_pullRequestId_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "pull_request_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "task_archived_by_id_user_id_fkey",
+        "nameExplicit": false,
+        "columns": ["archived_by_id"],
+        "schemaTo": "public",
+        "tableTo": "user",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "RESTRICT",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "pull_request_workspace_id_organization_id_fkey",
+        "nameExplicit": false,
+        "columns": ["workspace_id"],
+        "schemaTo": "public",
+        "tableTo": "organization",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "pull_request_project_id_project_id_fkey",
+        "nameExplicit": false,
+        "columns": ["project_id"],
+        "schemaTo": "public",
+        "tableTo": "project",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "repository_link_workspace_id_organization_id_fkey",
+        "nameExplicit": false,
+        "columns": ["workspace_id"],
+        "schemaTo": "public",
+        "tableTo": "organization",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "repository_link_project_id_project_id_fkey",
+        "nameExplicit": false,
+        "columns": ["project_id"],
+        "schemaTo": "public",
+        "tableTo": "project",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "repository_link_connection_id_git_connection_id_fkey",
+        "nameExplicit": false,
+        "columns": ["connection_id"],
+        "schemaTo": "public",
+        "tableTo": "git_connection",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "SET NULL",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "task_pull_request_task_id_task_id_fkey",
+        "nameExplicit": false,
+        "columns": ["task_id"],
+        "schemaTo": "public",
+        "tableTo": "task",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "task_pull_request_pull_request_id_pull_request_id_fkey",
+        "nameExplicit": false,
+        "columns": ["pull_request_id"],
+        "schemaTo": "public",
+        "tableTo": "pull_request",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "task_pull_request_linked_by_id_user_id_fkey",
+        "nameExplicit": false,
+        "columns": ["linked_by_id"],
+        "schemaTo": "public",
+        "tableTo": "user",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "RESTRICT",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "task_pull_request_removed_by_id_user_id_fkey",
+        "nameExplicit": false,
+        "columns": ["removed_by_id"],
+        "schemaTo": "public",
+        "tableTo": "user",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "RESTRICT",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "task_pull_request_pkey",
+        "columns": ["task_id", "pull_request_id"],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "pull_request_pkey",
+        "columns": ["id"],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "repository_link_pkey",
+        "columns": ["id"],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "pull_request_projectId_number_unique",
+        "nameExplicit": true,
+        "columns": ["project_id", "number"],
+        "nullsNotDistinct": false,
+        "entityType": "uniques"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "project",
+        "name": "project_archive_after_days_check",
+        "value": "\"archive_after_days\" between 1 and 365",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "task_work_branch_check",
+        "value": "char_length(\"work_branch\") between 1 and 255",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "task_archived_check",
+        "value": "\"archived_at\" is not null or \"archived_by_id\" is null",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "task_check_again_check",
+        "value": "(\"check_again_on\" is null and \"check_again_reason\" is null) or (\"check_again_on\" is not null and \"check_again_reason\" is not null and char_length(\"check_again_reason\") between 1 and 200)",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "pull_request_number_check",
+        "value": "\"number\" >= 1",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "pull_request",
+        "name": "pull_request_state_check",
+        "value": "\"state\" in ('open', 'draft', 'merged', 'closed')",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "repository_link",
+        "name": "repository_link_webhook_last_status_check",
+        "value": "\"webhook_last_status\" in ('ok', 'bad_signature', 'bad_payload')",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task_pull_request",
+        "name": "task_pull_request_removed_check",
+        "value": "\"removed_at\" is not null or \"removed_by_id\" is null",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "alter",
+      "key": "checks\u0000[\"public\",\"activity\",\"activity_origin_check\"]",
+      "set": {
+        "value": "\"origin\" in ('app', 'backlog', 'git')"
+      }
+    }
+  ]
+}

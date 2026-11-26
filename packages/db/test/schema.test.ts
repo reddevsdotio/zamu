@@ -14,10 +14,13 @@ import {
   milestone,
   organization,
   project,
+  pullRequest,
+  repositoryLink,
   task,
   taskDependency,
   taskItem,
   taskLabel,
+  taskPullRequest,
   user,
   WORKSPACE_SLUG_MAX_LENGTH,
   workspaceSlugAlias,
@@ -87,11 +90,14 @@ describe('schema on a throwaway database', () => {
       'milestone',
       'organization',
       'project',
+      'pull_request',
+      'repository_link',
       'session',
       'task',
       'task_dependency',
       'task_item',
       'task_label',
+      'task_pull_request',
       'user',
       'verification',
       'workspace_slug_alias',
@@ -1046,6 +1052,374 @@ describe('workspaces schema (0.10)', () => {
     await db.delete(organization).where(eq(organization.id, workspace.id));
     const [after] = await db.select().from(user).where(eq(user.id, owner.id));
     expect(after?.lastWorkspaceId).toBeNull();
+  });
+});
+
+describe('M7 schema', () => {
+  let database: TestDatabase;
+  let db: Db;
+
+  beforeAll(async () => {
+    database = await createTestDatabase();
+    db = database.db;
+  });
+
+  afterAll(async () => {
+    await database?.drop();
+  });
+
+  async function newTask(
+    world: Awaited<ReturnType<typeof seed>>,
+    number: number,
+    values: Partial<typeof task.$inferInsert> = {},
+  ) {
+    const [row] = await db
+      .insert(task)
+      .values({
+        projectId: world.pay.id,
+        number,
+        title: `Task ${number}`,
+        createdById: world.owner.id,
+        ...values,
+      })
+      .returning();
+    if (!row) throw new Error('task insert failed');
+    return row;
+  }
+
+  async function newRequest(
+    world: Awaited<ReturnType<typeof seed>>,
+    number: number,
+    values: Partial<typeof pullRequest.$inferInsert> = {},
+  ) {
+    const [row] = await db
+      .insert(pullRequest)
+      .values({
+        workspaceId: world.workspace.id,
+        projectId: world.pay.id,
+        number,
+        title: `Request ${number}`,
+        state: 'open',
+        headBranch: `feat/request-${number}`,
+        baseBranch: 'main',
+        webUrl: `https://github.com/northwind/payments/pull/${number}`,
+        openedAt: new Date('2026-11-26T09:00:00Z'),
+        hostUpdatedAt: new Date('2026-11-26T09:00:00Z'),
+        ...values,
+      })
+      .returning();
+    if (!row) throw new Error('request insert failed');
+    return row;
+  }
+
+  it('defaults the new task, project and activity columns to none', async () => {
+    const world = await seed(db);
+    const row = await newTask(world, 1);
+    expect(row).toMatchObject({
+      workBranch: null,
+      closedAt: null,
+      archivedAt: null,
+      archivedById: null,
+      mergedDoneAt: null,
+      checkAgainOn: null,
+      checkAgainReason: null,
+    });
+    expect(world.pay.archiveAfterDays).toBeNull();
+    const [entry] = await db
+      .insert(activity)
+      .values({
+        workspaceId: world.workspace.id,
+        projectId: world.pay.id,
+        taskId: row.id,
+        type: 'task.archived',
+      })
+      .returning();
+    expect(entry).toMatchObject({ cause: null, origin: 'app', actorId: null });
+  });
+
+  it('sets the check-again day and reason together, with a reason of 1 to 200 characters', async () => {
+    const world = await seed(db);
+    const row = await newTask(world, 1, {
+      checkAgainOn: '2026-12-01',
+      checkAgainReason: 'Wait for the bank',
+    });
+    expect(row).toMatchObject({ checkAgainOn: '2026-12-01', checkAgainReason: 'Wait for the bank' });
+    await expect(
+      newTask(world, 2, { checkAgainOn: '2026-12-01', checkAgainReason: 'x'.repeat(200) }),
+    ).resolves.toBeTruthy();
+    expect(await pgErrorCode(newTask(world, 3, { checkAgainOn: '2026-12-01' }))).toBe('23514');
+    expect(await pgErrorCode(newTask(world, 3, { checkAgainReason: 'No day' }))).toBe('23514');
+    expect(await pgErrorCode(newTask(world, 3, { checkAgainOn: '2026-12-01', checkAgainReason: '' }))).toBe(
+      '23514',
+    );
+    expect(
+      await pgErrorCode(newTask(world, 3, { checkAgainOn: '2026-12-01', checkAgainReason: 'x'.repeat(201) })),
+    ).toBe('23514');
+    // Clearing both at once is fine.
+    await db.update(task).set({ checkAgainOn: null, checkAgainReason: null }).where(eq(task.id, row.id));
+  });
+
+  it('checks work branches, archive authors and archive days', async () => {
+    const world = await seed(db);
+    await expect(newTask(world, 1, { workBranch: 'x'.repeat(255) })).resolves.toBeTruthy();
+    expect(await pgErrorCode(newTask(world, 2, { workBranch: '' }))).toBe('23514');
+    expect(await pgErrorCode(newTask(world, 2, { workBranch: 'x'.repeat(256) }))).toBe('23514');
+    // An author needs an archive date; the nightly job archives without one.
+    expect(await pgErrorCode(newTask(world, 2, { archivedById: world.owner.id }))).toBe('23514');
+    await expect(newTask(world, 2, { archivedAt: new Date() })).resolves.toBeTruthy();
+    const byHand = await newTask(world, 3, { archivedAt: new Date(), archivedById: world.owner.id });
+    expect(await pgErrorCode(db.delete(user).where(eq(user.id, world.owner.id)))).toBe('23001');
+    expect(byHand.archivedById).toBe(world.owner.id);
+
+    for (const days of [1, 14, 365, null]) {
+      await db.update(project).set({ archiveAfterDays: days }).where(eq(project.id, world.pay.id));
+    }
+    for (const days of [0, 366, -1]) {
+      expect(
+        await pgErrorCode(
+          db.update(project).set({ archiveAfterDays: days }).where(eq(project.id, world.pay.id)),
+        ),
+        String(days),
+      ).toBe('23514');
+    }
+  });
+
+  it('records git activity with a cause', async () => {
+    const world = await seed(db);
+    const row = await newTask(world, 1);
+    const cause = {
+      kind: 'pull_request' as const,
+      provider: 'github',
+      number: 482,
+      url: 'https://github.com/northwind/payments/pull/482',
+      title: 'Retry webhooks',
+      event: 'merged',
+      by: 'ana',
+    };
+    const [entry] = await db
+      .insert(activity)
+      .values({
+        workspaceId: world.workspace.id,
+        projectId: world.pay.id,
+        taskId: row.id,
+        type: 'task.updated',
+        changes: [{ field: 'status', from: 'in_review', to: 'done' }],
+        origin: 'git',
+        originRef: cause.url,
+        cause,
+      })
+      .returning();
+    expect(entry).toMatchObject({ origin: 'git', actorId: null, cause });
+    expect(
+      await pgErrorCode(
+        db.execute(sql`insert into activity (workspace_id, project_id, task_id, type, origin)
+          values (${world.workspace.id}, ${world.pay.id}, ${row.id}, 'task.updated', 'github')`),
+      ),
+    ).toBe('23514');
+  });
+
+  it('keeps one repository link per project, with a unique webhook id and checked status', async () => {
+    const world = await seed(db);
+    const [connection] = await db
+      .insert(gitConnection)
+      .values({
+        workspaceId: world.workspace.id,
+        name: 'GitHub',
+        provider: 'github',
+        host: 'github.com',
+        apiBaseUrl: 'https://api.github.com',
+        tokenCiphertext: 'v1:abc',
+        tokenHint: 'xyz',
+        createdById: world.owner.id,
+      })
+      .returning();
+    if (!connection) throw new Error('connection insert failed');
+    const webhookId = `hook-${crypto.randomUUID()}`;
+    const [link] = await db
+      .insert(repositoryLink)
+      .values({
+        workspaceId: world.workspace.id,
+        projectId: world.pay.id,
+        repositoryKey: 'github.com/northwind/payments',
+        connectionId: connection.id,
+        webhookId,
+      })
+      .returning();
+    expect(link).toMatchObject({
+      closeOnMerge: true,
+      defaultBranch: null,
+      webhookSecretCiphertext: null,
+      webhookLastStatus: null,
+      syncedAt: null,
+      syncCursor: null,
+      syncError: null,
+    });
+    expect(link?.movesFrom).toBeInstanceOf(Date);
+    const other = await seed(db);
+    // One link per project; webhook ids are unique across workspaces.
+    expect(
+      await pgErrorCode(
+        db.insert(repositoryLink).values({
+          workspaceId: world.workspace.id,
+          projectId: world.pay.id,
+          repositoryKey: 'github.com/northwind/payments',
+          webhookId: `hook-${crypto.randomUUID()}`,
+        }),
+      ),
+    ).toBe('23505');
+    expect(
+      await pgErrorCode(
+        db.insert(repositoryLink).values({
+          workspaceId: other.workspace.id,
+          projectId: other.pay.id,
+          repositoryKey: 'github.com/northwind/payments',
+          webhookId,
+        }),
+      ),
+    ).toBe('23505');
+    for (const status of ['ok', 'bad_signature', 'bad_payload'] as const) {
+      await db
+        .update(repositoryLink)
+        .set({ webhookLastStatus: status })
+        .where(eq(repositoryLink.id, link?.id as string));
+    }
+    expect(
+      await pgErrorCode(
+        db.execute(
+          sql`update repository_link set webhook_last_status = 'late' where id = ${link?.id as string}`,
+        ),
+      ),
+    ).toBe('23514');
+
+    // Deleting the connection leaves the link reading without a token; deleting the project drops it.
+    await db.delete(gitConnection).where(eq(gitConnection.id, connection.id));
+    const [kept] = await db
+      .select()
+      .from(repositoryLink)
+      .where(eq(repositoryLink.id, link?.id as string));
+    expect(kept?.connectionId).toBeNull();
+    await db.delete(project).where(eq(project.id, world.pay.id));
+    expect(
+      await db
+        .select()
+        .from(repositoryLink)
+        .where(eq(repositoryLink.id, link?.id as string)),
+    ).toEqual([]);
+  });
+
+  it('stores requests once per project and number, with checked states', async () => {
+    const world = await seed(db);
+    const request = await newRequest(world, 482);
+    expect(request).toMatchObject({
+      bodyKeys: [],
+      author: null,
+      mergedBy: null,
+      mergedAt: null,
+      closedAt: null,
+    });
+    const keyed = await newRequest(world, 483, { bodyKeys: ['PAY-1', 'PAY-2'], state: 'draft' });
+    expect(keyed.bodyKeys).toEqual(['PAY-1', 'PAY-2']);
+    expect(await pgErrorCode(newRequest(world, 482))).toBe('23505');
+    expect(await pgErrorCode(newRequest(world, 0))).toBe('23514');
+    expect(await pgErrorCode(newRequest(world, 484, { state: 'locked' as 'open' }))).toBe('23514');
+    for (const state of ['merged', 'closed'] as const)
+      await newRequest(world, state === 'merged' ? 485 : 486, { state });
+    // The same number in another project is another request.
+    const other = await seed(db);
+    await expect(newRequest(other, 482)).resolves.toBeTruthy();
+  });
+
+  it('links tasks to requests once, keeps removals with their author, and drops links with either side', async () => {
+    const world = await seed(db);
+    const one = await newTask(world, 1);
+    const two = await newTask(world, 2);
+    const request = await newRequest(world, 482);
+    const [link] = await db
+      .insert(taskPullRequest)
+      .values({ taskId: one.id, pullRequestId: request.id, viaHand: true, linkedById: world.owner.id })
+      .returning();
+    expect(link).toMatchObject({ viaBranch: false, viaDescription: false, viaHand: true, removedAt: null });
+    expect(
+      await pgErrorCode(db.insert(taskPullRequest).values({ taskId: one.id, pullRequestId: request.id })),
+    ).toBe('23505');
+    expect(
+      await pgErrorCode(
+        db
+          .insert(taskPullRequest)
+          .values({ taskId: two.id, pullRequestId: request.id, removedById: world.owner.id }),
+      ),
+    ).toBe('23514');
+    await db.insert(taskPullRequest).values({
+      taskId: two.id,
+      pullRequestId: request.id,
+      viaBranch: true,
+      removedAt: new Date(),
+      removedById: world.owner.id,
+    });
+
+    await db.delete(task).where(eq(task.id, one.id));
+    expect(await db.select().from(taskPullRequest).where(eq(taskPullRequest.taskId, one.id))).toEqual([]);
+    await db.delete(pullRequest).where(eq(pullRequest.id, request.id));
+    expect(
+      await db.select().from(taskPullRequest).where(eq(taskPullRequest.pullRequestId, request.id)),
+    ).toEqual([]);
+  });
+
+  it('indexes the archive job, check-again days, merged tasks, work branches, archived tasks and requests', async () => {
+    const result = await db.execute<{ indexname: string; indexdef: string }>(sql`
+      select indexname, indexdef from pg_indexes
+      where schemaname = 'public' and indexname in (
+        'task_projectId_status_closedAt_idx',
+        'task_assigneeId_checkAgainOn_idx',
+        'task_projectId_mergedDone_idx',
+        'task_projectId_workBranch_idx',
+        'task_projectId_archived_idx',
+        'pull_request_projectId_headBranch_idx',
+        'task_pull_request_pullRequestId_idx',
+        'repository_link_connectionId_idx')
+      order by indexname`);
+    expect(result.rows).toEqual([
+      {
+        indexname: 'pull_request_projectId_headBranch_idx',
+        indexdef:
+          'CREATE INDEX "pull_request_projectId_headBranch_idx" ON public.pull_request USING btree (project_id, head_branch)',
+      },
+      {
+        indexname: 'repository_link_connectionId_idx',
+        indexdef:
+          'CREATE INDEX "repository_link_connectionId_idx" ON public.repository_link USING btree (connection_id)',
+      },
+      {
+        indexname: 'task_assigneeId_checkAgainOn_idx',
+        indexdef:
+          'CREATE INDEX "task_assigneeId_checkAgainOn_idx" ON public.task USING btree (assignee_id, check_again_on) WHERE (check_again_on IS NOT NULL)',
+      },
+      {
+        indexname: 'task_projectId_archived_idx',
+        indexdef:
+          'CREATE INDEX "task_projectId_archived_idx" ON public.task USING btree (project_id) WHERE (archived_at IS NOT NULL)',
+      },
+      {
+        indexname: 'task_projectId_mergedDone_idx',
+        indexdef:
+          'CREATE INDEX "task_projectId_mergedDone_idx" ON public.task USING btree (project_id) WHERE (merged_done_at IS NOT NULL)',
+      },
+      {
+        indexname: 'task_projectId_status_closedAt_idx',
+        indexdef:
+          "CREATE INDEX \"task_projectId_status_closedAt_idx\" ON public.task USING btree (project_id, status, closed_at) WHERE ((archived_at IS NULL) AND (status = ANY (ARRAY['done'::task_status, 'canceled'::task_status])))",
+      },
+      {
+        indexname: 'task_projectId_workBranch_idx',
+        indexdef:
+          'CREATE INDEX "task_projectId_workBranch_idx" ON public.task USING btree (project_id, work_branch) WHERE (work_branch IS NOT NULL)',
+      },
+      {
+        indexname: 'task_pull_request_pullRequestId_idx',
+        indexdef:
+          'CREATE INDEX "task_pull_request_pullRequestId_idx" ON public.task_pull_request USING btree (pull_request_id)',
+      },
+    ]);
   });
 });
 
