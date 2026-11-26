@@ -1,5 +1,112 @@
 # Changelog
 
+## Unreleased
+
+Pull requests on tasks, the archive and check-again days. A project links its repository, requests link to
+tasks and move them to In review and Done; closed tasks leave the lists after a set number of days; a task
+that waits gets a day to look at it again.
+
+### Added
+
+- Settings > Repository, per project: the repository and the connection Zamu reads it with (Change, with
+  "None: public repository" for a public read without a token), the default branch, the switch "Close tasks
+  when their pull request merges" (on by default), the webhook, and the hourly check with Check now. Owners
+  and admins edit; everyone who reads the project sees the page. See
+  [docs/repositories.md](docs/repositories.md).
+- Pull and merge requests link to tasks in three ways: by the task's work branch (the branch an agent was on
+  when it started the task with `zamu`), by a `Closes: PAY-142, PAY-150` line in the description, and by
+  hand. Description edits link and unlink; a link removed by hand stays removed until linked by hand again.
+- Requests move their tasks: opened, reopened or marked ready moves tasks in Backlog, Todo or In progress to
+  In review; a merge into the default branch moves them to Done when the project closes on merge and no
+  other linked request is open. Drafts link without moving. Merges into other branches and requests closed
+  without merging move nothing. The history names the host: "GitHub moved this to In review · #482 opened
+  by claude-dev".
+- "Merged with 2 open criteria" ("Merged with 3 open items" when done items are open too) on a task a merge
+  closed with items still open, and a Home group, "Merged with open criteria", on Mine and Everyone.
+- The task view lists the task's requests between the description and the criteria, with host, number,
+  title, how each was linked and its state (Open, Draft, Merged, Closed), and remove with Undo. The branch
+  line shows while a work branch has no request yet. "Link a pull request" (Shift+P, also in the peek) takes
+  a request address, previews it, and refuses addresses of other repositories and addresses that are not
+  requests. The properties gain Pull request (the newest, "+3") and Check again rows.
+- One webhook per project at `/api/webhooks/repository/<id>`, with its own secret, shown once, and New
+  secret. The page has the setup steps for GitHub, GitLab and Forgejo and says how the last event went,
+  including "The last event failed its signature check". In a project that mirrors Backlog.md, the mirror's
+  webhook also carries request events, so one webhook covers both.
+- An hourly check, at 45 minutes past each hour (UTC), reads the requests updated since the last one, so
+  requests link and tasks move without a webhook too. The first check after a repository is linked, or its
+  connection changes, records what exists and moves no task. Out-of-order events can't move a task back.
+- Settings > Archive, per project: "Archive finished tasks" a number of days (1 to 365) after they reached
+  Done or Canceled, with the count the next run would archive shown before you save. A nightly job at 02:30
+  in `APP_TIME_ZONE` archives them; the history names Zamu. It skips tasks merged with open items.
+- Archiving by hand, for anyone who can edit the task, agents included: Shift+E on the open task or the
+  selection, or Archive in the action bar, with "3 tasks archived" and Undo in the toast (⌘Z while it
+  shows). Shift+E on an archived task restores it.
+- Archived tasks: out of lists, boards, Home, the dashboard and counts; read-only, with a bar "Archived on
+  Nov 12" and Restore, and a comment box that asks to restore first. The Archived filter and Display >
+  "Archived tasks" show them, with "Archived Nov 12" and Restore on hover. Search and the palette list them
+  last with an Archived tag, and the palette offers "Show archived tasks in <project>". Milestone, cycle and
+  subtask progress keep counting them.
+- Check-again days: a day and a required reason (up to 200 characters) on a task, set with Shift+W or the
+  Check again row, from a picker like the due-date one. Rows and cards show "Until Dec 3" while it waits and
+  "Check again: today" (then "yesterday", "3 days ago") once the day comes, never in the overdue colour.
+  Your tasks whose day has come show on Home under Check again. Moving a task to Done or Canceled clears the
+  day.
+- Display options: "Waiting tasks" (Shown, "Shown, dimmed" by default, or Hidden; a board column then
+  ends with "2 waiting, hidden"), "Archived tasks" (Hidden by default, Shown), and the chips Check again
+  (on) and Pull request (off). Filters: Waiting, Ready to check and Archived.
+- Backlog.md: a mirrored task whose file is under `archive/tasks/` (or `completed/`) is archived, and moving
+  the file back restores it. Imports bring those tasks in archived. Mirrored tasks can't be archived or
+  restored in Zamu (`TASK_MIRRORED`), and mirrored projects have no archive setting.
+- API: `GET` and `PATCH /projects/{project}/repository`, `POST .../repository/webhook-secret`,
+  `POST .../repository/sync`, `GET /projects/{project}/archive-preview?days=N`, `archiveAfterDays` on
+  `PATCH /projects/{project}`, `POST /tasks/archive` and `POST /tasks/restore` (up to 100 keys, all or
+  nothing), `POST /tasks/{key}/pull-requests` (with `dryRun`) and `DELETE /tasks/{key}/pull-requests/{n}`,
+  `checkAgain` on task create and update, and the `archived` and `checkAgain` list filters. Tasks carry
+  `workBranch`, `pullRequests`, `checkAgain`, `closedAt`, `archivedAt`, `archivedBy` and `mergedOpen`;
+  history entries carry `cause` and `system`. New problem codes: `409 TASK_ARCHIVED`,
+  `422 REQUEST_OTHER_REPOSITORY`, `422 NOT_A_REQUEST` and `404 REQUEST_NOT_FOUND`. See
+  [docs/api.md](docs/api.md#pull-requests-archive-and-check-again-days).
+- CLI: `zamu pr link <task> <url> [--dry-run]` and `zamu pr unlink <task> <number>`, `zamu tasks archive` and
+  `zamu tasks restore` (one or several keys), `--check-again <day> --reason <text>` and `--no-check-again` on
+  `zamu tasks update`, `--waiting`, `--ready-to-check` and `--archived include|only` on `zamu tasks list`,
+  and `zamu projects show` (repository, close on merge, webhook, hourly check, archive days). `zamu tasks
+  show` lists the work branch, the requests, the check-again day, the archive date and the merged-with-open
+  line. Archive, restore, check-again days and `zamu pr` writes queue offline. See
+  [docs/agents.md](docs/agents.md#pull-requests).
+- The dev seed links Reddevs' `PAY` to the made-up `github.com/northwind/payments` with requests in every
+  state, tasks linked each way, a task merged with open criteria, archived tasks and check-again days. WEB
+  has archiving off.
+
+### Changed
+
+- Home: Mine's groups are Needs your review, Merged with open criteria, Check again, Mentions, Blocked,
+  Overdue and Assigned to you; Everyone's gain Merged with open criteria after Needs review. The sidebar
+  count adds both new groups. `GET /home/counts` gains `mergedOpen` and `checkAgain`.
+- `GET /tasks`, lists, boards, Home and counts leave archived tasks out unless asked (`archived=include` or
+  `only`).
+- `zamu instructions` tells agents to start a task from its work branch, to name other tasks on a `Closes:`
+  line, to set a check-again day instead of leaving a waiting task In progress, and, when the project closes
+  on merge, to stop at In review and let the merge move the task to Done.
+- `zamu backlog export` writes archived tasks to `archive/tasks/` and prunes stale files there too; the
+  export's `removedPrefixes` include `archive/tasks/`.
+- A Backlog.md webhook answers `202` for a pull or merge request event and passes it on to the project's
+  repository.
+- New projects archive closed tasks after 14 days.
+
+### Upgrading
+
+Back up the database, then upgrade as usual. The migration adds the new tables and columns and fills
+`closed_at` for every Done and Canceled task from its history. Archiving stays off for every existing
+project; projects created afterwards start at 14 days. Tasks of active Backlog.md mirrors whose files are
+under `archive/tasks/` come back archived; imported projects keep those tasks as they were.
+
+Projects that already link a repository get their repository link on first use, with close on merge on and
+no connection unless the workspace has exactly one working connection for the host (or the project mirrors
+Backlog.md). The first hourly check links the requests it finds and moves nothing; merges after that move
+tasks to Done. Turn close on merge off in Settings > Repository where people close tasks by hand. GitHub
+connections need "Pull requests: Read-only" to read requests. Webhooks are optional; issuing their secret
+needs `APP_ENCRYPTION_KEY`.
+
 ## 0.10.0
 
 Several workspaces on one server. Every page lives under the workspace's slug, people switch between the

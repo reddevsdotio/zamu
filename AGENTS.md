@@ -23,7 +23,7 @@ self-hosting, and [docs/architecture.md](docs/architecture.md) explains how the 
 
 | Path                     | What lives there                                                                     |
 | ------------------------ | ------------------------------------------------------------------------------------ |
-| `apps/web`               | Web server: pages, `/api/v1`, `/api/auth`, webhooks, `/api/healthz`                  |
+| `apps/web`               | Web server: pages, `/api/v1`, `/api/auth`, git host webhooks, `/api/healthz`         |
 | `apps/worker`            | pg-boss worker that runs the background jobs                                         |
 | `apps/cli`               | The `zamu` CLI, bundled with tsdown; `scripts/` packages it for npm and Homebrew     |
 | `packages/core`          | Business rules: every service the API, server functions and jobs call                |
@@ -88,6 +88,19 @@ pnpm e2e                      # Playwright against a fresh Docker Compose stack
   criteria and done items are `task_item` rows, the plan and summary are columns on `task`, notes are
   `comment` rows of kind `note`, and `packages/core/src/criteria.ts` holds the operations and the rule that
   refuses an agent finishing a task with open items.
+- Pull requests come in one way. Webhook events (`/api/webhooks/repository/{id}`, and request events on a
+  mirror's Backlog.md webhook), the hourly check and links by hand all end in `applyRequest` in
+  `packages/core/src/pull-requests.ts`; `repository.ts` holds the project's repository link (connection,
+  webhook secret, check state, `moves_from`). A request moves tasks only through `setStatusFromSource` in
+  `tasks.ts`, which writes activity with no actor, origin `git`, the request URL and a `cause`. The jobs are
+  `repository.event`, `repository.sync`, `repository.poll` (hourly at :45) and `tasks.archive-due` (02:30 in
+  `APP_TIME_ZONE`), declared in `packages/core/src/jobs.ts`.
+- Git hosts are read-only. Adapters in `packages/git-providers` send only `GET`, and tokens never appear in
+  errors, logs or stored messages. Zamu never comments, commits, sets statuses or creates webhooks.
+- Archived tasks are read-only and out of sight. Every task write path, comments and notes included, calls
+  `assertTaskWritable` from `packages/core/src/archive.ts` (409 `TASK_ARCHIVED`). Lists, boards, Home, the
+  dashboard, counts and pickers leave out rows with `archived_at` set unless the caller asks for them;
+  milestone, cycle and subtask progress keep counting them.
 - Backlog.md has one owner at a time. A mirrored project reads its files and refuses writes to what they
   own; a project owned by Zamu (imported, or switched in its settings) can be written back out as a copy with
   `zamu backlog export`. The server never writes to a repository.

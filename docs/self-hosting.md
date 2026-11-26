@@ -70,19 +70,24 @@ or to a new one of the same length when none is planned. Both `web` and `worker`
 `APP_TIME_ZONE`, so with `APP_TIME_ZONE=Europe/Brussels` a cycle ending on Sunday closes within the hour
 after midnight Brussels time. The web app uses the same zone for days left and overdue milestones.
 
+The same zone sets the nightly archive, which runs at 02:30 there and counts a project's archive days in
+it, and the day a check-again date becomes "today".
+
 The zone is one setting for the whole server. A team spread over several zones sees cycles end at that
 zone's midnight. An invalid name stops both services at start: `docker compose logs web worker` names it.
 
 ## Git connections and Backlog.md
 
 Projects can mirror or import the tasks a repository keeps in a Backlog.md folder (see
-[backlog-md.md](backlog-md.md)). The server reads the files through the git host's API with an access token
-that an admin saves in Settings > Git connections. Four settings matter for that.
+[backlog-md.md](backlog-md.md)), and link the pull requests of their repository to tasks (see
+[repositories.md](repositories.md)). The server reads both through the git host's API, with an access token
+that an admin saves in Settings > Git connections, or without one for a public repository. Four settings
+matter for that.
 
 ### APP_ENCRYPTION_KEY
 
-The server encrypts the access tokens and the webhook secrets in the database with this key (AES-256-GCM). It
-is 32 random bytes, base64-encoded:
+The server encrypts the access tokens and the webhook secrets in the database with this key (AES-256-GCM),
+for Backlog.md mirrors and for repository webhooks alike. It is 32 random bytes, base64-encoded:
 
 ```sh
 openssl rand -base64 32
@@ -92,7 +97,8 @@ Put it in `.env` and run `docker compose up -d`. The web app and the worker both
 it to both.
 
 Without the key the server starts and works as before, but the Git connections page and the Backlog.md setup
-say that the key must be set, and nobody can add a connection. Mirrors that already exist pause at their next
+say that the key must be set, nobody can add a connection, and no repository webhook secret can be issued.
+Pull requests of public repositories still link through the hourly check. Mirrors that already exist pause at their next
 refresh. A key that is set but is not base64, or does not decode to 32 bytes, stops the web app and the worker
 at start; `docker compose logs web worker` says why.
 
@@ -105,7 +111,8 @@ lost or changed:
 - webhooks of existing mirrors stop working, because their secrets cannot be read. The webhook dialog in the
   project's Settings > Backlog.md says so; an owner or admin presses New secret there and pastes the new
   secret into the git host. The URL stays the same. Until then those mirrors still refresh every hour, on
-  Refresh now, and with `zamu backlog refresh`.
+  Refresh now, and with `zamu backlog refresh`. Repository webhooks fail their signature check the same way:
+  issue a new secret on the project's Settings > Repository page.
 
 There is no key rotation. Keep the same key for the life of the server.
 
@@ -160,15 +167,17 @@ connection fails with "Host unreachable" and a certificate error code, such as
 
 ### Webhooks
 
-A mirror refreshes within seconds of a push when the git host can deliver a webhook to
+A mirror refreshes within seconds of a push, and a pull request shows on its task within seconds of an
+event, when the git host can deliver a webhook to
 
 ```text
 {PUBLIC_URL}/api/webhooks/backlog/<id>
+{PUBLIC_URL}/api/webhooks/repository/<id>
 ```
 
-The URL is built from `PUBLIC_URL`, so set that to the address the git host can reach. Things to check:
+The URLs are built from `PUBLIC_URL`, so set that to the address the git host can reach. Things to check:
 - GitHub.com and GitLab.com need a public URL. Behind a firewall, allow `POST` to `/api/webhooks/backlog/`
-  from the host's webhook addresses.
+  and `/api/webhooks/repository/` from the host's webhook addresses.
 - A reverse proxy must pass the request body untouched. Push payloads are usually small, but a push with many
   commits can pass nginx's default 1 MB limit (`client_max_body_size`). The app accepts up to 25 MB.
 - A self-hosted GitLab refuses webhooks to private addresses unless an admin allows them (Admin > Settings >
@@ -178,7 +187,8 @@ The URL is built from `PUBLIC_URL`, so set that to the address the git host can 
 
 Without a working webhook, mirrors still read the default branch every hour, at 15 minutes past the hour
 (UTC), and on Refresh now. The webhook dialog in Settings > Backlog.md shows when the last notification
-arrived.
+arrived. Pull requests are checked every hour at 45 minutes past (UTC), and on Check now in Settings >
+Repository, which also shows how the last delivery went.
 
 ## Start
 
@@ -439,6 +449,15 @@ digits and single hyphens, starting with a letter, not a reserved word such as `
 that isn't is rewritten, and the old one is kept as an alias when it can be. Each person's workspace used
 last starts as their oldest one. Logins stored by `zamu` 0.9 are converted on the first command that
 reaches the server ([agents.md](agents.md#several-workspaces)).
+
+Upgrading from 0.10 adds pull requests, the archive and check-again days. The migration adds tables and
+columns, and fills `closed_at` for every Done or Canceled task from its history (else its last update).
+Archiving stays off for every existing project; projects created afterwards start with 14 days. Tasks of
+active Backlog.md mirrors whose file is under `archive/tasks/` come back archived; imported projects keep
+those tasks as they were. Projects with a repository get their repository link the first time it is needed,
+with close on merge on. The first hourly check after the upgrade links the requests it finds and moves no
+task; merges after that move tasks to Done. Turn close on merge off in Settings > Repository for projects
+where people close tasks by hand.
 
 The end-to-end suite checks these paths: it starts 0.1.1 and adds data, switches to 0.3.0 and adds more, to
 0.6.0 and sets up a Backlog.md mirror, then switches to the new image and checks the mirror's backfill.

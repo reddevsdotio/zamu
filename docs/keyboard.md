@@ -45,28 +45,31 @@ Outside a project, G then L, B, M and Y open the last project you visited.
 | V                 | Switch between list and board                                 |
 | Shift+← / Shift+→ | On the board: move the card to the previous or next column    |
 | Shift+J / Shift+K | On the board: move the card down or up (Order by Manual only) |
-| ⌘Z                | Undo the last change, from its toast                          |
+| ⌘Z                | Undo the last change, from its toast, archiving included      |
 | Shift+R           | Refresh now, in a project that mirrors Backlog.md             |
 
 ## A selected or open task
 
 With several tasks selected, these keys act on all of them, in native projects only.
 
-| Key     | Action                        |
-| ------- | ----------------------------- |
-| S       | Status                        |
-| P       | Priority                      |
-| A       | Assignee                      |
-| I       | Assign to me                  |
-| L       | Labels                        |
-| Shift+D | Due date                      |
-| Shift+M | Milestone                     |
-| Shift+C | Cycle                         |
-| Shift+B | Add a blocker                 |
-| Shift+S | Add a subtask (one task only) |
-| M       | Comment                       |
-| ⌘C      | Copy the task key (or keys)   |
-| ⌘⇧C     | Copy the link                 |
+| Key     | Action                                                        |
+| ------- | ------------------------------------------------------------- |
+| S       | Status                                                        |
+| P       | Priority                                                      |
+| A       | Assignee                                                      |
+| I       | Assign to me                                                  |
+| L       | Labels                                                        |
+| Shift+D | Due date                                                      |
+| Shift+M | Milestone                                                     |
+| Shift+C | Cycle                                                         |
+| Shift+B | Add a blocker                                                 |
+| Shift+S | Add a subtask (one task only)                                 |
+| Shift+P | Link a pull request (one task, in the task view and the peek) |
+| Shift+E | Archive, or restore an archived task                          |
+| Shift+W | Set the check-again day                                       |
+| M       | Comment                                                       |
+| ⌘C      | Copy the task key (or keys)                                   |
+| ⌘⇧C     | Copy the link                                                 |
 
 ⌘C copies the key only when no text is highlighted. With text highlighted, it copies the text as usual.
 
@@ -112,17 +115,19 @@ The dialog that opens when you move a task to In review or Done while criteria o
 
 ## Pickers and menus
 
-| Key                            | Action                                                            |
-| ------------------------------ | ----------------------------------------------------------------- |
-| Type                           | Filter the list                                                   |
-| ↑ / ↓                          | Move                                                              |
-| Enter                          | Pick. In pickers with several choices, such as labels, it toggles |
-| 1 to 6 in the status picker    | Backlog, Todo, In progress, In review, Done, Canceled             |
-| 0 to 4 in the priority picker  | None, Urgent, High, Medium, Low                                   |
-| ⌘Enter in the subtask picker   | Create a subtask from the typed text                              |
-| ← / → in the due-date calendar | Previous or next day (↑ / ↓ move a week)                          |
-| Tab in the label picker        | Move to the colour swatches when creating a label                 |
-| Backspace in an empty palette  | Back out of a palette step, such as Set status                    |
+| Key                             | Action                                                            |
+| ------------------------------- | ----------------------------------------------------------------- |
+| Type                            | Filter the list                                                   |
+| ↑ / ↓                           | Move                                                              |
+| Enter                           | Pick. In pickers with several choices, such as labels, it toggles |
+| 1 to 6 in the status picker     | Backlog, Todo, In progress, In review, Done, Canceled             |
+| 0 to 4 in the priority picker   | None, Urgent, High, Medium, Low                                   |
+| ⌘Enter in the subtask picker    | Create a subtask from the typed text                              |
+| ← / → in the due-date calendar  | Previous or next day (↑ / ↓ move a week)                          |
+| Enter in the check-again reason | Set the day and the reason                                        |
+| Enter in the pull request field | Link the request                                                  |
+| Tab in the label picker         | Move to the colour swatches when creating a label                 |
+| Backspace in an empty palette   | Back out of a palette step, such as Set status                    |
 
 ## Dialogs and the comment box
 
@@ -133,6 +138,15 @@ The dialog that opens when you move a task to In review or Done while criteria o
 | @      | Mention someone in a comment                    |
 
 In quick create (C), I assigns the task to you, Shift+M opens the milestone and Shift+C the cycle.
+
+## Changed since 0.10.0
+
+- Shift+P links a pull request in the task view and the peek: paste its address, then Enter.
+- Shift+E archives the selected tasks or the open task, from lists, boards and the task view. On an
+  archived task it restores it. ⌘Z undoes the archive while its toast shows.
+- Shift+W sets the check-again day of the selected or open task: a day, then the reason.
+- Each key sits next to the one it resembles: Shift+P next to P (priority), Shift+E next to E (edit the
+  title), Shift+W next to W (waive, inside the criteria list only).
 
 ## Changed in 0.10.0
 

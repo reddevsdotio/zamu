@@ -16,8 +16,9 @@ What works today:
 - Several workspaces on one server, each with its own projects, members, agents and keys, and its pages
   under `/w/<slug>/`. People switch between the ones they belong to; agents and keys belong to one, and the
   CLI keeps a login per workspace.
-- Home, the page you land on: tasks in review, unanswered mentions, blocked and overdue work and your other
-  tasks, grouped by why they need you, across every project. Tabs for you, the whole workspace and the
+- Home, the page you land on: tasks in review, tasks merged with open criteria, tasks whose check-again day
+  has come, unanswered mentions, blocked and overdue work and your other tasks, grouped by why they need
+  you, across every project. Tabs for you, the whole workspace and the
   agents, and a strip of close deadlines.
 - A collapsible sidebar with your projects, and a command palette (⌘K) for pages, projects, tasks and
   actions.
@@ -34,6 +35,14 @@ What works today:
 - A work record on every task: acceptance criteria, a definition of done, a plan, work notes and a final
   summary. Agents fill it in through the CLI and can't finish a task while an item is open; people check or
   waive items in the task view. Each project sets the done items new tasks start with.
+- Pull requests: a project links its repository on GitHub, GitLab or Gitea/Forgejo, and requests link to
+  tasks by the agent's work branch, a `Closes: PAY-142` line or by hand. Opening a request moves its tasks
+  to In review and merging it moves them to Done, through a webhook or an hourly check. Zamu only reads the
+  repository: it never comments, commits or sets statuses.
+- Archive: Done and Canceled tasks leave lists, boards and counts a set number of days after they closed, or
+  by hand with Undo. Archived tasks stay searchable and read-only until restored.
+- Check-again days: a day and a reason on a task that waits, shown as a chip, dimmed until the day, then on
+  Home.
 - Backlog.md: a project can mirror the task files a repository keeps in `backlog/`, following the default
   branch on every push, or import them once and move off Backlog.md. Labels, due dates, dependencies and
   parents come in as native fields. It reads through a workspace git connection to GitHub, GitLab or
@@ -81,15 +90,19 @@ brew install reddevsdotio/tap/zamu
 ## Docs
 
 - [Using the app](docs/guide.md): workspaces, the sidebar, Home, the list and the board, the task view and
-  its work record, the palette, labels, due dates, blockers and subtasks, and Task defaults.
-- [Keyboard shortcuts](docs/keyboard.md): every key, and what changed in 0.7.0, 0.9.0 and 0.10.0.
+  its work record, pull requests, the archive, check-again days, the palette, labels, due dates, blockers
+  and subtasks, and Task defaults.
+- [Keyboard shortcuts](docs/keyboard.md): every key, and what changed in 0.7.0, 0.9.0, 0.10.0 and since.
 - [Self-hosting](docs/self-hosting.md): configuration, first run, ports, backups and upgrades.
 - [Agents](docs/agents.md): adding agents, scoping keys, installing and running `zamu`, logins for several
   workspaces, the work record, the offline queue, `--json` output.
+- [Repositories](docs/repositories.md): linking a repository, tokens, webhooks per host, the hourly check,
+  and how pull requests link and move tasks.
 - [Backlog.md](docs/backlog-md.md): git connections, mirrors and imports, mappings, webhooks, the switch to
   Zamu and the export.
 - [CLI reference](apps/cli/README.md): every `zamu` command and option.
-- [REST API](docs/api.md): authentication, workspaces, errors, and the task, label and Home routes.
+- [REST API](docs/api.md): authentication, workspaces, errors, and the task, repository, label and Home
+  routes.
 
 ## Development
 
@@ -108,7 +121,11 @@ On a new database the seed creates the admin `ana@example.com` (password `dev-pa
 workspaces, Reddevs and Globex. Both have a project `PAY` and their own agent `claude-dev`. It prints
 `export` lines: `ZAMU_API_KEY` and `ZAMU_ADMIN_API_KEY` for Reddevs, `ZAMU_SECOND_API_KEY` and
 `ZAMU_SECOND_ADMIN_API_KEY` for Globex. Run it again at any time for new keys; it keeps what exists.
-`SEED_SECOND_WORKSPACE=0` leaves Globex out.
+`SEED_SECOND_WORKSPACE=0` leaves Globex out. Reddevs' `PAY` links the made-up repository
+`github.com/northwind/payments` and has pull requests in every state, tasks linked by branch, by a
+`Closes:` line and by hand, a task merged with open criteria, archived tasks and check-again days; its
+hourly check then fails, as that repository doesn't exist. `SEED_PLANNING=0` leaves out this demo data and
+the planning and Home data before it.
 
 Checks:
 
@@ -142,6 +159,19 @@ and the git settings the Backlog.md specs need (`e2e/stack.ts`).
 - `bulk.spec.ts`: selecting tasks with X, Shift+↓ and ⌘A, and changing them from the action bar and the keys.
 - `project-delete.spec.ts`: deleting a project from its settings and with `zamu projects delete`, including the
   refused cases and the keys that covered it.
+- `archive.spec.ts`: Settings > Archive with its preview, the nightly `tasks.archive-due` job run right away
+  with the clock it is given (`e2e/jobs.ts`), archiving three tasks from the action bar and Undo, the Archived
+  filter, archived results last in the palette, a read-only archived task and Restore.
+- `check-again.spec.ts`: a check-again day and its required reason from the task view, the waiting chip and
+  dimmed card, Display options' "Waiting tasks: Hidden" with the column footer, a day that has come on the
+  board and in Home's Check again group, and `zamu tasks update --check-again`, `--no-check-again`,
+  `tasks list --waiting` and `--ready-to-check`.
+- `pull-requests.spec.ts`: starts its own Forgejo container from `docker/forgejo/`, attaches it to the stack's
+  network and adds the webhook through Forgejo's API. It covers the Repository page, the work branch from
+  `zamu`, a draft request linking by branch and by a `Closes:` line, In review when it is ready and Done on
+  the merge, the merged-with-open-criteria flag and Home group, a link by hand with its preview and the
+  other-repository refusal, closing on merge off, a request closed without merging, a bad signature on the
+  status line and Check now catching up with the webhook off.
 - `upgrade.spec.ts`: starts a second stack (`zamu-e2e-upgrade`, port 3101) on release 0.1.1 and adds data,
   switches it to M2.1 (0.3.0) and adds more, then to 0.6.0, where it mirrors a Backlog.md repository from its
   own Forgejo container and creates an agent key, then to the new image. It checks that every task key and
@@ -151,12 +181,15 @@ and the git settings the Backlog.md specs need (`e2e/stack.ts`).
   image's migration moves a mirrored task's criteria, done items, plan, notes and summary out of its
   description into the work record, again with no history lines. After that it moves to 0.9.0 when that
   release exists, and the new image keeps the workspace's slug, fills each person's last-used workspace and
-  redirects an old task link to `/w/<slug>/p/...`. The older images come from `E2E_M1_IMAGE`,
-  `E2E_M2_1_IMAGE`, `E2E_0_6_IMAGE`, `E2E_0_8_IMAGE` and `E2E_0_9_IMAGE` (pulled when missing), or are built
-  once from git as `zamu:m1-0.1.1`, `zamu:m2.1-<ref>`, `zamu:release-0.6.0` and `zamu:release-<ref>`, which
-  takes a few minutes each the first time. The 0.8.0 and 0.9.0 steps build from the tags `0.8.0` and
-  `0.9.0`, or from the refs in `E2E_0_8_REF` and `E2E_0_9_REF` (for example `0.8.0-rc.1`); with neither the
-  tag nor one of the two variables, a step is skipped with a message.
+  redirects an old task link to `/w/<slug>/p/...`. Then it moves to 0.10.0 when that release exists and
+  finishes a task there, and the new image leaves archiving off on every existing project (a new one gets 14
+  days), fills in when each finished task was finished, and opens the Repository page of a project that had
+  a repository. The older images come from `E2E_M1_IMAGE`, `E2E_M2_1_IMAGE`, `E2E_0_6_IMAGE`,
+  `E2E_0_8_IMAGE`, `E2E_0_9_IMAGE` and `E2E_0_10_IMAGE` (pulled when missing), or are built once from git as
+  `zamu:m1-0.1.1`, `zamu:m2.1-<ref>`, `zamu:release-0.6.0` and `zamu:release-<ref>`, which takes a few
+  minutes each the first time. The 0.8.0, 0.9.0 and 0.10.0 steps build from the tags `0.8.0`, `0.9.0` and
+  `0.10.0`, or from the refs in `E2E_0_8_REF`, `E2E_0_9_REF` and `E2E_0_10_REF` (for example
+  `0.8.0-rc.1`); with neither the tag nor one of the variables, a step is skipped with a message.
 - `workspaces.spec.ts`: a second workspace with the same project key, created from the switcher; switching
   with the switcher and the palette, two tabs on two workspaces, an invitation that opens its workspace,
   leaving, the no-workspace page, changing the address with old links still working, deleting, the CLI
