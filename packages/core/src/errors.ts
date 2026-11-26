@@ -1,7 +1,7 @@
 // Typed errors thrown by core services. Adapters map them to Problem responses by `code`
-// (NotFound 404, Forbidden 403, Conflict 409, TaskChanged 409, Invalid 422); see PROBLEM_STATUS in
-// @zamu/contracts.
-import type { MirroredProblemExtensions, ProblemCode, ProblemIssue, Task } from '@zamu/contracts';
+// (NotFound 404, Forbidden 403, Conflict 409, TaskChanged 409, Invalid 422, and the workspace codes
+// of 0.10); see PROBLEM_STATUS in @zamu/contracts.
+import type { MirroredProblemExtensions, ProblemCode, ProblemIssue, Task, UserRef } from '@zamu/contracts';
 import { toProblemIssues } from '@zamu/contracts';
 import { ZodError } from 'zod';
 
@@ -18,6 +18,10 @@ export type CoreErrorCode = Extract<
   | 'PROJECT_NOT_EMPTY'
   | 'BACKLOG_PAUSED'
   | 'BACKLOG_DETACHED'
+  | 'WORKSPACE_CREATION_OFF'
+  | 'SLUG_TAKEN'
+  | 'SLUG_RESERVED'
+  | 'LAST_OWNER'
 >;
 
 export abstract class CoreError extends Error {
@@ -111,6 +115,42 @@ export class BacklogPaused extends CoreError {
 /** A mirror action on a source that was detached. */
 export class BacklogDetached extends CoreError {
   readonly code = 'BACKLOG_DETACHED' as const;
+}
+
+// 0.10: workspaces. These reach the web app's workspace server functions, not /api/v1.
+
+/** The creation policy (WORKSPACE_CREATION=owners) does not let this person create a workspace (403). */
+export class WorkspaceCreationOff extends CoreError {
+  readonly code = 'WORKSPACE_CREATION_OFF' as const;
+}
+
+/** A slug another workspace uses, or holds as an old slug within the reuse window (409). */
+export class SlugTaken extends CoreError {
+  readonly code = 'SLUG_TAKEN' as const;
+}
+
+/** A slug from WORKSPACE_SLUG_RESERVED (400). */
+export class SlugReserved extends CoreError {
+  readonly code = 'SLUG_RESERVED' as const;
+}
+
+/** Leaving, removing or demoting the last owner of a workspace (409). */
+export class LastOwner extends CoreError {
+  readonly code = 'LAST_OWNER' as const;
+}
+
+/**
+ * A person who is the responsible human of agents in the workspace leaving it or being removed
+ * (409 CONFLICT). `agents` lists them, and each one is also an issue on path `agents` with the
+ * agent's name as its message, so clients that only read issues can list them too.
+ */
+export class ResponsibleForAgents extends Conflict {
+  readonly agents: UserRef[];
+
+  constructor(message: string, agents: UserRef[]) {
+    super(message, { issues: agents.map((agent) => ({ path: 'agents', message: agent.name })) });
+    this.agents = agents;
+  }
 }
 
 /** The mirrored-problem extensions of an error, or undefined for other errors. */

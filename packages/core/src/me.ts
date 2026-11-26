@@ -1,7 +1,8 @@
 // The caller: user, workspace, role and how far their credentials reach; their preferences.
+// The workspace is the one the request resolved to, named by its current slug.
 import { Me, UpdateMeInput } from '@zamu/contracts';
 import { schema } from '@zamu/db';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
 import { type Actor, authorize, isSession } from './authz';
 import type { DbContext } from './context';
@@ -30,7 +31,9 @@ export async function getMe({ db }: DbContext, actor: Actor): Promise<Me> {
         ? await db
             .select({ id: schema.project.id, key: schema.project.key, name: schema.project.name })
             .from(schema.project)
-            .where(inArray(schema.project.id, projects))
+            .where(
+              and(eq(schema.project.workspaceId, actor.workspaceId), inArray(schema.project.id, projects)),
+            )
         : [];
       scope = { projects: rows.filter((row) => projects.includes(row.id)), access };
     }
