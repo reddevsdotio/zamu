@@ -3,7 +3,8 @@ import { getServerContext } from '../../../../server/context';
 import { handleBacklogWebhook, webhookMethodNotAllowed } from '../../../../server/webhooks';
 
 // Push webhooks for Backlog.md mirrors, one URL per source. Not part of /api/v1: git hosts post here
-// and get bare status codes (202, 204, 404, 410). See server/webhooks.ts.
+// and get bare status codes (202, 204, 404, 410). M7: request events on this URL reach the
+// project's repository link through core, so a mirror needs no second webhook. See server/webhooks.ts.
 
 export const Route = createFileRoute('/api/webhooks/backlog/$webhookId')({
   server: {

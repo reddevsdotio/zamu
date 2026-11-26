@@ -1,11 +1,15 @@
-// POST /api/webhooks/backlog/{webhookId}: push notifications from GitHub, GitLab and Gitea/Forgejo.
-// Framework-free so tests call it directly; routes/api/webhooks/backlog/$webhookId.ts mounts it.
-// The raw body is read once (signatures are computed over its exact bytes) and handed to core's
-// acceptBacklogWebhook, which verifies it, records the delivery and enqueues a refresh. Not oRPC:
-// the senders are git hosts, not API clients, and they get bare status codes.
-import { acceptBacklogWebhook, type WebhookContext } from '@zamu/core';
+// Webhooks from GitHub, GitLab and Gitea/Forgejo. Framework-free so tests call them directly; the
+// routes under routes/api/webhooks/ mount them. Not oRPC: the senders are git hosts, not API clients,
+// and they get bare status codes. The raw body is read once (signatures are computed over its exact
+// bytes) and handed to core, which verifies it, records the delivery and enqueues the job.
+//
+//   POST /api/webhooks/backlog/{webhookId}      Backlog.md mirrors: pushes enqueue a refresh; M7:
+//                                               request events go on to the project's repository link
+//   POST /api/webhooks/repository/{webhookId}   M7: pull and merge request events of a project's
+//                                               repository, enqueued as repository.event
+import { acceptBacklogWebhook, receiveRepositoryWebhook, type WebhookContext } from '@zamu/core';
 
-/** Larger push payloads are refused before reading. GitHub caps deliveries at 25 MB. */
+/** Larger payloads are refused before reading. GitHub caps deliveries at 25 MB. */
 export const MAX_WEBHOOK_BODY_BYTES = 25 * 1024 * 1024;
 
 function empty(status: number): Response {
@@ -45,8 +49,10 @@ async function readBody(request: Request, limit: number): Promise<Uint8Array | n
 }
 
 /**
- * 202 refresh queued (or one already waiting), 204 accepted but nothing to do (other branch, not a
- * push), 404 unknown id or bad signature (no detail), 410 detached, 413 body too large.
+ * 202 refresh queued (or one already waiting), or M7 a request event queued for the project's
+ * repository link; 204 accepted but nothing to do (other branch, not a push, a request event for a
+ * project without a repository); 404 unknown id or bad signature (no detail); 410 detached; 413
+ * body too large.
  */
 export async function handleBacklogWebhook(
   ctx: WebhookContext,
@@ -62,6 +68,32 @@ export async function handleBacklogWebhook(
   } catch (error) {
     // Database or queue failures: the git host retries or shows the failed delivery.
     console.error('webhooks: delivery failed:', error instanceof Error ? error.message : error);
+    return empty(500);
+  }
+}
+
+/**
+ * 202 event queued, 200 accepted with nothing to do (a ping, another event), 401 unsigned or badly
+ * signed (recorded on the link, so the Repository page says the last event failed its signature
+ * check), 404 unknown id, 410 the project no longer has a repository, 413 body too large.
+ */
+export async function handleRepositoryWebhook(
+  ctx: WebhookContext,
+  request: Request,
+  webhookId: string,
+  options: { maxBodyBytes?: number } = {},
+): Promise<Response> {
+  const body = await readBody(request, options.maxBodyBytes ?? MAX_WEBHOOK_BODY_BYTES);
+  if (!body) return empty(413);
+  try {
+    const decision = await receiveRepositoryWebhook(ctx, {
+      webhookId,
+      headers: request.headers,
+      rawBody: body,
+    });
+    return empty(decision.status);
+  } catch (error) {
+    console.error('webhooks: repository delivery failed:', error instanceof Error ? error.message : error);
     return empty(500);
   }
 }
