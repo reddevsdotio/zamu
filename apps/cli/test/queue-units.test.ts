@@ -11,11 +11,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   createApiClient,
   isNetworkFailure,
+  LONG_REQUEST_TIMEOUT_MS,
   NoAnswerError,
+  networkFailure,
   REQUEST_TIMEOUT_MS,
+  requestTimeout,
   USER_AGENT,
   withTimeout,
 } from '../src/client';
+import { slowExport } from '../src/commands/backlog-export';
+import { CliError } from '../src/errors';
 import type { CliIo, FetchLike } from '../src/io';
 import { main } from '../src/main';
 import { QueueLockedError, queueability, queuePath, stateDir, summarize, withLock } from '../src/queue';
@@ -69,6 +74,59 @@ describe('client.ts', () => {
 
   it('gives each request 5 seconds', () => {
     expect(REQUEST_TIMEOUT_MS).toBe(5_000);
+  });
+
+  it('gives the Backlog.md export 2 minutes and every other request, queueable writes included, 5 seconds (PM-32)', () => {
+    expect(LONG_REQUEST_TIMEOUT_MS).toBe(120_000);
+    expect(requestTimeout(new Request(`${URL}/api/v1/projects/PAY/backlog/export`))).toBe(120_000);
+    expect(requestTimeout(new Request(`${URL}/api/v1/projects/PAY/backlog/export?dryRun=true`))).toBe(
+      120_000,
+    );
+    expect(requestTimeout(new Request(`${URL}/api/v1/tasks`))).toBe(5_000);
+    expect(requestTimeout(new Request(`${URL}/api/v1/projects/PAY/backlog`))).toBe(5_000);
+    expect(requestTimeout(new Request(`${URL}/api/v1/tasks/PAY-1`, { method: 'PATCH', body: '{}' }))).toBe(
+      5_000,
+    );
+    expect(
+      requestTimeout(new Request(`${URL}/api/v1/tasks/PAY-1/comments`, { method: 'POST', body: '{}' })),
+    ).toBe(5_000);
+  });
+
+  it('says whether the server had started to answer when the limit ran out', async () => {
+    const timed = withTimeout(async () => {
+      const body = new ReadableStream({ start: () => {} });
+      return new Response(body, { status: 200 });
+    }, 50);
+    const error = await timed(new Request(URL)).catch((caught: unknown) => caught);
+    const cause = (error as Error).cause as NoAnswerError;
+    expect(cause).toBeInstanceOf(NoAnswerError);
+    expect(cause.started).toBe(true);
+    expect(cause.message).toBe('answer not finished within 50 ms');
+  });
+
+  it('reports a slow export as a server still working, not an unreachable one (PM-32)', () => {
+    const silent = networkFailure(new NoAnswerError(120_000));
+    const thrown = (() => {
+      try {
+        slowExport(silent);
+      } catch (caught) {
+        return caught;
+      }
+    })() as CliError;
+    expect(thrown).toBeInstanceOf(CliError);
+    expect(thrown.exitCode).toBe(5);
+    expect(thrown.message).toContain('did not send the export within 2 minutes');
+    expect(thrown.message).toContain('may still be working');
+    expect(thrown.message).not.toMatch(/didn't answer|Could not reach/);
+
+    const partial = networkFailure(new NoAnswerError(120_000, true));
+    expect(() => slowExport(partial)).toThrow(
+      /started sending the export but did not finish within 2 minutes/,
+    );
+
+    // A refused connection is still a network failure for the usual message.
+    const refusedError = new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED') });
+    expect(() => slowExport(refusedError)).toThrow(refusedError);
   });
 
   it('fails a request without an answer in time as a network failure and aborts it', async () => {
