@@ -1,31 +1,75 @@
 # REST API
 
-The web app, the `zamu` CLI and your scripts use the same REST API at `/api/v1`. The server publishes the full
-OpenAPI document at `GET /api/v1/openapi.json`; this page is an overview, with what each release since 0.7.0
-added.
+This page is for people who call Zamu from a script or their own client. The web app and the `zamu` CLI use
+the same REST API, at `/api/v1`.
 
-## Requests
+The page covers authentication, workspaces, errors and the main routes with their fields. For every route
+and schema, read the OpenAPI document the server publishes at `GET /api/v1/openapi.json`.
 
-Send an API key as a bearer token. People create keys in Settings > My keys, and agents get theirs from an
-admin (see [agents.md](agents.md)):
+Where the page names a version, such as (0.7.0), that release added the route or field. Check it when your
+server is older.
+
+## Your first request
+
+You need the server's address and an API key. This request asks who the key belongs to:
 
 ```sh
-curl -H "Authorization: Bearer $ZAMU_KEY" https://projects.example.com/api/v1/tasks?project=PAY
+curl -H "Authorization: Bearer $ZAMU_KEY" https://projects.example.com/api/v1/me
 ```
 
-A key only reaches the projects in its scope, and a read-only key cannot write. The web app signs its
-requests with the session cookie instead.
+The answer names the user, the workspace the key acts in, the role there and the key's scope:
+
+```json
+{
+  "user": {
+    "id": "0197a3f0-6c1e-7d42-9b5a-2f4c8e1d7a10",
+    "name": "claude-dev",
+    "email": null,
+    "kind": "agent",
+    "responsible": { "id": "0197a3ee-91b4-7c08-8a3d-5e6f7a8b9c0d", "name": "Ana Ruiz", "kind": "person" },
+    "theme": "system"
+  },
+  "workspace": { "id": "0197a3ee-8f02-7e11-b6c4-1a2b3c4d5e6f", "name": "Acme", "slug": "acme" },
+  "role": "member",
+  "auth": { "method": "api_key", "scope": { "projects": "all", "access": "write" } }
+}
+```
+
+The same key lists the tasks of the project `PAY`:
+
+```sh
+curl -H "Authorization: Bearer $ZAMU_KEY" "https://projects.example.com/api/v1/tasks?project=PAY"
+```
+
+## Authentication
+
+Send an API key as a bearer token, as in the requests above. People create keys in Settings > Your API keys.
+Agents get theirs from an admin, as [agents.md](agents.md) describes.
+- A key only reaches the projects in its scope.
+- A read-only key cannot write.
+- The web app signs its requests with the session cookie instead of a key.
+
+## Request format
+
+The paths on this page leave out the `/api/v1` prefix.
+- Bodies are JSON.
+- A query parameter that takes several values repeats its name: `?status=todo&status=in_progress`.
+- Task keys and project keys ignore case.
+- A task key also accepts the task's Backlog.md ID.
+
+### Where a request comes from
 
 Two optional headers say where a request comes from: `x-zamu-machine` (a machine name) and `x-zamu-branch`
-(a git branch). `zamu` sends both. The server trims them, keeps up to 100 characters, ignores values with
-control characters, and stores them on the history entries and notes the request writes, which return them
-as `source: { machine, branch }`.
+(a git branch). `zamu` sends both.
 
-Bodies are JSON. Query parameters that take several values repeat the name:
-`?status=todo&status=in_progress`. Task keys and project keys ignore case, and a task key also accepts the
-task's Backlog.md ID.
+The server stores them on the history entries and notes the request writes. Those entries return them as
+`source: { machine, branch }`.
 
-Errors are RFC 9457 problems with a stable `code`:
+The server trims each value and keeps up to 100 characters. It ignores a value with control characters.
+
+## Errors
+
+An error answer is an RFC 9457 problem, a JSON body with a stable `code` your script can test:
 
 ```json
 {
@@ -39,24 +83,35 @@ Errors are RFC 9457 problems with a stable `code`:
 }
 ```
 
-Quote `requestId` when you report a problem.
+Quote `requestId` when you report a problem. The sections below list the codes their routes return.
 
 ## Workspaces
 
-A server can hold several workspaces, and every request acts in one of them. Project and task keys are
-unique within a workspace only: two workspaces can each have a project `PAY` and a task `PAY-1`.
+A **workspace** has its own projects, members, agents and keys. A server can hold several workspaces, and
+every request acts in one of them.
 
-The optional header `x-zamu-workspace: <slug>` names the workspace (0.10.0). A slug the workspace used
-before still works, so a script keeps running after a rename.
-- An API key always acts in the workspace it was created in. The header may name that workspace; naming
-  another one is refused with `403 WORKSPACE_MISMATCH`, never a switch. `zamu` sends the header with every
-  request, so a key used for the wrong login fails loudly.
-- A session (the web app) acts in the workspace the header names. Without the header it acts in the
-  workspace the person used last, else in their oldest one. A person who is not a member of the named
-  workspace, or of any workspace, gets `403 NOT_A_MEMBER`. An unknown slug gets the same answer.
+Project and task keys are unique within a workspace only. Two workspaces can each have a project `PAY` and a
+task `PAY-1`.
 
-`GET /me` returns the workspace as `{ id, name, slug }`. There are no routes to create, rename or delete
-workspaces; that happens in the web app.
+To name the workspace, send the optional header `x-zamu-workspace: <slug>` (0.10.0). A slug the workspace
+used before still works, so a script keeps running after a rename.
+
+What the header does depends on how the request signs in.
+
+With an API key:
+- The key always acts in the workspace it was created in.
+- The header may name that workspace. A header that names another one gets `403 WORKSPACE_MISMATCH`. The
+  server never switches workspace for a key.
+- `zamu` sends the header with every request, so a key used for the wrong login fails loudly.
+
+With a session (the web app):
+- The session acts in the workspace the header names.
+- Without the header it acts in the workspace the person used last, else in their oldest one.
+- A person who is not a member of the named workspace, or of any workspace, gets `403 NOT_A_MEMBER`. An
+  unknown slug gets the same answer.
+
+`GET /me` returns the workspace as `{ id, name, slug }`. The API has no routes to create, rename or delete
+workspaces. You do that in the web app.
 
 | Code                 | Status | When                                                                      |
 | -------------------- | ------ | ------------------------------------------------------------------------- |
@@ -78,54 +133,92 @@ workspaces; that happens in the web app.
 | `POST /tasks/archive`       | Archive up to 100 tasks, all or nothing.                          |
 | `POST /tasks/restore`       | Restore up to 100 archived tasks, all or nothing.                 |
 
-### Fields added in 0.7.0
+Several refusals below mention a mirror. A **mirrored** project reads its tasks from the
+[Backlog.md](backlog-md.md) files in a repository, and Zamu refuses writes to the fields those files own.
 
-A task now has:
-- `labels`: `[{ id, name, color, source }]`. `color` is 1 to 9; `source` is `app`, or `backlog` for labels
-  read from Backlog.md files.
-- `dueDate`: `YYYY-MM-DD` or null.
-- `parent`: `{ key, title, status, assignee }` or null; `subtasks`, and `subtaskProgress: { done, total }`
-  with canceled subtasks left out.
-- `blockedBy` and `blocks`: tasks of the same project. An entry is `null` when that task is hidden or you
-  can't read it (the app shows "Removed task").
-- `blocked`: true while any blocker is open.
+### Labels, due dates, subtasks and blockers
+
+Added in 0.7.0. A **blocker** is a task that another task waits on.
+
+A task has these fields:
+
+| Field                 | Value                                                                                                                      |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `labels`              | `[{ id, name, color, source }]`. `color` is 1 to 9. `source` is `app`, or `backlog` for labels read from Backlog.md files. |
+| `dueDate`             | `YYYY-MM-DD` or null.                                                                                                      |
+| `parent`              | `{ key, title, status, assignee }` or null.                                                                                |
+| `subtasks`            | The task's subtasks.                                                                                                       |
+| `subtaskProgress`     | `{ done, total }`, with canceled subtasks left out.                                                                        |
+| `blockedBy`, `blocks` | Tasks of the same project. An entry is `null` when that task is hidden or you can't read it. The app shows "Removed task". |
+| `blocked`             | True while any blocker is open.                                                                                            |
 
 List rows (`GET /tasks`) carry `labels`, `dueDate`, `blocked`, `subtaskProgress` and `parentKey`.
 
-`POST /tasks` takes `labels` (names; the project creates the ones it doesn't have), `dueDate`, `parent` (a
-task key; the new subtask takes the parent's assignee unless you send one) and `blockedBy` (task keys).
+`POST /tasks` takes:
+
+| Field       | Value                                                                        |
+| ----------- | ---------------------------------------------------------------------------- |
+| `labels`    | Label names. The project creates the ones it doesn't have.                   |
+| `dueDate`   | The due date.                                                                |
+| `parent`    | A task key. The new subtask takes the parent's assignee unless you send one. |
+| `blockedBy` | Task keys.                                                                   |
 
 `PATCH /tasks/{key}` takes:
-- `labels` to replace every label, or `addLabels` and `removeLabels` to change some, by name;
-- `dueDate`, null to clear it;
-- `parent`, null to make the task top level again;
-- `addBlockers` and `removeBlockers`, task keys.
 
-The rules:
+| Field                           | Value                                              |
+| ------------------------------- | -------------------------------------------------- |
+| `labels`                        | Label names. They replace every label on the task. |
+| `addLabels`, `removeLabels`     | Label names. They change some labels.              |
+| `dueDate`                       | The due date. Null clears it.                      |
+| `parent`                        | A task key. Null makes the task top level again.   |
+| `addBlockers`, `removeBlockers` | Task keys.                                         |
 
-| Code               | Status | When                                                                                                              |
-| ------------------ | ------ | ----------------------------------------------------------------------------------------------------------------- |
-| `DEPENDENCY_LOOP`  | 409    | A blocker would close a loop. `loop` names the two tasks.                                                         |
-| `SUBTASK_DEPTH`    | 409    | The parent is a subtask, or the task already has subtasks: one level only.                                        |
-| `NOT_SAME_PROJECT` | 422    | A parent or blocker from another project.                                                                         |
-| `TASK_MIRRORED`    | 409    | The field comes from Backlog.md. `field` names it: `labels`, `dueDate`, `blockedBy`, `parent`, and the M3 fields. |
+The server refuses these changes:
 
-### The work record (0.9.0)
+| Code               | Status | When                                                                       |
+| ------------------ | ------ | -------------------------------------------------------------------------- |
+| `DEPENDENCY_LOOP`  | 409    | A blocker would close a loop. `loop` names the two tasks.                  |
+| `SUBTASK_DEPTH`    | 409    | The parent is a subtask, or the task already has subtasks: one level only. |
+| `NOT_SAME_PROJECT` | 422    | A parent or blocker from another project.                                  |
+| `TASK_MIRRORED`    | 409    | The field comes from Backlog.md. `field` names it.                         |
 
-A task now has:
-- `criteria` and `doneItems`: `[{ number, text, state, waivedReason, waivedBy, locked }]`. `number` counts
-  from 1 in list order. `state` is `open`, `checked` or `waived`; a waived item has its `waivedReason` and
-  `waivedBy` (null when the waiver came from a Backlog.md file). `locked` is true on tasks mirrored from
-  Backlog.md.
-- `plan` and `finalSummary`: Markdown or null. `planMeta` and `finalSummaryMeta` are
-  `{ author, onBehalfOf, origin, at }`: who last wrote it and when, from the history.
+For `TASK_MIRRORED`, `field` is `labels`, `dueDate`, `blockedBy` or `parent`. It can also be one of the
+fields a mirror owned before 0.7.0: `title`, `description`, `status`, `priority`, `assignee` or `milestone`.
 
-List rows carry `criteriaProgress` and `doneProgress`, each `{ settled, open, waived, total }` (settled counts
-checked and waived items), and `hasFinalSummary`.
+### The work record
 
-`POST /tasks` takes `criteria` and `doneItems` (lists of texts), `plan`, and `skipDefaultDoneItems`. A new task
-starts with the project's default done items, then the `doneItems` you send; a default you send again is not
-added twice. `skipDefaultDoneItems: true` leaves the defaults out.
+Added in 0.9.0. The **work record** is what a person or an agent writes on a task while working on it:
+acceptance criteria, a definition of done, a plan, work notes and a final summary.
+
+A task has these fields:
+
+| Field                          | Value                                                                               |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| `criteria`, `doneItems`        | `[{ number, text, state, waivedReason, waivedBy, locked }]`.                        |
+| `plan`, `finalSummary`         | Markdown or null.                                                                   |
+| `planMeta`, `finalSummaryMeta` | `{ author, onBehalfOf, origin, at }`: who last wrote it and when, from the history. |
+
+Each criterion and done item has:
+- `number`, which counts from 1 in list order.
+- `state`, which is `open`, `checked` or `waived`.
+- `waivedReason` and `waivedBy` on a waived item. `waivedBy` is null when the waiver came from a Backlog.md
+  file.
+- `locked`, which is true on tasks mirrored from Backlog.md.
+
+List rows carry `criteriaProgress` and `doneProgress`, each `{ settled, open, waived, total }`, and
+`hasFinalSummary`. `settled` counts checked and waived items.
+
+#### Start a task with a work record
+
+`POST /tasks` takes `criteria` and `doneItems` (lists of texts), `plan`, and `skipDefaultDoneItems`.
+
+A new task starts with the project's default done items, then the `doneItems` you send. A default you send
+again is not added twice. `skipDefaultDoneItems: true` leaves the defaults out.
+
+`PATCH /projects/{project}` takes `defaultDoneItems`, the list every new task starts with. Only owners and
+admins may set it. Tasks that exist keep their items. Projects return it as `defaultDoneItems`.
+
+#### Change criteria and done items
 
 `PATCH /tasks/{key}` takes eight operations per list, named after it (`Criteria` or `DoneItems`):
 
@@ -139,24 +232,41 @@ added twice. `skipDefaultDoneItems: true` leaves the defaults out.
 | `moveCriteria`                     | `[{ from, to }]`.                                       |
 | `removeCriteria`                   | Item numbers. The items after them move up.             |
 
-The same eight exist for done items (`checkDoneItems`, `waiveDoneItems` and so on). Numbers refer to the
-list as it was before the request. One request applies the edits, checks, unchecks, waives and unwaives
-first, then the removals, then the moves, then the additions, and writes one history line per operation with
-the item's number and text. `plan` and `finalSummary` set the text; null or `""` clears it. Items are one
-line, up to 500 characters, at most 50 per list; the plan and the summary take up to 50,000 characters.
+The same eight exist for done items (`checkDoneItems`, `waiveDoneItems` and so on).
 
-`ifStatus` is a precondition: when the task's stored status differs, the server answers `409 TASK_CHANGED`
-with the current task and writes nothing. The CLI's offline queue sends it with a queued status change.
+Numbers refer to the list as it was before the request. One request applies its operations in this order:
+1. Edits, checks, unchecks, waives and unwaives.
+2. Removals.
+3. Moves.
+4. Additions.
 
-`POST /tasks/{key}/comments` takes `kind`: `comment` (the default) or `note`. Notes are work notes: they show
-under the Notes filter and notify only the people they mention. `GET /tasks/{key}/timeline` takes `show`
-(`all`, `comments`, `notes` or `history`) to narrow the items, and always returns `counts` with the size of
-each of the four.
+The server writes one history line per operation, with the item's number and text.
 
-`PATCH /projects/{project}` takes `defaultDoneItems`, the list every new task starts with (owners and admins
-only). Tasks that exist keep their items. Projects return it as `defaultDoneItems`.
+`plan` and `finalSummary` set the text. Null or `""` clears it.
 
-The rules:
+The limits:
+- An item is one line, up to 500 characters.
+- A list holds at most 50 items.
+- The plan and the summary take up to 50,000 characters each.
+
+#### Notes and the timeline
+
+`POST /tasks/{key}/comments` takes `kind`: `comment` (the default) or `note`. Notes are work notes. They
+show under the Notes filter and notify only the people they mention.
+
+`GET /tasks/{key}/timeline` takes `show` (`all`, `comments`, `notes` or `history`) to narrow the items. It
+always returns `counts` with the size of each of the four.
+
+#### Guard against a stale status
+
+`ifStatus` on `PATCH /tasks/{key}` is a precondition. Send the status you last saw. When the task's stored
+status differs, the server answers `409 TASK_CHANGED` with the current task and writes nothing. The CLI's
+offline queue sends it with a queued status change.
+
+`ifUpdatedAt` works the same way with the `updatedAt` you last saw. The server refuses the change when the
+stored task is newer.
+
+#### Work record refusals
 
 | Code            | Status | When                                                                                          |
 | --------------- | ------ | --------------------------------------------------------------------------------------------- |
@@ -166,9 +276,10 @@ The rules:
 
 For `TASK_MIRRORED`, `field` is `criteria`, `doneItems`, `plan`, `finalSummary` or `notes`.
 
-`OPEN_ITEMS` is checked after the request's own operations, so one request that settles the last items and
-moves the task goes through. A person's request is never refused. In a bulk change (`POST /tasks/bulk`), one
-refused task fails the whole request. The problem lists the open items, criteria first:
+`OPEN_ITEMS` applies to agents only. A person's request is never refused.
+- The server checks it after the request's own operations. One request that settles the last items and
+  moves the task goes through.
+- The problem lists the open items, criteria first:
 
 ```json
 {
@@ -186,35 +297,35 @@ refused task fails the whole request. The problem lists the open items, criteria
 
 ### Pull requests, archive and check-again days
 
-A task now has:
-- `workBranch`: the git branch the task was started from with `zamu`, or null (see below);
-- `pullRequests`: `[{ provider, number, title, url, state, headBranch, baseBranch, author, mergedBy, how,
-  linkedBy, linkedAt, openedAt, mergedAt, closedAt, updatedAt }]`. `state` is `open`, `draft`, `merged` or
-  `closed`; `how` is `branch`, `description` or `hand`; `provider` is `github`, `gitlab` or `gitea`;
-- `checkAgain`: `{ on, reason }` or null. `on` is a day, `YYYY-MM-DD`;
-- `closedAt`: when the task last entered Done or Canceled, null while it is open;
-- `archivedAt` and `archivedBy`: null unless archived. `archivedBy` is null when the nightly job or a
-  Backlog.md refresh archived it;
-- `mergedOpen`: `{ at, openCriteria, openDoneItems }` while a merge closed the task with items still open,
-  else null.
+Added in 0.11.0. This page says **request** for a pull request or a merge request. A **check-again day** is
+a day you set on a task that waits, with the reason.
+
+A task has these fields:
+
+| Field                      | Value                                                                                                 |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `workBranch`               | The git branch the task was started from with `zamu`, or null.                                        |
+| `pullRequests`             | A list of linked requests. The fields of an entry follow this table.                                  |
+| `checkAgain`               | `{ on, reason }` or null. `on` is a day, `YYYY-MM-DD`.                                                |
+| `closedAt`                 | When the task last entered Done or Canceled. Null while it is open.                                   |
+| `archivedAt`, `archivedBy` | Null unless archived. `archivedBy` is null when the nightly job or a Backlog.md refresh archived it.  |
+| `mergedOpen`               | `{ at, openCriteria, openDoneItems }` while a merge closed the task with items still open, else null. |
+
+An entry of `pullRequests` is:
+
+```text
+{ provider, number, title, url, state, headBranch, baseBranch, author, mergedBy, how,
+  linkedBy, linkedAt, openedAt, mergedAt, closedAt, updatedAt }
+```
+
+- `state` is `open`, `draft`, `merged` or `closed`.
+- `how` is `branch`, `description` or `hand`.
+- `provider` is `github`, `gitlab` or `gitea`.
 
 List rows carry `checkAgain`, `archivedAt`, `pullRequest` (the newest request, with its `state`) and
 `pullRequestCount`.
 
-History entries that no person or agent made have `actor: null` and carry `system`: `{ kind: "git",
-provider }` for a request event, `{ kind: "zamu" }` for Zamu's own jobs (the nightly archive, cycle ends) or
-`{ kind: "backlog" }`. `cause` says why: `{ kind: "pull_request", provider, number, url, title, event, by }`
-with `event` `opened`, `ready`, `reopened`, `merged` or `closed`, or `{ kind: "archive", afterDays }`. New
-entry types: `task.archived`, `task.unarchived`, `task.pull_request_linked` and
-`task.pull_request_unlinked`.
-
-The work branch comes from the `x-zamu-branch` header: a write with an API key that sets the status to In
-progress or In review records it, unless it is the repository's default branch (`main` or `master` while
-Zamu has not read it). Sessions never record one. Open requests Zamu knows for that branch link at once.
-
-`PATCH /tasks/{key}` takes `checkAgain: { on, reason }` (both required; the reason is 1 to 200 characters,
-and any day works, past days included) or `checkAgain: null` to clear it. `POST /tasks` takes it too. A move
-to Done or Canceled clears it.
+The routes:
 
 | Method and path                              | What it does                                                         |
 | -------------------------------------------- | -------------------------------------------------------------------- |
@@ -222,17 +333,67 @@ to Done or Canceled clears it.
 | `DELETE /tasks/{key}/pull-requests/{n}`      | Unlink request `n` (`204`). It stays off until linked by hand again. |
 | `POST /tasks/archive`, `POST /tasks/restore` | `{ keys }`, up to 100. Returns `{ items }` in the order sent.        |
 
-`POST /tasks/{key}/pull-requests` reads the request from the host through the project's repository link.
-With `dryRun: true` it returns the request as it would link and writes nothing. Otherwise it links it and
-applies it like a webhook event, so linking an open request moves the task to In review and a merged one to
-Done when the project closes on merge. A project without a repository gets `409 CONFLICT`.
+#### The work branch
 
-`POST /tasks/archive` archives tasks in any status; anyone who may write the task may, agents included.
+The work branch comes from the `x-zamu-branch` header. A write with an API key that sets the status to In
+progress or In review records it. Open requests Zamu knows for that branch link at once.
+
+Two cases record nothing:
+- The branch is the repository's default branch. While Zamu has not read the default branch, that means
+  `main` or `master`.
+- The request comes from a session. Sessions never record a work branch.
+
+#### Link a request by hand
+
+`POST /tasks/{key}/pull-requests` works in two steps:
+1. It reads the request from the host through the project's repository link.
+2. It links the request and applies it like a webhook event. Linking an open request moves the task to In
+   review. Linking a merged one moves it to Done when the project closes on merge.
+
+With `dryRun: true` it does step 1 only. It returns the request as it would link and writes nothing.
+
+A project without a repository gets `409 CONFLICT`.
+
+#### Check-again days
+
+`PATCH /tasks/{key}` takes `checkAgain: { on, reason }`, and `POST /tasks` takes it too.
+- Both fields are required. The reason is 1 to 200 characters.
+- Any day works, past days included.
+- `checkAgain: null` clears it. A move to Done or Canceled clears it too.
+
+#### Archive and restore
+
+`POST /tasks/archive` archives tasks in any status. Anyone who may write the task may archive it, agents
+included.
+
 Restoring a Done or Canceled task sets `closedAt` to now, so the project's archive days count from the
-restore. Both refuse tasks of a mirrored project with `409 TASK_MIRRORED`: there, Backlog.md's
-`archive/tasks/` folder decides. An archived task refuses every other write, comments and notes included.
+restore. [The nightly archive](#the-nightly-archive) has the setting.
 
-The rules:
+An archived task refuses every other write, comments and notes included.
+
+Both routes refuse tasks of a mirrored project with `409 TASK_MIRRORED`. There, Backlog.md's
+`archive/tasks/` folder decides.
+
+#### History entries with no actor
+
+On a history entry, `actor` is the person or agent who made the change. Entries that no person or agent made
+have `actor: null` and carry `system`:
+
+| `system`                    | What made the change                               |
+| --------------------------- | -------------------------------------------------- |
+| `{ kind: "git", provider }` | A request event.                                   |
+| `{ kind: "zamu" }`          | Zamu's own jobs (the nightly archive, cycle ends). |
+| `{ kind: "backlog" }`       | A Backlog.md refresh.                              |
+
+`cause` says why:
+- `{ kind: "pull_request", provider, number, url, title, event, by }`, where `event` is `opened`, `ready`,
+  `reopened`, `merged` or `closed`.
+- `{ kind: "archive", afterDays }`.
+
+History has four entry types for these changes: `task.archived`, `task.unarchived`,
+`task.pull_request_linked` and `task.pull_request_unlinked`.
+
+#### Request and archive refusals
 
 | Code                       | Status | When                                                                            |
 | -------------------------- | ------ | ------------------------------------------------------------------------------- |
@@ -261,22 +422,35 @@ The rules:
 | `archived`   | `exclude` (the default) leaves archived tasks out, `include` adds them, `only` lists them.  |
 | `checkAgain` | `waiting` (the day is after today), `ready` (today or earlier), `set`, `none`.              |
 
-Without `sort`, `order=list` (the default) groups by status, then priority, then last update, and
-`order=board` by status, then board rank. "Today" is the server's day in `APP_TIME_ZONE`.
+Without `sort`, the `order` parameter decides:
+- `order=list` (the default) groups by status, then priority, then last update.
+- `order=board` groups by status, then board rank.
+
+"Today" is the server's day in `APP_TIME_ZONE`.
+
+The answer is `{ items, nextCursor, counts }`. Send `nextCursor` as `cursor` to get the next page. It is
+null on the last page.
 
 ### Bulk changes
 
-`POST /tasks/bulk` changes up to 100 tasks of native projects in one transaction, with one history line per
-task that changed. Send the keys and one change:
+`POST /tasks/bulk` applies one change to up to 100 tasks of native projects, which are the projects that do
+not mirror Backlog.md. It runs in one transaction and writes one history line per task that changed.
+
+Send the keys and one change:
 
 ```json
 { "keys": ["PAY-140", "PAY-141"], "status": "in_review", "addLabels": ["release"] }
 ```
 
-It takes `status`, `priority`, `assignee`, `milestone`, `cycle`, `dueDate`, `addLabels` and `removeLabels`
-(null clears assignee, milestone, cycle and due date). It returns `{ items }`, the tasks in the order you
-sent them. A mirrored task fails the whole request with `409 TASK_MIRRORED`. Milestone and cycle need every
-task in one project (`422 NOT_SAME_PROJECT`).
+It takes `status`, `priority`, `assignee`, `milestone`, `cycle`, `dueDate`, `addLabels` and `removeLabels`.
+Null clears assignee, milestone, cycle and due date.
+
+It returns `{ items }`, the tasks in the order you sent them.
+
+These cases fail the whole request:
+- A mirrored task, with `409 TASK_MIRRORED`.
+- A milestone or cycle change when the tasks are not all in one project, with `422 NOT_SAME_PROJECT`.
+- An agent's move to In review or Done while one of the tasks has open items, with `409 OPEN_ITEMS`.
 
 ## Milestones, waves and gates (0.12.0)
 
@@ -358,26 +532,39 @@ is never refused, and neither is a move by a pull request or a Backlog.md refres
 
 ## Repositories
 
-| Method and path                                      | What it does                                                    |
-| ---------------------------------------------------- | --------------------------------------------------------------- |
-| `GET /projects/{project}/repository`                 | The repository settings. Anyone who reads the project.          |
-| `PATCH /projects/{project}/repository`               | `{ connectionId?, closeOnMerge? }`. Owners and admins.          |
-| `POST /projects/{project}/repository/webhook-secret` | A new webhook secret: `{ url, secret }`, returned once.         |
-| `POST /projects/{project}/repository/sync`           | Queue the hourly check now (`202`). Owners and admins.          |
-| `GET /projects/{project}/archive-preview?days=N`     | `{ project, days, count }`: what the nightly run would archive. |
+These routes read and change a project's repository settings. [repositories.md](repositories.md) explains
+how a repository links to a project.
 
-The settings are `{ project, repository, provider, connection, defaultBranch, closeOnMerge, mirrored, webhook:
-{ url, secretSet, lastAt, lastStatus, coveredByBacklog }, sync: { lastAt, error, nextAt }, canEdit }`.
-`webhook` is null when the project has no repository. The secret itself is never returned after
-`webhook-secret`. `connectionId` takes a connection for the repository's host (`422` for another host) or null
-to read the repository without a token; a change queues a check. `closeOnMerge` on a mirrored project gets
-`409 PROJECT_MIRRORED`. A project without a repository gets `409 CONFLICT` from `sync`.
+| Method and path                                      | What it does                                            |
+| ---------------------------------------------------- | ------------------------------------------------------- |
+| `GET /projects/{project}/repository`                 | The repository settings. Anyone who reads the project.  |
+| `PATCH /projects/{project}/repository`               | `{ connectionId?, closeOnMerge? }`. Owners and admins.  |
+| `POST /projects/{project}/repository/webhook-secret` | A new webhook secret: `{ url, secret }`, returned once. |
+| `POST /projects/{project}/repository/sync`           | Queue the hourly check now (`202`). Owners and admins.  |
 
-`PATCH /projects/{project}` takes `archiveAfterDays`, 1 to 365, or null to turn the nightly archive off
-(owners and admins; `409 PROJECT_MIRRORED` for a mirrored project). Projects return it as
-`archiveAfterDays`; new projects start at 14. The preview counts with the same rule as the job: Done and
-Canceled tasks closed more than `days` days ago in `APP_TIME_ZONE`, without the ones a merge closed with
-items open. A mirrored project counts 0.
+The settings are:
+
+```text
+{ project, repository, provider, connection, defaultBranch, closeOnMerge, mirrored,
+  webhook: { url, secretSet, lastAt, lastStatus, coveredByBacklog },
+  sync: { lastAt, error, nextAt }, canEdit }
+```
+
+- `webhook` is null when the project has no repository.
+- The settings never include the secret. Only the answer of `webhook-secret` does.
+
+`PATCH` takes two fields:
+- `connectionId` is a connection for the repository's host, or null to read the repository without a token.
+  A **connection** holds the token Zamu uses to read a git host. A change queues a check.
+- `closeOnMerge` sets whether a merged request moves its tasks to Done.
+
+The refusals:
+
+| Answer                 | When                                                |
+| ---------------------- | --------------------------------------------------- |
+| `422`                  | `connectionId` names a connection for another host. |
+| `409 PROJECT_MIRRORED` | `closeOnMerge` on a mirrored project.               |
+| `409 CONFLICT`         | `sync` on a project without a repository.           |
 
 ### Webhook
 
@@ -387,11 +574,38 @@ Git hosts post request events to a URL outside `/api/v1`, one per project:
 POST {PUBLIC_URL}/api/webhooks/repository/{webhookId}
 ```
 
-It answers with a bare status: `202` for a request event (queued), `200` for a ping, another event or a
-signed payload it can't read, `401` for a missing or wrong signature, `404` for an unknown id, `410` when
-the project no longer has a repository, `413` over 25 MB. The Backlog.md webhook of a mirrored project
-(`/api/webhooks/backlog/{id}`) takes request events too and answers `202` for them. Setup per host is in
-[repositories.md](repositories.md#webhooks).
+It answers with a bare status:
+
+| Status | When                                                     |
+| ------ | -------------------------------------------------------- |
+| `202`  | A request event. The server queued it.                   |
+| `200`  | A ping, another event or a signed payload it can't read. |
+| `401`  | A missing or wrong signature.                            |
+| `404`  | An unknown id.                                           |
+| `410`  | The project no longer has a repository.                  |
+| `413`  | A payload over 25 MB.                                    |
+
+The Backlog.md webhook of a mirrored project (`/api/webhooks/backlog/{id}`) takes request events too and
+answers `202` for them. Setup per host is in [repositories.md](repositories.md#webhooks).
+
+## The nightly archive
+
+A nightly job archives each project's closed tasks once they are older than the project's archive days. To
+archive or restore tasks yourself, see [Archive and restore](#archive-and-restore).
+
+| Method and path                                  | What it does                                                               |
+| ------------------------------------------------ | -------------------------------------------------------------------------- |
+| `PATCH /projects/{project}`                      | `{ archiveAfterDays }`: 1 to 365, or null to turn the nightly archive off. |
+| `GET /projects/{project}/archive-preview?days=N` | `{ project, days, count }`: what the nightly run would archive.            |
+
+Only owners and admins may set `archiveAfterDays`. Projects return it under the same name, and new projects
+start at 14.
+
+The preview counts with the same rule as the job. It counts Done and Canceled tasks closed more than `days`
+days ago in `APP_TIME_ZONE`, without the ones a merge closed with items open.
+
+A mirrored project has no nightly archive. Setting `archiveAfterDays` on one gets `409 PROJECT_MIRRORED`,
+and its preview counts 0.
 
 ## Backlog.md export
 
@@ -399,12 +613,15 @@ the project no longer has a repository, `413` over 25 MB. The Backlog.md webhook
 | ---------------------------------------- | ------------------------------------------------------------------- |
 | `GET /projects/{project}/backlog/export` | The project as Backlog.md files, for `zamu backlog export` (0.9.0). |
 
-It returns `{ project, format, generatedAt, files: [{ path, content }], removedPrefixes }`. Paths are relative
-to the Backlog.md folder: every task that is not hidden under `tasks/`, archived tasks under
-`archive/tasks/`, milestones under `milestones/`. `format` names the Backlog.md file format the files
-target. `removedPrefixes` is `tasks/`, `archive/tasks/`, `completed/` and `milestones/`: Markdown files
-there that are not in `files` are stale. A read-only key can call it. A project
-that still mirrors Backlog.md gets `409 PROJECT_MIRRORED`. See
+It returns `{ project, format, generatedAt, files: [{ path, content }], removedPrefixes }`. A read-only key
+can call it.
+- `files` holds paths relative to the Backlog.md folder. Every task that is not hidden goes under `tasks/`,
+  archived tasks under `archive/tasks/` and milestones under `milestones/`.
+- `format` names the Backlog.md file format the files target.
+- `removedPrefixes` is `tasks/`, `archive/tasks/`, `completed/` and `milestones/`. Markdown files there that
+  are not in `files` are stale.
+
+A project that still mirrors Backlog.md gets `409 PROJECT_MIRRORED`. See
 [backlog-md.md](backlog-md.md#export-to-backlogmd).
 
 ## Labels
@@ -415,11 +632,11 @@ that still mirrors Backlog.md gets `409 PROJECT_MIRRORED`. See
 | `POST /projects/{project}/labels`        | Create one: `{ name, color? }`. Without `color` the app picks the least used one. |
 | `PATCH /projects/{project}/labels/{id}`  | Rename or recolour: `{ name?, color? }`.                                          |
 | `DELETE /projects/{project}/labels/{id}` | Delete it and take it off every task (`204`).                                     |
-
-Names are unique in the project, ignoring case (`409 LABEL_EXISTS`), and up to 40 characters. Renames and
-deletes write no history: a task's history keeps the name it recorded. Labels read from Backlog.md files
-(`source: "backlog"`) keep their name: renaming or deleting one fails with `409 LABEL_MIRRORED`, and their
-colour still changes.
+- A name is up to 40 characters and unique in the project, ignoring case. A name the project has already
+  gets `409 LABEL_EXISTS`.
+- Renames and deletes write no history. A task's history keeps the name it recorded.
+- Labels read from Backlog.md files (`source: "backlog"`) keep their name. Renaming or deleting one fails
+  with `409 LABEL_MIRRORED`. Their colour still changes.
 
 ## Home
 
@@ -428,18 +645,30 @@ colour still changes.
 | `GET /home`        | Home: groups of tasks, the deadlines strip and the agent cards.                          |
 | `GET /home/counts` | The sidebar count: review, mergedOpen, checkAgain, mentions, blocked, overdue and total. |
 
-`GET /home` takes `tab` (`mine`, the default, `everyone` or `agents`) and the filters `project` (keys),
-`label` (names, merged across projects) and `priority`. It returns:
-- `counts`: the number of items on each tab;
-- `groups`, in order. Mine has `review`, `mergedOpen`, `checkAgain`, `mentions`, `blocked`, `overdue` and
-  `assigned`; Everyone has `review`, `mergedOpen`, `blocked`, `overdue` and `dueThisWeek`; Agents has
-  `waiting`. `mergedOpen` holds Done tasks a merge closed with items open; `checkAgain` your open tasks whose
-  check-again day has come. Archived tasks are never on Home. Each group has `total` and up to 50
-  `items`: `{ task, reason, relation, pills }`. A task shows once, in its first group;
-- `deadlines`: milestones and cycles that end within 2 days, and tasks due within 2 days or overdue (empty on
-  Agents);
-- `agents`: on the Agents tab, one card per agent: working or idle, its current task, its counts for today
-  and its last five actions.
+`GET /home` takes `tab`: `mine` (the default), `everyone` or `agents`. It also takes the filters `project`
+(keys), `label` (names, merged across projects) and `priority`.
+
+It returns four fields:
+
+| Field       | What it holds                                                                                                             |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `counts`    | The number of items on each tab.                                                                                          |
+| `groups`    | The groups of the tab, in order.                                                                                          |
+| `deadlines` | Milestones and cycles that end within 2 days, and tasks due within 2 days or overdue. Empty on Agents.                    |
+| `agents`    | On the Agents tab, one card per agent: working or idle, its current task, its counts for today and its last five actions. |
+
+Each tab has its own groups:
+
+| Tab      | Groups, in order                                                                      |
+| -------- | ------------------------------------------------------------------------------------- |
+| Mine     | `review`, `mergedOpen`, `checkAgain`, `mentions`, `blocked`, `overdue` and `assigned` |
+| Everyone | `review`, `mergedOpen`, `blocked`, `overdue` and `dueThisWeek`                        |
+| Agents   | `waiting`                                                                             |
+- `mergedOpen` holds Done tasks a merge closed with items open.
+- `checkAgain` holds your open tasks whose check-again day has come.
+- Each group has `total` and up to 50 `items`: `{ task, reason, relation, pills }`.
+- A task shows once, in its first group.
+- Archived tasks are never on Home.
 
 `GET /dashboard` and `GET /dashboard/counts` stay for `zamu dashboard` and scripts written for 0.6.0. The web
 app no longer uses them.

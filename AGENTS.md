@@ -8,7 +8,8 @@ server ships as one Docker image, and Postgres is the only stateful service. The
 (`@reddevs/zamu`) and Homebrew (`reddevsdotio/tap/zamu`).
 
 This file is for contributors and their coding agents. [README.md](README.md) covers features and
-self-hosting, and [docs/architecture.md](docs/architecture.md) explains how the pieces fit together.
+self-hosting, [CONTRIBUTING.md](CONTRIBUTING.md) walks through the local setup and the demo data, and
+[docs/architecture.md](docs/architecture.md) explains how the pieces fit together.
 
 ## Stack
 
@@ -70,7 +71,8 @@ pnpm e2e                      # Playwright against a fresh Docker Compose stack
   are skipped.
 - `pnpm e2e` builds the image, starts its own stack on http://localhost:3100 and removes it afterwards. It
   needs Docker and takes a while: the upgrade spec builds older releases from their git tags.
-  `E2E_SKIP_UPGRADE=1` and `E2E_SKIP_BACKLOG=1` skip the slow specs; the README lists the other variables.
+  `E2E_SKIP_UPGRADE=1` and `E2E_SKIP_BACKLOG=1` skip the slow specs; `e2e/README.md` lists the other
+  variables and what each spec covers.
 - After a schema change in `packages/db/src/schema`, run `pnpm --filter @zamu/db generate` and commit the
   new folder under `packages/db/migrations`.
 - `node apps/cli/scripts/npm-package.ts --version 0.0.1 --check` builds the folder npm gets (the bundle with
