@@ -72,7 +72,6 @@ prints how to work a task, and `zamu agents` writes a pointer to it into the rep
 ## Quickstart
 
 You need Docker with the Compose plugin.
-
 1. Start the server:
 
    ```sh

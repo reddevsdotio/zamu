@@ -64,7 +64,6 @@ zamu stores the URL, the key and the workspace in `$XDG_CONFIG_HOME/zamu/config.
 Without `--url`, zamu uses `ZAMU_URL`, then the default login's server, then `http://localhost:3000`.
 
 `zamu whoami` shows:
-
 - the user, the workspace, the role and the key scope
 - how zamu picked the login
 - the project zamu uses in the current folder
@@ -89,7 +88,6 @@ zamu logout --workspace globex                                  # or that one, o
 ### Which login a command uses
 
 Each command uses the first login that applies:
-
 1. `--workspace <slug>`. It takes a slug or a workspace id, and every command takes it.
 2. `ZAMU_KEY` (with `ZAMU_URL`), as in earlier versions.
 3. The login zamu matched to this clone's git remote earlier. zamu caches it in
@@ -105,7 +103,6 @@ it.
 With one login there is nothing to match. `ZAMU_URL` without `ZAMU_KEY` narrows the logins to that server.
 
 Two cases stop a command:
-
 - The clone matches two or more logins. For example, two workspaces each have a project `PAY`, and
   `.zamu.json` names `PAY`. The command stops with exit code 1 and lists the `--workspace` values to pass.
 - The key is for another workspace. Every request of a login names its workspace in the `x-zamu-workspace`
@@ -134,7 +131,6 @@ Agents in CI usually skip `zamu login` and set:
 
 Commands that work on one project (`tasks create`, `milestones`, `cycles`) take `--project`. Without it,
 zamu uses the first of:
-
 1. `ZAMU_PROJECT`.
 2. The nearest `.zamu.json` from the current folder up to the repository root. It holds
    `{ "project": "PAY" }`. Commit it, or put one in each subfolder of a monorepo that holds several
@@ -187,7 +183,6 @@ Run it again after you upgrade zamu. It replaces only that block.
 What the block says depends on who owns the project's tasks. Zamu owns them, or the project **mirrors**
 [Backlog.md](https://github.com/MrLesk/Backlog.md) task files from its repository and the files own them.
 [Backlog.md mirrors](#backlogmd-mirrors) has the details.
-
 - The project mirrors Backlog.md. The block adds that the task files own the task fields and the work
   record, and that `zamu backlog refresh --wait` reads them after a push.
 - Zamu owns the project, which was never mirrored or was switched from a mirror. zamu replaces a Backlog.md
@@ -219,7 +214,6 @@ Each group of commands has a section:
 | [Offline queue](#offline-queue)                                                            | `zamu queue`                                        |
 
 These rules hold for every command:
-
 - Human output is a compact table with task keys first. zamu uses colour only when stdout is a terminal.
 - Agents show as "claude-dev for Ana Ruiz", which names the agent and the person responsible for it.
 - Project and task keys are case-insensitive, so `pay-142` works.
@@ -244,13 +238,12 @@ zamu tasks update PAY-142 --assignee "Ana Ruiz" --priority urgent
 zamu tasks update PAY-142 --unassign
 ```
 
-| Option       | Values                                                                                                                 |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `--status`   | `backlog`, `todo`, `in_progress`, `in_review`, `done`, `canceled`. `in-progress` and `"In progress"` are accepted too. |
-| `--priority` | `none`, `low`, `medium`, `high`, `urgent`.                                                                             |
-| `--assignee` | `me`, a member's name or email, or a user id. `zamu tasks list` also takes `agents`.                                   |
-| `--mine`     | Short for `--assignee me`.                                                                                             |
-
+| Option       | Values                                                                                                                |
+| ------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `--status`   | `backlog`, `todo`, `in_progress`, `in_review`, `done`, `canceled`.`in-progress` and `"In progress"` are accepted too. |
+| `--priority` | `none`, `low`, `medium`, `high`, `urgent`.                                                                            |
+| `--assignee` | `me`, a member's name or email, or a user id. `zamu tasks list` also takes `agents`.                                  |
+| `--mine`     | Short for `--assignee me`.                                                                                            |
 - Without `--project`, `zamu tasks list` spans every project the key can read. `--project` repeats or takes
   a comma-separated list.
 - `zamu tasks list` returns 50 tasks by default, and up to 200 with `--limit`. When there are more, it
@@ -370,7 +363,6 @@ zamu labels delete design --project PAY --confirm design
 #### Labels
 
 Labels belong to a project. Names are up to 40 characters and unique in the project, ignoring case.
-
 - `--label` on `zamu tasks create` and `zamu tasks update` adds labels by name and creates the ones the
   project doesn't have. `--remove-label` takes them off. Both repeat or take a comma-separated list.
 - `zamu tasks list --label` looks names up in `--project`, or in the folder's project, and matches tasks
@@ -484,7 +476,6 @@ An unknown name fails with exit code 1 and lists the project's milestones.
 - `zamu cycles end` ends the current cycle unless you pass a number.
 
 When a cycle ends, its unfinished tasks move to the first of:
-
 1. `--move-to`, which takes a cycle number or `none`.
 2. The next upcoming cycle.
 3. A new cycle of the same length.
@@ -510,7 +501,6 @@ zamu tasks list --project PAY --archived only     # or include; archived tasks a
 #### How a request links to a task
 
 A pull or merge request links to a task in three ways:
-
 1. You started the task (`--status in_progress` or `in_review`) from the request's head branch. zamu sends
    the branch as `x-zamu-branch`.
 2. The request's description has a line such as `Closes: PAY-142, PAY-150`.
@@ -595,14 +585,12 @@ zamu dashboard --json                             # { schema: 'zamu.v1.dashboard
 ```
 
 The output has three parts:
-
 1. Four groups: In review, Mentions, Stalled and Deadlines. Each prints its total and up to 10 lines, then
    `… N more`. An empty group prints one line, `Mentions · none`.
 2. One row per project, with open, doing, review, current cycle, next milestone and last activity.
 3. The agents, with who they work for, their current task or Idle, and a stalled marker.
 
 The scope decides what the groups cover:
-
 - Mine is the default. It covers your tasks, the tasks of the agents you are responsible for, and mentions
   of you.
 - For an agent's key, Mine means the agent's own tasks and mentions of it.
@@ -642,7 +630,6 @@ zamu projects delete PAY --confirm PAY            # owners and admins; cannot be
 
 `zamu projects delete` deletes the project with its tasks, comments, history, milestones, cycles and
 Backlog.md mirror. There is no undo.
-
 - `--confirm` must repeat the key, in any case. Without it, or with another key, zamu exits with code 1
   ("Pass --confirm PAY to delete project PAY.") and sends nothing.
 - The command needs an owner or admin, with a person's key that has whole-workspace access and write
@@ -695,7 +682,6 @@ error: PAY-786 is mirrored from Backlog.md, so its status can't change here (tas
 
 A refresh reads the default branch again. `zamu backlog refresh` needs an owner, an admin, or an agent whose
 key can write the project.
-
 - `--wait` checks the status every 2 seconds until the read ends, up to 5 minutes.
 - `--wait` exits 0 whatever the read found, so check `state` in the JSON. It is `healthy`, `warnings`,
   `failed` or `paused`.
@@ -703,7 +689,6 @@ key can write the project.
   in time. On a `timeout`, check that the worker is running.
 
 The command fails with exit code 6 in two cases:
-
 - The mirror is paused (`BACKLOG_PAUSED`). The connection is missing, rejected or unreachable.
 - The mirror is detached (`BACKLOG_DETACHED`). The project was switched to Zamu, or imported, and no longer
   reads the files.
@@ -733,7 +718,6 @@ zamu backlog export --force                       # write over uncommitted chang
   files target and every file with its action (`created`, `updated`, `unchanged`, `removed`).
 
 Refusals and warnings:
-
 - zamu refuses (exit 1) when `tasks/`, `archive/tasks/`, `completed/` or `milestones/` have uncommitted
   changes, untracked files included, and it lists them. Commit or discard them, or pass `--force`.
   `--dry-run` never refuses.
@@ -762,7 +746,6 @@ zamu prints `Queued: the server didn't answer. It will be sent on your next zamu
 code 7 (`zamu.v1.queued` with `--json`).
 
 Everything else fails with exit code 5 and queues nothing:
-
 - Creating a task.
 - Every read.
 - An update that mixes a queueable flag with another one, such as `--check-ac 1 --priority high`. The error
@@ -814,7 +797,6 @@ A 5xx answer is an error too, because the server answered.
 ### Machine and branch
 
 Every request carries two headers:
-
 - `x-zamu-machine` holds the machine name. That is `ZAMU_MACHINE`, else the host name.
 - `x-zamu-branch` holds the branch, when the folder is in a git repository with a branch checked out.
 
@@ -910,10 +892,9 @@ Some errors carry more fields:
 | `timelineCounts`                   | The size of each filter (`all`, `comments`, `notes`, `history`).                                                |
 | `task`, the work record            | `criteria`, `doneItems`, `plan`, `planMeta`, `finalSummary` and `finalSummaryMeta`.                             |
 | `task`, from zamu 0.11.0           | `workBranch`, `pullRequests`, `checkAgain`, `closedAt`, `archivedAt`, `archivedBy` and `mergedOpen`.            |
-| Activity entries, from zamu 0.11.0 | `cause` and `system`. `system` says who acted when no person did: the git host, Zamu or Backlog.md.             |
+| Activity entries, from zamu 0.11.0 | `cause` and `system`.`system` says who acted when no person did: the git host, Zamu or Backlog.md.              |
 
 The other schemas:
-
 - `zamu.v1.projects.delete` is `{ "deleted": "PAY" }`.
 - `zamu.v1.labels.delete` is the label as it was and the number of tasks it was on:
   `{ "deleted": { "id": "...", "name": "design", "color": 7, "source": "app" }, "usageCount": 3 }`.

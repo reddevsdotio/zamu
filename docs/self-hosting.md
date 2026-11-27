@@ -42,28 +42,31 @@ The other sections are optional:
 That is enough for a server on `http://localhost:3000`. `BETTER_AUTH_SECRET` is the only variable you must
 set. The others have defaults:
 
-| Variable                  | Required | Default                 | Meaning                                                                                                                                       |
-| ------------------------- | -------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BETTER_AUTH_SECRET`      | yes      | none                    | Signs sessions. 32 characters or more, for example from `openssl rand -base64 32`. Without it, compose and the image refuse to start.         |
-| `BETTER_AUTH_URL`         | no       | `http://localhost:3000` | The URL people type in their browser. Sign-in fails when it does not match.                                                                   |
-| `PUBLIC_URL`              | no       | `http://localhost:3000` | Base URL for invitation links. Use the same value as `BETTER_AUTH_URL`.                                                                       |
-| `PORT`                    | no       | `3000`                  | Host port the web app is published on.                                                                                                        |
-| `POSTGRES_USER`           | no       | `postgres`              | Database user.                                                                                                                                |
-| `POSTGRES_PASSWORD`       | no       | `postgres`              | Database password. Set it before the first start, because Postgres reads it only when it creates the volume.                                  |
-| `POSTGRES_DB`             | no       | `zamu`                  | Database name.                                                                                                                                |
-| `ZAMU_IMAGE`              | no       | `zamu:local`            | Tag of the image compose builds and runs.                                                                                                     |
-| `APP_TIME_ZONE`           | no       | `UTC`                   | IANA time zone, such as `Europe/Brussels`. Decides when "today" starts for cycles. See [Time zone and cycle ends](#time-zone-and-cycle-ends). |
-| `APP_ENCRYPTION_KEY`      | no       | none                    | Encrypts git tokens. Without it, git connections and Backlog.md mirrors are off. See [APP_ENCRYPTION_KEY](#app_encryption_key).               |
-| `GIT_ALLOW_PRIVATE_HOSTS` | no       | `false`                 | `true` lets git connections reach hosts on private networks.                                                                                  |
-| `GIT_HTTP_HOSTS`          | no       | none                    | Comma-separated git hosts reached over plain HTTP. For test containers only.                                                                  |
-| `WORKSPACE_CREATION`      | no       | `everyone`              | Who may create a workspace, `everyone` or `owners`. See [Workspaces](#workspaces).                                                            |
+| Variable                  | Required | Default                 | Meaning                                                                                                                               |
+| ------------------------- | -------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `BETTER_AUTH_SECRET`      | yes      | none                    | Signs sessions. 32 characters or more, for example from `openssl rand -base64 32`. Without it, compose and the image refuse to start. |
+| `BETTER_AUTH_URL`         | no       | `http://localhost:3000` | The URL people type in their browser. Sign-in fails when it does not match.                                                           |
+| `PUBLIC_URL`              | no       | `http://localhost:3000` | Base URL for invitation links. Use the same value as `BETTER_AUTH_URL`.                                                               |
+| `PORT`                    | no       | `3000`                  | Host port the web app is published on.                                                                                                |
+| `POSTGRES_USER`           | no       | `postgres`              | Database user.                                                                                                                        |
+| `POSTGRES_PASSWORD`       | no       | `postgres`              | Database password. Set it before the first start, because Postgres reads it only when it creates the volume.                          |
+| `POSTGRES_DB`             | no       | `zamu`                  | Database name.                                                                                                                        |
+| `ZAMU_IMAGE`              | no       | `zamu:local`            | Tag of the image compose builds and runs.                                                                                             |
+| `APP_TIME_ZONE`           | no       | `UTC`                   | IANA time zone, such as `Europe/Brussels`. Decides when "today" starts for cycles.                                                    |
+| `APP_ENCRYPTION_KEY`      | no       | none                    | Encrypts git tokens. Without it, git connections and Backlog.md mirrors are off.                                                      |
+| `GIT_ALLOW_PRIVATE_HOSTS` | no       | `false`                 | `true` lets git connections reach hosts on private networks.                                                                          |
+| `GIT_HTTP_HOSTS`          | no       | none                    | Comma-separated git hosts reached over plain HTTP. For test containers only.                                                          |
+| `WORKSPACE_CREATION`      | no       | `everyone`              | Who may create a workspace, `everyone` or `owners`.                                                                                   |
+
+Three of these have a section of their own: [Time zone and cycle ends](#time-zone-and-cycle-ends) for
+`APP_TIME_ZONE`, [APP_ENCRYPTION_KEY](#app_encryption_key) and [Workspaces](#workspaces) for
+`WORKSPACE_CREATION`.
 
 A **git connection** is an access token for a git host that an admin saves in the app. A **mirror** is a
 project that follows the task files a repository keeps in a Backlog.md folder. Both are optional. See
 [Git connections and Backlog.md](#git-connections-and-backlogmd).
 
 Three more things to know about `.env`:
-
 - `DATABASE_URL` and `TEST_DATABASE_URL` are for local development. Compose ignores them, because the
   containers reach Postgres as `db` on their own network.
 - If you change `PORT`, change the port in `BETTER_AUTH_URL` and `PUBLIC_URL` too.
@@ -81,7 +84,6 @@ curl http://localhost:3000/api/healthz
 ```
 
 What to expect:
-
 - The first build takes a few minutes.
 - `docker compose ps` lists `migrate` as exited (code 0). That is expected.
 - `/api/healthz` answers `{"status":"ok"}` once the web app can reach Postgres.
@@ -116,7 +118,6 @@ characters; use 32 or more." followed by the same advice.
 
 The server checks the rest of its configuration at start too. It exits with a message that lists every
 problem, the secret included, and `docker compose logs web` shows it. Examples of what it refuses:
-
 - `PASSWORD_LOGIN=disabled` without single sign-on
 - only some of the three `OIDC_*` credentials
 - a malformed `OIDC_ISSUER`
@@ -137,7 +138,6 @@ You land on Home, signed in.
 ### Add people and agents
 
 Nobody can sign up on their own. To add a person:
-
 1. Go to Settings > Members > Invite person.
 2. Pick a role and copy the invitation link.
 3. Share the link yourself. Zamu sends no email.
@@ -166,7 +166,6 @@ docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -
 This works while the app runs.
 
 Look after the dumps:
-
 - Keep them outside the checkout. Anything in the checkout ends up in the image build context.
 - Copy them to another machine.
 - Back up `APP_ENCRYPTION_KEY` as well, and store it apart from the dumps. Without the key, a restored
@@ -217,7 +216,6 @@ The notes below cover what each release changes and anything you have to do.
 ### From 0.1.x (M1)
 
 The upgrade adds milestones, cycles, comments and the board. The migration does two things:
-
 - It gives every existing task a board position that keeps its list order inside its status. The list order
   is priority, then most recently updated.
 - It turns milestones and cycles on for every project.
@@ -240,7 +238,6 @@ start. On Kubernetes, run the migrate job before you roll out `web` and `worker`
 ### From 0.6 to 0.7 (M5)
 
 The upgrade adds labels, due dates, blockers and subtasks. Two migrations run:
-
 1. The schema migration only adds tables and columns.
 2. A second migration covers every task mirrored or imported from Backlog.md. It copies the task's labels,
    due dates, dependencies and parents out of its stored Backlog.md data into the new fields.
@@ -253,7 +250,6 @@ Display options and the sidebar state are kept in each browser, so people start 
 ### From 0.9 to 0.10
 
 The upgrade puts every page under the workspace's slug. `/p/PAY/PAY-142` becomes `/w/<slug>/p/PAY/PAY-142`.
-
 - Old links, bookmarks included, redirect (307) to the same page in the workspace the person used last.
   Each person's workspace used last starts as their oldest one.
 - The migration keeps every slug that is valid in a URL. A valid slug has 2 to 40 lower-case letters, digits
@@ -266,7 +262,6 @@ The upgrade puts every page under the workspace's slug. `/p/PAY/PAY-142` becomes
 
 The upgrade adds pull requests, the archive and check-again days. The migration adds tables and columns. It
 also fills `closed_at` for every Done or Canceled task from its history, or else from its last update.
-
 - Archiving stays off for every existing project. Projects created afterwards start with 14 days.
 - Tasks of active Backlog.md mirrors whose file is under `archive/tasks/` come back archived. Imported
   projects keep those tasks as they were.
@@ -318,7 +313,6 @@ The server counts days in the time zone that `APP_TIME_ZONE` names. The default 
 `worker` count "today" in that zone.
 
 The zone decides four things:
-
 - the midnight at which a cycle ends
 - days left and overdue milestones in the web app
 - the nightly archive, which runs at 02:30 in that zone and counts a project's archive days in it
@@ -348,7 +342,6 @@ the same machine.
 ### HTTPS
 
 For HTTPS:
-
 1. Put a reverse proxy such as Caddy, nginx or Traefik in front of port 3000.
 2. Set `BETTER_AUTH_URL` and `PUBLIC_URL` to the public `https://` URL.
 3. Run `docker compose up -d` to apply the change.
@@ -398,19 +391,22 @@ only.
 
 ### Variables
 
-| Variable             | Default                | Meaning                                                                                                                          |
-| -------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `OIDC_ISSUER`        | none                   | Issuer URL. Discovery: `{issuer}/.well-known/openid-configuration`.                                                              |
-| `OIDC_CLIENT_ID`     | none                   | Client ID from the provider.                                                                                                     |
-| `OIDC_CLIENT_SECRET` | none                   | Client secret from the provider.                                                                                                 |
-| `OIDC_PROVIDER_NAME` | `SSO`                  | Button label: "Continue with {name}".                                                                                            |
-| `OIDC_SCOPES`        | `openid email profile` | Space-separated scopes. `openid` is always requested.                                                                            |
-| `OIDC_SIGNUP`        | `invite`               | Who gets an account on first SSO sign-in. See [Who gets an account](#who-gets-an-account).                                       |
-| `OIDC_ADMIN_GROUPS`  | none                   | Comma-separated groups whose members are workspace admins.                                                                       |
-| `OIDC_GROUPS_CLAIM`  | `groups`               | Claim with the user's groups. Authentik sends `groups`.                                                                          |
-| `OIDC_TRUST_EMAIL`   | `false`                | `true` treats the provider's email as verified. See [Emails the provider does not verify](#emails-the-provider-does-not-verify). |
-| `OIDC_WORKSPACE`     | the oldest workspace   | Slug of the workspace that auto sign-up and admin groups apply to.                                                               |
-| `PASSWORD_LOGIN`     | `enabled`              | `disabled` means SSO only. Needs the three `OIDC_*` credentials.                                                                 |
+| Variable             | Default                | Meaning                                                                               |
+| -------------------- | ---------------------- | ------------------------------------------------------------------------------------- |
+| `OIDC_ISSUER`        | none                   | Issuer URL. Discovery: `{issuer}/.well-known/openid-configuration`.                   |
+| `OIDC_CLIENT_ID`     | none                   | Client ID from the provider.                                                          |
+| `OIDC_CLIENT_SECRET` | none                   | Client secret from the provider.                                                      |
+| `OIDC_PROVIDER_NAME` | `SSO`                  | Button label: "Continue with {name}".                                                 |
+| `OIDC_SCOPES`        | `openid email profile` | Space-separated scopes. `openid` is always requested.                                 |
+| `OIDC_SIGNUP`        | `invite`               | Who gets an account on first SSO sign-in.                                             |
+| `OIDC_ADMIN_GROUPS`  | none                   | Comma-separated groups whose members are workspace admins. Everyone else is a member. |
+| `OIDC_GROUPS_CLAIM`  | `groups`               | Claim with the user's groups. Authentik sends `groups`.                               |
+| `OIDC_TRUST_EMAIL`   | `false`                | `true` treats the provider's email as verified.                                       |
+| `OIDC_WORKSPACE`     | the oldest workspace   | Slug of the workspace that auto sign-up and admin groups apply to.                    |
+| `PASSWORD_LOGIN`     | `enabled`              | `disabled` means SSO only. Needs the three `OIDC_*` credentials.                      |
+
+[Who gets an account](#who-gets-an-account) explains `OIDC_SIGNUP`, and
+[Emails the provider does not verify](#emails-the-provider-does-not-verify) explains `OIDC_TRUST_EMAIL`.
 
 The server checks these variables when it starts and exits when they are wrong. See
 [If a container exits at start](#if-a-container-exits-at-start).
@@ -429,7 +425,6 @@ With `auto`, limit who can sign in at the provider, for example by binding the a
 ### Admin groups
 
 With `OIDC_ADMIN_GROUPS` set, members of any listed group are admins and everyone else is a member.
-
 - The server applies the role again at every SSO sign-in. Removing someone from the group demotes them at
   their next sign-in.
 - Owners keep their role.
@@ -482,7 +477,6 @@ refuses password sign-in. API keys, which agents and the CLI use, keep working.
 ### Authentik
 
 1. Go to Applications > Providers > Create > OAuth2/OpenID Provider and set:
-
    - client type confidential
    - the redirect URI from [Set it up](#set-it-up), strict
    - a signing key, so ID tokens are signed with RS256
@@ -504,10 +498,8 @@ refuses password sign-in. API keys, which agents and the CLI use, keep working.
 
 Authentik's default `email` scope mapping always sends `email_verified: false`. The server refuses every
 sign-in until you pick one of these:
-
 - Set `OIDC_TRUST_EMAIL=true`. Read [the trade-off](#emails-the-provider-does-not-verify) first.
 - Or send a verified claim yourself:
-
   1. Go to Customization > Property Mappings > Create > Scope Mapping. Give it a scope name such as
      `zamu-email` and the expression `return {"email": request.user.email, "email_verified": True}`.
   2. Add the mapping to the provider's scopes.
@@ -518,7 +510,6 @@ sign-in until you pick one of these:
 ## Git connections and Backlog.md
 
 A project can use its repository in two ways:
-
 - It can mirror or import the tasks the repository keeps in a Backlog.md folder. A mirror keeps following
   the files, and an import reads them once. See [backlog-md.md](backlog-md.md).
 - It can link the repository's pull requests to tasks. See [repositories.md](repositories.md).
@@ -535,7 +526,6 @@ AES-256-GCM. It does so for Backlog.md mirrors and for repository webhooks alike
 bytes, base64-encoded.
 
 To set it:
-
 1. Generate a key:
 
    ```sh
@@ -555,7 +545,6 @@ There is no key rotation. Keep the same key for the life of the server.
 #### Without the key
 
 The server starts and works as before, with these limits:
-
 - The Git connections page and the Backlog.md setup say that the key must be set.
 - Nobody can add a connection.
 - Nobody can issue a repository webhook secret.
@@ -606,7 +595,6 @@ The token travels in clear text on those connections. Do not list a production g
 ### Custom certificate authorities: NODE_EXTRA_CA_CERTS
 
 If your git host's certificate comes from an internal CA, give Node the CA certificate in PEM format.
-
 1. Keep the certificate outside the checkout and readable by everyone. The containers run as UID 1000. See
    [Container user](#container-user).
 2. Add a `docker-compose.override.yml` next to `docker-compose.yml`. Compose reads that file on its own.
@@ -645,7 +633,6 @@ has to deliver its webhooks to these URLs:
 The server builds the URLs from `PUBLIC_URL`, so set that to the address the git host can reach.
 
 Things to check:
-
 - GitHub.com and GitLab.com need a public URL. Behind a firewall, allow `POST` to `/api/webhooks/backlog/`
   and `/api/webhooks/repository/` from the host's webhook addresses.
 - A reverse proxy must pass the request body untouched. Push payloads are usually small, but a push with
@@ -669,7 +656,6 @@ The image runs as UID 1000 and GID 1000, the `node` user of the Node base image.
 number. It writes only to `/tmp` and its home directory, `/home/node`.
 
 Two things to keep in mind:
-
 - If you override the user with `user:` in compose or `--user` with `docker run`, keep it a number other
   than 0. A name such as `node` makes Kubernetes' `runAsNonRoot` check fail.
 - Anything you mount into `web`, `worker` or `migrate` must be readable by UID 1000, and writable by it if

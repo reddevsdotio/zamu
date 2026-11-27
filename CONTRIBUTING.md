@@ -40,7 +40,6 @@ state, tasks linked by branch, by a `Closes:` line and by hand, a task merged wi
 tasks and check-again days. Its hourly check then fails, as that repository doesn't exist.
 
 Two variables trim the seed:
-
 - `SEED_SECOND_WORKSPACE=0` leaves Globex out.
 - `SEED_PLANNING=0` leaves out the pull request, archive and check-again data, and the planning and Home
   data before it.
@@ -50,7 +49,7 @@ Two variables trim the seed:
 Run these from the repository root before you open a pull request.
 
 ```sh
-pnpm format                                   # Biome applies its fixes
+pnpm format                                   # Biome applies its fixes, to Markdown too
 pnpm lint
 pnpm typecheck
 pnpm test                                     # Vitest against a throwaway Postgres database

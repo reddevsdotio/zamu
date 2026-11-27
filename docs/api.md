@@ -45,7 +45,6 @@ curl -H "Authorization: Bearer $ZAMU_KEY" "https://projects.example.com/api/v1/t
 
 Send an API key as a bearer token, as in the requests above. People create keys in Settings > Your API keys.
 Agents get theirs from an admin, as [agents.md](agents.md) describes.
-
 - A key only reaches the projects in its scope.
 - A read-only key cannot write.
 - The web app signs its requests with the session cookie instead of a key.
@@ -53,7 +52,6 @@ Agents get theirs from an admin, as [agents.md](agents.md) describes.
 ## Request format
 
 The paths on this page leave out the `/api/v1` prefix.
-
 - Bodies are JSON.
 - A query parameter that takes several values repeats its name: `?status=todo&status=in_progress`.
 - Task keys and project keys ignore case.
@@ -101,14 +99,12 @@ used before still works, so a script keeps running after a rename.
 What the header does depends on how the request signs in.
 
 With an API key:
-
 - The key always acts in the workspace it was created in.
 - The header may name that workspace. A header that names another one gets `403 WORKSPACE_MISMATCH`. The
   server never switches workspace for a key.
 - `zamu` sends the header with every request, so a key used for the wrong login fails loudly.
 
 With a session (the web app):
-
 - The session acts in the workspace the header names.
 - Without the header it acts in the workspace the person used last, else in their oldest one.
 - A person who is not a member of the named workspace, or of any workspace, gets `403 NOT_A_MEMBER`. An
@@ -203,7 +199,6 @@ A task has these fields:
 | `planMeta`, `finalSummaryMeta` | `{ author, onBehalfOf, origin, at }`: who last wrote it and when, from the history. |
 
 Each criterion and done item has:
-
 - `number`, which counts from 1 in list order.
 - `state`, which is `open`, `checked` or `waived`.
 - `waivedReason` and `waivedBy` on a waived item. `waivedBy` is null when the waiver came from a Backlog.md
@@ -240,7 +235,6 @@ admins may set it. Tasks that exist keep their items. Projects return it as `def
 The same eight exist for done items (`checkDoneItems`, `waiveDoneItems` and so on).
 
 Numbers refer to the list as it was before the request. One request applies its operations in this order:
-
 1. Edits, checks, unchecks, waives and unwaives.
 2. Removals.
 3. Moves.
@@ -251,7 +245,6 @@ The server writes one history line per operation, with the item's number and tex
 `plan` and `finalSummary` set the text. Null or `""` clears it.
 
 The limits:
-
 - An item is one line, up to 500 characters.
 - A list holds at most 50 items.
 - The plan and the summary take up to 50,000 characters each.
@@ -284,7 +277,6 @@ stored task is newer.
 For `TASK_MIRRORED`, `field` is `criteria`, `doneItems`, `plan`, `finalSummary` or `notes`.
 
 `OPEN_ITEMS` applies to agents only. A person's request is never refused.
-
 - The server checks it after the request's own operations. One request that settles the last items and
   moves the task goes through.
 - The problem lists the open items, criteria first:
@@ -347,7 +339,6 @@ The work branch comes from the `x-zamu-branch` header. A write with an API key t
 progress or In review records it. Open requests Zamu knows for that branch link at once.
 
 Two cases record nothing:
-
 - The branch is the repository's default branch. While Zamu has not read the default branch, that means
   `main` or `master`.
 - The request comes from a session. Sessions never record a work branch.
@@ -355,7 +346,6 @@ Two cases record nothing:
 #### Link a request by hand
 
 `POST /tasks/{key}/pull-requests` works in two steps:
-
 1. It reads the request from the host through the project's repository link.
 2. It links the request and applies it like a webhook event. Linking an open request moves the task to In
    review. Linking a merged one moves it to Done when the project closes on merge.
@@ -367,7 +357,6 @@ A project without a repository gets `409 CONFLICT`.
 #### Check-again days
 
 `PATCH /tasks/{key}` takes `checkAgain: { on, reason }`, and `POST /tasks` takes it too.
-
 - Both fields are required. The reason is 1 to 200 characters.
 - Any day works, past days included.
 - `checkAgain: null` clears it. A move to Done or Canceled clears it too.
@@ -397,7 +386,6 @@ have `actor: null` and carry `system`:
 | `{ kind: "backlog" }`       | A Backlog.md refresh.                              |
 
 `cause` says why:
-
 - `{ kind: "pull_request", provider, number, url, title, event, by }`, where `event` is `opened`, `ready`,
   `reopened`, `merged` or `closed`.
 - `{ kind: "archive", afterDays }`.
@@ -435,7 +423,6 @@ History has four entry types for these changes: `task.archived`, `task.unarchive
 | `checkAgain` | `waiting` (the day is after today), `ready` (today or earlier), `set`, `none`.              |
 
 Without `sort`, the `order` parameter decides:
-
 - `order=list` (the default) groups by status, then priority, then last update.
 - `order=board` groups by status, then board rank.
 
@@ -461,7 +448,6 @@ Null clears assignee, milestone, cycle and due date.
 It returns `{ items }`, the tasks in the order you sent them.
 
 These cases fail the whole request:
-
 - A mirrored task, with `409 TASK_MIRRORED`.
 - A milestone or cycle change when the tasks are not all in one project, with `422 NOT_SAME_PROJECT`.
 - An agent's move to In review or Done while one of the tasks has open items, with `409 OPEN_ITEMS`.
@@ -490,7 +476,6 @@ The settings are:
 - The settings never include the secret. Only the answer of `webhook-secret` does.
 
 `PATCH` takes two fields:
-
 - `connectionId` is a connection for the repository's host, or null to read the repository without a token.
   A **connection** holds the token Zamu uses to read a git host. A change queues a check.
 - `closeOnMerge` sets whether a merged request moves its tasks to Done.
@@ -552,7 +537,6 @@ and its preview counts 0.
 
 It returns `{ project, format, generatedAt, files: [{ path, content }], removedPrefixes }`. A read-only key
 can call it.
-
 - `files` holds paths relative to the Backlog.md folder. Every task that is not hidden goes under `tasks/`,
   archived tasks under `archive/tasks/` and milestones under `milestones/`.
 - `format` names the Backlog.md file format the files target.
@@ -570,7 +554,6 @@ A project that still mirrors Backlog.md gets `409 PROJECT_MIRRORED`. See
 | `POST /projects/{project}/labels`        | Create one: `{ name, color? }`. Without `color` the app picks the least used one. |
 | `PATCH /projects/{project}/labels/{id}`  | Rename or recolour: `{ name?, color? }`.                                          |
 | `DELETE /projects/{project}/labels/{id}` | Delete it and take it off every task (`204`).                                     |
-
 - A name is up to 40 characters and unique in the project, ignoring case. A name the project has already
   gets `409 LABEL_EXISTS`.
 - Renames and deletes write no history. A task's history keeps the name it recorded.
@@ -603,7 +586,6 @@ Each tab has its own groups:
 | Mine     | `review`, `mergedOpen`, `checkAgain`, `mentions`, `blocked`, `overdue` and `assigned` |
 | Everyone | `review`, `mergedOpen`, `blocked`, `overdue` and `dueThisWeek`                        |
 | Agents   | `waiting`                                                                             |
-
 - `mergedOpen` holds Done tasks a merge closed with items open.
 - `checkAgain` holds your open tasks whose check-again day has come.
 - Each group has `total` and up to 50 `items`: `{ task, reason, relation, pills }`.

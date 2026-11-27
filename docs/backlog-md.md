@@ -17,7 +17,6 @@ Choose a mirror when the files stay the place where tasks change. Choose an impo
 tasks in Zamu from now on.
 
 Zamu can also be the source:
-
 - **Switch to Zamu.** A mirror stops reading the files, and Zamu owns its tasks from then on, with their
   numbers, comments and history. See [Switch to Zamu](#switch-to-zamu).
 - **Export.** A project owned by Zamu writes its tasks back out as Backlog.md files with
@@ -35,7 +34,6 @@ This page calls a project that was created in Zamu and never read Backlog.md fil
 ## Before you start
 
 You need:
-
 - `APP_ENCRYPTION_KEY` set on the server, for the web app and the worker. Without it, the Git connections page
   and the setup ask for it. See [self-hosting.md](self-hosting.md#git-connections-and-backlogmd).
 - A git connection for the host. Add one in Settings > Git connections > Add connection, as described in the
@@ -50,7 +48,6 @@ A **git connection** is a workspace-wide access token for one git host. Owners a
 in Settings > Git connections. Everyone can see the list, and nobody sees the tokens.
 
 To add a connection:
-
 1. Pick the provider yourself: GitHub, GitLab, or Gitea / Forgejo. A self-hosted address does not say which
    software runs there.
 2. Enter the host: `github.com`, `gitlab.com`, or your server's address with its port if it has one
@@ -70,7 +67,6 @@ Read-only tokens are enough:
 | Gitea / Forgejo | Access token with the `read:repository` and `read:user` scopes.                                     |
 
 Some other tokens work too, with limits:
-
 - With GitLab, `read_user` plus `read_repository` also works for mirrors and imports.
 - On GitHub, a classic token needs the `repo` scope for private repositories. That scope also grants write
   access, so prefer a fine-grained token.
@@ -89,7 +85,6 @@ another connection.
 ## Set up a mirror or an import
 
 You can start in two places:
-
 - **New from Backlog.md**, in the "+" next to Projects in the sidebar, in the workspace menu, or in the
   command palette (⌘K). Paste the clone URL and pick Mirror or Import once. The dialog creates the project and
   opens the setup at the mappings step.
@@ -100,7 +95,6 @@ After you paste the URL, the dialog finds the connection by host and reads the f
 `project_name` in `config.yml` and the key from the task prefix (`task_prefix: "pay"` gives `PAY`).
 
 The setup has five steps, and nothing is written before the last one:
-
 1. **Mode.** Mirror or Import once.
 2. **Source.** The connection, the repository, its default branch and the folder.
 3. **Mappings.** How Backlog.md statuses, priorities and assignees become values in Zamu. See
@@ -112,7 +106,6 @@ The setup has five steps, and nothing is written before the last one:
    once when it finishes, and nothing shows half-done.
 
 In the Source step, the server looks for the folder in this order:
-
 1. the folder you typed
 2. `backlog_directory` in a root `backlog.config.yml`
 3. `backlog/`
@@ -156,7 +149,6 @@ every task.
 
 A note under the Assignees table helps with the rows that map to no one. It works the same in the setup and in
 Edit mappings. What it offers depends on the assignee:
-
 - An assignee that names a coding agent gets a Create agent suggestion. Zamu knows claude, codex, copilot,
   cursor, gemini and others, alone or in names like `claude-code`. The suggestion opens Add agent with the
   name filled in, you as the responsible human and a key for this project only. Once the agent exists, Zamu
@@ -188,7 +180,6 @@ In a mirrored project the files own most fields, and Zamu shows those fields rea
 The check-again day is the day you set to look at a waiting task again. [guide.md](guide.md) describes it.
 
 In the web app:
-
 - The task view shows one small Backlog.md badge, which links to the file.
 - A field shows a lock only when you point at it or try to change it, and the pickers open read-only.
 - The board does not let you move a mirrored card to another column.
@@ -217,7 +208,6 @@ write on native tasks (see [agents.md](agents.md#the-work-record)).
 | Comments             | "Comments from Backlog.md" at the end of the description            |
 
 How Zamu reads the sections:
-
 - It ignores the `#1` numbers written in the file and numbers items by their order.
 - Text between the checklist items that is not an item stays in the description under its heading, so nothing
   in the file is lost.
@@ -280,7 +270,6 @@ A **refresh** reads the default branch at its head commit, downloads only the fi
 applies every change in one database transaction.
 
 A refresh starts when:
-
 - the git host sends a push webhook for the default branch (see [Webhooks](#webhooks))
 - someone presses Refresh now in the project header's Backlog.md popover or in Settings > Backlog.md (⇧R)
 - an agent runs `zamu backlog refresh`
@@ -305,7 +294,6 @@ The project header shows the state of the source:
 | Detached                 | The project was switched to Zamu (or imported) and no longer reads the files.                   |
 
 Settings > Backlog.md lists the problems of the last refresh, file by file:
-
 - A task file that does not parse is skipped, and its task keeps its last good version. A new task appears
   once its file parses.
 - When two files carry the same ID, the one with the later `updated_date` wins and the other is listed as a
@@ -339,7 +327,6 @@ To restore the task, move the file back under `tasks/` and push. The next refres
 history lines by Backlog.md, with the commit.
 
 In a mirrored project the folder decides:
-
 - Zamu does not offer Archive and Restore.
 - The API and `zamu` refuse them with `409 TASK_MIRRORED` (exit code 6) and the folder to move the file to.
 - The project has no archive setting. Settings > Archive says that archiving follows the `archive/tasks/`
@@ -353,7 +340,6 @@ An import brings the archived files in archived. The export writes archived task
 Without a webhook the mirror checks once an hour. With one, a push shows up within seconds.
 
 Owners and admins set it up:
-
 1. Open Settings > Backlog.md and press Setup next to Webhook, or press Set up the webhook at the end of the
    setup. The dialog shows the URL and the secret, with the steps for your provider.
 2. Add the webhook on the git host, as described for each provider below.
@@ -404,7 +390,6 @@ Requests link to the mirrored tasks but never move them, because the files own t
 
 The server checks GitHub's `X-Hub-Signature-256`, GitLab's `X-Gitlab-Token`, and Gitea's or Forgejo's
 signature header against the secret.
-
 - A request with a wrong signature or an unknown ID gets `404`.
 - Pushes to other branches get `204` and change nothing.
 - Request events get `202`.
@@ -415,7 +400,6 @@ signature header against the secret.
 
 Owners and admins can issue a new secret with New secret in the webhook dialog. You need one when the old
 secret leaked, for example, or when `APP_ENCRYPTION_KEY` changed and the dialog says the secret can't be read.
-
 - The URL stays the same.
 - Zamu shows the new secret once, unmasked, right after you confirm.
 - The old secret stops working at once. Deliveries signed with it get `404` until you paste the new secret
@@ -431,7 +415,6 @@ and like Detach it cannot be undone. Owners and admins find it in Settings > Bac
 
 The dialog first asks the git host for open pull or merge requests that change files in the Backlog.md folder.
 Once the project switches, their task edits never arrive, so the dialog lists them.
-
 1. Read the list. The dialog looks at the 100 newest open requests. It lists up to five, then "35 more" with a
    link to the list on the host. "No open pull request changes the task files. Nothing will be lost." means
    you can go ahead.
@@ -496,7 +479,6 @@ key. A later import therefore keeps every number.
 
 The export removes Markdown files under `tasks/`, `archive/tasks/`, `completed/` and `milestones/` that it no
 longer has, such as:
-
 - tasks deleted in Zamu
 - the copy in the other folder of a task archived or restored since the last export
 - copies in the old `completed/` folder

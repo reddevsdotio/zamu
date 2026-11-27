@@ -50,7 +50,6 @@ The new workspace's Home opens. It starts with "Nothing to show yet" and two ste
 add an agent.
 
 An address follows these rules:
-
 - It is 2 to 40 lower-case letters, digits and hyphens.
 - It starts with a letter.
 - It can't be a word the app uses, such as `settings` or `api`. The dialog says so under the field: "This
@@ -72,7 +71,6 @@ page. The button carries the workspace's name. When you are signed out, the page
 
 Someone who belongs to no workspace, for example after leaving the last one, gets a page of their own. What
 it shows depends on the server:
-
 - When the server lets you create a workspace, the page shows "Create a workspace" with the same Name and
   Address fields.
 - Otherwise it says "Ask an owner for an invitation", since the link in an invitation opens its workspace.
@@ -82,7 +80,6 @@ Both show who is signed in and Sign out.
 ## Sidebar
 
 The sidebar on the left is how you move around the workspace. From top to bottom it holds:
-
 1. The workspace menu, with your workspaces, New workspace, Workspace settings, Invite people, New project
    and New from Backlog.md.
 2. Search or jump to, which opens the [command palette](#command-palette) (⌘K).
@@ -109,7 +106,6 @@ Home (`/w/<slug>/`) shows what needs attention, across every project you can see
 sits under the reason it needs someone. "All clear" means nothing waits.
 
 Home has three tabs:
-
 - **Mine** shows what waits on you. Its groups are listed below.
 - **Everyone** shows tasks in review, merged with open criteria, blocked, overdue and due this week, across
   the workspace.
@@ -175,13 +171,11 @@ A **mirrored** project reads its tasks from Markdown files in a repository (see
 ### Open and move tasks
 
 In the list:
-
 - Enter or a click opens the task view.
 - Space opens the **peek**, a smaller view of the task that opens over the list.
 - ← and → on a group row fold and unfold it.
 
 On the board:
-
 - Drag a card to another column, or press Shift+← and Shift+→.
 - Shift+J moves a card down and Shift+K moves it up, when the order is Manual.
 - ⌘Z undoes the last move from the toast.
@@ -189,7 +183,6 @@ On the board:
 ### Filter
 
 Filter adds conditions:
-
 - status, priority, assignee and labels
 - due date: overdue, due soon, has a due date, or no due date
 - blocked
@@ -257,7 +250,6 @@ A task opens as a full page at `/w/acme/p/PAY/PAY-142`. This is the task view, w
 change it.
 
 On the left, from the top:
-
 1. The title.
 2. The final summary, when there is one.
 3. The Markdown description.
@@ -338,7 +330,6 @@ deletes leave no history lines, and the task history keeps the name it recorded.
 ## Due dates
 
 A due date is a day, with no time. To set one, press Shift+D, then do one of these:
-
 - Type a date, such as "nov 4", "tomorrow", "+3d" or "2026-11-20".
 - Pick Today, Tomorrow or Next week.
 - Pick a day in the calendar.
@@ -392,7 +383,6 @@ to send the new host and key". Use it instead of leaving a task In progress whil
 the team.
 
 To set one:
-
 1. Press Shift+W, or choose Check again in the properties. The picker opens.
 2. Choose the day. Type it ("dec 3", "in 2 weeks"), pick In a week, In two weeks or In a month, or pick a
    day in the calendar. Any day works, past days included.
@@ -425,7 +415,6 @@ The **work record** is what a task needs and what happened while someone worked 
 it through `zamu` (see [agents.md](agents.md#the-work-record)). People read and edit it in the task view.
 
 It has five parts:
-
 - **Acceptance criteria** say what must be true when the task is done. They are numbered.
 - **Definition of done** lists the checks every task passes, such as "Tests and lint pass". Each one is a
   done item. A new task starts with the project's defaults (see [Task defaults](#task-defaults)).
@@ -462,7 +451,6 @@ Shift+A or "Add a criterion" adds a criterion. Enter adds it and keeps the field
 
 When you move a task to In review or Done while a criterion or done item is open, a dialog lists the open
 items first: "2 items are still open". You can then:
-
 - check what is done (X)
 - waive what no longer applies (W, with a reason)
 - move the task as it is (⌘Enter)
@@ -520,14 +508,12 @@ and cards show it when the Pull request chip is on in Display.
 ### How a request links to a task
 
 A request links to a task in three ways:
-
 - **By branch.** An agent started the task with `zamu` from a git branch, and the request was opened from
   that branch. Until a request exists, the task view shows the branch line under the description.
 - **By description.** The request's description has a line such as `Closes: PAY-142, PAY-150`.
 - **By hand.** You paste the request's address into the task.
 
 To link a request by hand:
-
 1. Press Shift+P, or choose "Link a pull request" in the task view or the peek. A field opens.
 2. Paste the request's address. The field shows the request before you link it.
 3. Press Enter to link it.
@@ -572,7 +558,6 @@ parent's subtask progress counts them too.
 Each project's Settings > Archive has "Archive finished tasks". When it is on, a job archives Done and
 Canceled tasks a set number of days after they reached that status. The job runs every night at 02:30 in the
 server's `APP_TIME_ZONE`.
-
 - Owners and admins turn it on or off and set the days, 1 to 365.
 - Before you save, the page says how many tasks the next run would archive.
 - New projects start with 14 days. Projects from before the upgrade start with it off.
@@ -620,7 +605,6 @@ Backlog.md keeps a project's tasks as Markdown files in a repository. A project 
 reads its tasks from those files. [backlog-md.md](backlog-md.md) covers the setup.
 
 Mirrored projects show the same fields as native ones, filled from the task files:
-
 - labels, due dates, blockers and the parent
 - the work record: criteria, done items, plan and final summary. The file's implementation notes show as one
   "Notes from the file" block.
@@ -638,7 +622,6 @@ Owners and admins can switch such a project to Zamu, which makes every field edi
 ## Workspace settings
 
 General is the first page of the workspace settings. Three things open it:
-
 - Workspace settings in the sidebar and the workspace menu
 - "Go to workspace settings" in the palette
 - the address `/w/<slug>/settings`
@@ -658,7 +641,6 @@ Leave workspace says "You lose access to its projects and tasks. Your API keys f
 "Leave Acme?" first.
 
 Two kinds of member can't leave:
-
 - The only owner: "You are the only owner of Acme, so you can't leave it. Delete the workspace instead."
 - The responsible person of agents in the workspace, until they hand the agents to someone else or remove
   them. The message names the agents.

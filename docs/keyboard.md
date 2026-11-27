@@ -15,7 +15,6 @@ Keys follow the character you type, so they work on any keyboard layout. `[` is 
 to the right of P, whatever it prints.
 
 Esc closes the topmost layer first, in this order:
-
 1. A picker or menu. When its search has text, the first Esc clears the text.
 2. The palette, the command palette that ⌘K opens.
 3. A dialog.
@@ -166,7 +165,6 @@ In quick create (C), I assigns the task to you, Shift+M opens the milestone and 
 ### 0.11.0
 
 Three new keys, each next to the key it resembles:
-
 - Shift+P links a pull request in the task view and the peek. Paste its address, then press Enter. It sits
   next to P (priority).
 - Shift+E archives the selected tasks or the open task, from lists, boards and the task view. On an archived

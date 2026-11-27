@@ -8,7 +8,6 @@ This page is for the owners and admins who link a repository and set up its webh
 and merge requests "requests".
 
 Zamu only reads from the repository. Every call it makes to the host is a `GET`. It never:
-
 - comments on a request
 - commits or pushes
 - sets a status check or a label
@@ -22,7 +21,6 @@ themselves.
 ## Link a repository
 
 A project links one repository. You can set it in three places:
-
 - the project's Settings > General, under Repository
 - `zamu link --project PAY`, run in a clone
 - Link a repository, on the project's Settings > Repository page
@@ -30,7 +28,6 @@ A project links one repository. You can set it in three places:
 Zamu refuses requests from any other repository.
 
 Settings > Repository (`/w/<slug>/p/PAY/settings/repository`) shows:
-
 - The repository and the connection Zamu reads it with, with Change to edit both.
 - The default branch, known after the first check. Only merges into it close tasks.
 - The switch "Close tasks when their pull request merges".
@@ -50,7 +47,6 @@ for one host, saved by an owner or admin in Settings > Git connections (see
 [backlog-md.md](backlog-md.md#git-connections)).
 
 Zamu picks the connection on its own, in this order:
-
 1. The connection of the project's Backlog.md mirror, when the project has one. A mirror is a project that
    follows the Backlog.md task files in its repository.
 2. Else the workspace's working connection for the repository's host, when there is exactly one.
@@ -86,7 +82,6 @@ When an agent starts a task with `zamu` from a git branch, the server records th
 **work branch**. Starting a task means setting `--status in_progress` or `in_review`. A request whose head
 branch is the work branch links to the task, also when the request was opened before the agent started the
 task.
-
 - The server never records the repository's default branch.
 - The web app records no branch.
 - A new branch replaces the old one.
@@ -96,7 +91,6 @@ task.
 A line in the request's description that starts with `Closes:` links the tasks it names. Write
 `Closes: PAY-142, PAY-150` or `closes: PAY-142 PAY-150`. Any letter case works, and the line can be a list
 item.
-
 - Backlog.md IDs work too.
 - Zamu ignores keys of other projects and unknown keys.
 - When the description changes, keys added link and keys removed unlink. A removed key keeps its link when the
@@ -105,7 +99,6 @@ item.
 ### By hand
 
 Anyone who can edit the task can link a request by its address:
-
 - In the task view, press Shift+P ("Link a pull request") and paste the address.
 - Run `zamu pr link PAY-142 <url>`.
 
@@ -133,7 +126,6 @@ Opening a request moves its linked tasks to In review. Merging it into the defau
 | Closed without merging                          | Nothing moves. The request shows as closed.                  |
 
 A merge moves a task to Done only when both of these hold:
-
 - The project closes on merge (see [Close on merge](#close-on-merge)).
 - No other request linked to the task is still open or a draft.
 
@@ -233,7 +225,6 @@ Zamu checks GitHub's `X-Hub-Signature-256`, GitLab's `X-Gitlab-Token` and the Gi
 against the secret.
 
 The Repository page shows how the last delivery went, in one of these lines:
-
 - "No event received yet"
 - "Last event 3 minutes ago"
 - "The last event failed its signature check". Paste the secret again, or issue a new one.

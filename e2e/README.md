@@ -21,18 +21,18 @@ on another Docker host) it runs full Chromium, which needs more system libraries
 
 ## Variables
 
-| Variable                | Default    | Effect                                                              |
-| ----------------------- | ---------- | ------------------------------------------------------------------- |
-| `E2E_SKIP_UPGRADE=1`    | off        | Skips the upgrade spec, the slowest one.                            |
-| `E2E_SKIP_BACKLOG=1`    | off        | Skips the Backlog.md specs.                                         |
-| `E2E_SKIP_BUILD=1`      | off        | Reuses the last image.                                              |
-| `E2E_KEEP_STACK=1`      | off        | Keeps the stacks and the Forgejo containers running after the run.  |
-| `E2E_COMPOSE_PROJECT`   | `zamu-e2e` | Compose project name.                                               |
-| `E2E_PORT`              | `3100`     | Port of the main stack.                                             |
-| `E2E_UPGRADE_PORT`      | `3101`     | Port of the upgrade spec's stack.                                   |
-| `E2E_OWNERS_PORT`       | `3102`     | Port of the `WORKSPACE_CREATION=owners` web container.              |
-| `ZAMU_IMAGE`            | `zamu:e2e` | Tag of the image the suite builds and runs.                         |
-| `E2E_BASE_URL`          | localhost  | Address of a stack on another Docker host.                          |
+| Variable              | Default    | Effect                                                             |
+| --------------------- | ---------- | ------------------------------------------------------------------ |
+| `E2E_SKIP_UPGRADE=1`  | off        | Skips the upgrade spec, the slowest one.                           |
+| `E2E_SKIP_BACKLOG=1`  | off        | Skips the Backlog.md specs.                                        |
+| `E2E_SKIP_BUILD=1`    | off        | Reuses the last image.                                             |
+| `E2E_KEEP_STACK=1`    | off        | Keeps the stacks and the Forgejo containers running after the run. |
+| `E2E_COMPOSE_PROJECT` | `zamu-e2e` | Compose project name.                                              |
+| `E2E_PORT`            | `3100`     | Port of the main stack.                                            |
+| `E2E_UPGRADE_PORT`    | `3101`     | Port of the upgrade spec's stack.                                  |
+| `E2E_OWNERS_PORT`     | `3102`     | Port of the `WORKSPACE_CREATION=owners` web container.             |
+| `ZAMU_IMAGE`          | `zamu:e2e` | Tag of the image the suite builds and runs.                        |
+| `E2E_BASE_URL`        | localhost  | Address of a stack on another Docker host.                         |
 
 Set the project name, the ports and the image tag when another checkout runs the suite on the same machine.
 
@@ -87,7 +87,6 @@ Set the project name, the ports and the image tag when another checkout runs the
 
 `upgrade.spec.ts` starts a second stack (`zamu-e2e-upgrade`, port 3101) and moves it through these steps,
 adding data at each one:
-
 1. Release 0.1.1.
 2. M2.1 (0.3.0).
 3. 0.6.0, where it mirrors a Backlog.md repository from its own Forgejo container and creates an agent key.
@@ -97,7 +96,6 @@ adding data at each one:
 7. The new image.
 
 On the new image it checks these:
-
 - Every task key and route still works.
 - The 0.7.0 migrations backfilled the mirror's labels, due date, blockers and parent with no history lines.
 - The key from 0.6.0 gets 401, as the old prefix is gone, while a new key starts with `zamu_live_`.

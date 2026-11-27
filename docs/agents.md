@@ -14,7 +14,6 @@ reference.
 ## Add an agent
 
 Admins add agents in Settings > Members > Add agent:
-
 1. Name the agent, for example `claude-dev`. Names are unique in the workspace.
 2. Pick the responsible human. The agent acts for this person.
 3. Choose the scope of its first key (see [Scope keys](#scope-keys)).
@@ -70,7 +69,6 @@ with no projects, until you revoke it.
 ## Use zamu in an agent's environment
 
 Set up the agent's machine in three steps.
-
 1. Install the CLI with npm (Node 24 or later) or Homebrew:
 
    ```sh
@@ -131,7 +129,6 @@ zamu logout --workspace globex                                  # remove one log
 
 zamu stores one login for each workspace in `$XDG_CONFIG_HOME/zamu/config.json`
 (`~/.config/zamu/config.json`).
-
 - Logging in again with a new key for the same workspace replaces its key.
 - `zamu login --default` makes the new login the default.
 - `zamu logout` without a flag removes the login used in the current folder.
@@ -139,7 +136,6 @@ zamu stores one login for each workspace in `$XDG_CONFIG_HOME/zamu/config.json`
 ### Which login a command uses
 
 Each command uses the first login that applies:
-
 1. `--workspace <slug>`, a slug or a workspace id. Every command takes it.
 2. `ZAMU_KEY` (with `ZAMU_URL`).
 3. The login zamu matched to this clone's git remote before, cached in `$XDG_STATE_HOME/zamu/clones.json`
@@ -191,7 +187,6 @@ A repository belongs to one project. Linking it to a second one fails with exit 
 ### Other ways to set the project
 
 zamu checks these in order and uses the first one that names a project:
-
 1. `--project`.
 2. The `ZAMU_PROJECT` variable.
 3. The nearest committed `.zamu.json` (`{ "project": "PAY" }`), which `zamu link --file` writes. It is
@@ -205,7 +200,6 @@ zamu checks these in order and uses the first one that names a project:
 `zamu agents` puts a short block between `<!-- zamu:start ... -->` and `<!-- zamu:end -->` in `AGENTS.md`, or
 in `CLAUDE.md` when only that exists. The block names the project and points the agent to
 `zamu instructions` (see [Instructions for agents](#instructions-for-agents)).
-
 - Run it again after upgrading zamu. It replaces only its own block.
 - `zamu agents --print` shows the block without writing it.
 
@@ -274,7 +268,6 @@ See [Backlog.md mirrors](#backlogmd-mirrors) and [Offline queue](#offline-queue)
 A task's **work record** is what an agent writes while it works: the acceptance criteria, the definition of
 done, the plan, work notes and the final summary. People see it in the task view (see
 [guide.md](guide.md#the-work-record)).
-
 - **Acceptance criteria** say what must be true when the task is done. They are numbered from 1.
 - **Done items**, the definition of done, are the checks every task passes, such as "Tests and lint pass".
   A new task starts with the project's default done items (Settings > Task defaults in the web app).
@@ -341,7 +334,6 @@ zamu sends two headers with every request:
 | `x-zamu-branch`  | The git branch checked out in the current folder when there is one. |
 
 The server stores them on history entries and notes. Values are cut to 100 characters.
-
 - The web app shows them as "build-box · feat/payout-retries" under the History filter.
 - `zamu tasks show` prints them at the end of each line.
 
@@ -355,7 +347,6 @@ The branch also becomes the task's work branch when the command starts the task 
 When the project links its repository (see [repositories.md](repositories.md)), Zamu reads the repository's
 pull requests, links them to tasks and moves the tasks. GitLab calls them merge requests, and this page
 calls both requests. An agent gets all of this by working the usual way:
-
 1. **Start the task from its branch.** Create or switch to the branch first. Then run
    `zamu tasks update PAY-142 --status in_progress` (or `zamu tasks create ... --status in_progress`) in the
    clone. zamu sends the branch as `x-zamu-branch`, and the server records it as the task's work branch. A
@@ -367,7 +358,6 @@ calls both requests. An agent gets all of this by working the usual way:
    step to the merge. `zamu projects show` says whether the project closes on merge.
 
 Some cases work differently:
-
 - The server never records the default branch as a work branch.
 - A later start from another branch replaces the recorded work branch.
 - Drafts link without moving anything.
@@ -445,7 +435,6 @@ failing. It prints "Queued: the server didn't answer. It will be sent on your ne
 with code 7. The next zamu command that reaches the server sends the queued writes first, oldest first.
 
 zamu queues these writes, and only on an existing task:
-
 - Checking, unchecking or waiving items.
 - A status change.
 - A check-again day.
@@ -456,7 +445,6 @@ zamu queues these writes, and only on an existing task:
 Every other write, such as creating a task, fails as before.
 
 Three commands show and change the queue:
-
 - `zamu queue` lists what waits.
 - `zamu queue drop ID` removes one write.
 - `zamu whoami` shows the count.
@@ -508,7 +496,6 @@ Mentions send no notification yet.
 ### Edit and delete
 
 Only the author can edit or delete a comment. That holds for agents too:
-
 - The agent's responsible human cannot edit the agent's comments.
 - An agent trying to delete a person's comment gets exit code 4.
 
@@ -517,7 +504,6 @@ Deleting leaves "Comment deleted by ..." in the history.
 ## Milestones and cycles
 
 Projects can group tasks in two ways:
-
 - A **milestone** is a goal with an optional target date.
 - A **cycle** is a numbered, dated period of work, usually two weeks.
 
@@ -621,7 +607,6 @@ Mirrored tasks keep their Backlog.md numbers, so `BACK-786.1` is `PAY-786.1` in 
 ### What zamu refuses
 
 In a mirrored project, `zamu` refuses to:
-
 - Change the title, description, status, priority, assignee, milestone, labels, due date, blockers, parent
   or work record of a mirrored task.
 - Write a note on a mirrored task.
@@ -656,14 +641,12 @@ zamu backlog status --problems       # every file skipped or read with a warning
 `zamu backlog refresh` needs a key that can write the project.
 
 With `--wait` it exits 0 whatever the read found, so check `data.status.state` in the JSON. The states are:
-
 - `healthy`
 - `warnings`. Some files were skipped or values fell back, and `zamu backlog status --problems` lists them.
 - `failed`
 - `paused`
 
 `zamu backlog refresh` exits with code 6 when the mirror is paused or detached:
-
 - `BACKLOG_PAUSED`: the git connection is missing, rejected or unreachable. An admin fixes it in the web
   app.
 - `BACKLOG_DETACHED`: the mirror is detached. The project was switched to Zamu, or imported, and no longer
@@ -692,7 +675,6 @@ git add backlog && git commit -m "Update the Backlog.md copy"
 ```
 
 The export refuses in two cases:
-
 - With exit code 1, while the exported folders have uncommitted changes, unless you pass `--force`.
 - With exit code 6 (`PROJECT_MIRRORED`), for a project that still mirrors.
 
@@ -726,7 +708,6 @@ The output starts with the action queue, in four groups:
 Items leave the queue on their own when the condition clears. Nobody dismisses them.
 
 Two more parts follow the queue:
-
 - One row per project, with open, in progress and in review counts, current cycle, next milestone and last
   activity.
 - The agents, with who they work for, their current task or Idle, and whether it is stalled.
@@ -785,7 +766,6 @@ Each group has `total`, which counts every item, and `items`, up to 50 of them. 
 | `deadlines` | `{ kind: "milestone", project, milestone, daysOverdue, openTasks, progress }` or `{ kind: "cycle", project, cycle, daysLeft, openTasks, progress }` |
 
 The other shapes:
-
 - `task` is `{ key, title, status, priority, project: { key, name } }`.
 - `excerpt` is plain text of at most 200 characters. Mentions read `@Name` and inline code keeps its
   backticks.
@@ -859,7 +839,6 @@ The Zod schemas live in `packages/contracts` (`cliDataSchemas` in `src/cli.ts`, 
 ### Task fields
 
 These hold for every task:
-
 - Statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, `canceled`.
 - Priorities are `none`, `low`, `medium`, `high`, `urgent`.
 - Timestamps are ISO 8601 in UTC. Dates such as `targetDate`, `startsOn` and `dueDate` are `YYYY-MM-DD`.
@@ -868,7 +847,6 @@ These hold for every task:
 - `rank` orders the cards inside a board column.
 
 Since 0.7.0, labels, due dates, subtasks and blockers:
-
 - Tasks carry `labels` (`{ id, name, color, source }`), `dueDate`, `subtaskProgress` (`{ done, total }`)
   and `blocked`.
 - `zamu tasks show` adds `parent`, `subtasks`, `blockedBy` and `blocks`, where a blocker you can't see is
@@ -876,7 +854,6 @@ Since 0.7.0, labels, due dates, subtasks and blockers:
 - List rows carry `parentKey` instead of `parent`.
 
 Since 0.9.0, the work record:
-
 - Tasks carry `criteria` and `doneItems`, `plan`, `finalSummary`, and `planMeta` and `finalSummaryMeta` (who
   last wrote them and when).
 - Each item of `criteria` and `doneItems` is `{ number, text, state, waivedReason, waivedBy, locked }`, with
@@ -885,7 +862,6 @@ Since 0.9.0, the work record:
   counts checked and waived items) and `hasFinalSummary`.
 
 Pull requests, check-again days and the archive:
-
 - Tasks carry `workBranch`, `pullRequests`, `checkAgain` (`{ on, reason }` or null), `closedAt`,
   `archivedAt`, `archivedBy` and `mergedOpen` (`{ at, openCriteria, openDoneItems }` or null).
 - Each item of `pullRequests` is
@@ -989,7 +965,6 @@ Backlog.md. `cause` says why (a request event, or the archive setting).
 ```
 
 The same output has two more fields:
-
 - `timeline` holds the same activity entries plus the comments and notes, oldest first. Each entry has a
   `kind` of `activity`, `comment` or `note`.
 - `timelineCounts` gives the size of each filter of the web app's history:

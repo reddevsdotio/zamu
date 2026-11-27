@@ -9,7 +9,6 @@ the sessions and the job queue.
 ## Terms
 
 Five terms come up all over this page.
-
 - An **actor** is who a request acts as: the user, its kind (person or agent), the workspace and the role
   there, the key scope, and the person an agent acts for.
 - The **contract** is the set of Zod schemas and oRPC routes in `packages/contracts`. The server, the web app
@@ -58,7 +57,6 @@ schedules the recurring jobs and stops cleanly on SIGTERM. It runs TypeScript th
 step.
 
 `apps/cli` is the `zamu` command.
-
 - It talks to `/api/v1` over plain REST with an API key, prints tables or `--json`, and exits with stable
   codes.
 - tsdown bundles it, so it carries the contract package inside. The guides that `zamu instructions` prints
@@ -76,7 +74,6 @@ and the `zamu.v1.*` shapes of the CLI's `--json` output. Everything else imports
 `packages/core` holds the services: workspaces, projects, tasks and their work record, comments and notes,
 milestones, cycles, labels, Home, members, keys, git connections, Backlog.md, repository links and pull
 requests, and the archive.
-
 - Each service takes a context (database, clock, time zone, git settings, job queue), the actor and a parsed
   input.
 - `authz.ts` decides who may do what, and every service calls it first.
@@ -87,14 +84,12 @@ requests, and the archive.
 The helper creates a throwaway database and applies every migration to it.
 
 `packages/auth` sets up Better Auth with the organization, API key and generic OAuth plugins.
-
 - It resolves each request to an `Actor`.
 - It blocks Better Auth's endpoints under `/api/auth` that create, change or delete workspaces and
   memberships. Core does that work, so its rules always apply.
 
 `packages/git-providers` holds read-only clients for GitHub, GitLab and Gitea/Forgejo behind one
 `GitProvider` interface. Every call is a `GET`.
-
 - The interface covers repository lookup, file trees, file contents, open pull or merge requests that touch
   a folder, one request by number, and the requests updated since a time.
 - The package also has `parseRequestUrl`, webhook signature checks that also parse request events, and a
@@ -165,14 +160,12 @@ The schema is in `packages/db/src/schema/pull-requests.ts` and `app.ts`.
 
 A **workspace** is a Better Auth organization. Every row that belongs to one carries its id, directly or
 through its project, and every core query filters by `actor.workspaceId`.
-
 - Keys are unique per workspace only. Two workspaces can each have a project `PAY`.
 - Old slugs live in `workspace_slug_alias`, so links made before a rename still resolve.
 - The workspace a person used last is `user.last_workspace_id`.
 
 A request names its workspace with the `x-zamu-workspace` header (`WORKSPACE_HEADER` in
 `packages/contracts`). What the header does depends on the credentials.
-
 - A session acts in the workspace the header names, by its current or an old slug. Without the header it
   uses the workspace used last, then the oldest membership. A signed-in person who is not a member gets 403
   `NOT_A_MEMBER`, not 401.
@@ -183,7 +176,6 @@ A request names its workspace with the `x-zamu-workspace` header (`WORKSPACE_HEA
 
 In the web app the slug comes from the URL. The layout route `routes/_app/w/$workspace/route.tsx` does the
 setup:
-
 - It resolves the slug. An old slug redirects to the current one, and a workspace you are not in sends you
   to `/`.
 - It records the workspace as the one used last.
@@ -234,7 +226,6 @@ write) narrows what the actor may do.
 
 The CLI stores one login per server and workspace in `$XDG_CONFIG_HOME/zamu/config.json`.
 `apps/cli/src/workspace.ts` picks one per command, in this order:
-
 1. `--workspace`.
 2. `ZAMU_KEY`.
 3. The login cached for the clone's git remote (`$XDG_STATE_HOME/zamu/clones.json`).
@@ -305,7 +296,6 @@ flowchart TD
 ```
 
 The three ways in:
-
 1. A webhook. A git host posts a request event to `/api/webhooks/repository/{id}`, and the route reads the
    raw body once. `receiveRepositoryWebhook` in `pull-requests.ts` checks the signature with the link's
    decrypted secret, records the delivery on `repository_link`, and enqueues `repository.event` with the
@@ -315,7 +305,6 @@ The three ways in:
 3. A link made by hand.
 
 `applyRequest` then does the rest:
-
 1. It stores the request. It drops an event older than the stored `host_updated_at`.
 2. It recomputes the links by work branch and by `Closes:` keys.
 3. It writes link and unlink history.
@@ -324,7 +313,6 @@ The three ways in:
    merge.
 
 Nothing moves in these cases:
-
 - An event from before `moves_from`. Zamu sets `moves_from` when the link is made and when its connection
   changes, so the first check only records what exists.
 - A mirrored project. Its tasks never move.
@@ -340,7 +328,6 @@ records it on the task (`workBranchFor` in `tasks.ts`) and links the open reques
 ### The archive
 
 `packages/core/src/archive.ts` archives and restores by hand and runs the nightly job.
-
 - An archived task is read-only. Every write path calls `assertTaskWritable`, which refuses with
   `TASK_ARCHIVED`.
 - Lists, boards, Home, the dashboard, project counts and pickers filter on `archived_at is null`.
@@ -352,13 +339,11 @@ records it on the task (`workBranchFor` in `tasks.ts`) and links the open reques
 
 A mirror reads from the repository. The other direction starts with the switch. Settings > Backlog.md calls
 two server functions:
-
 1. A check, which asks the git host for open pull or merge requests that change the folder.
 2. The switch, which stops the mirror (`backlog_source.detached_at` and `detached_by_id`) and makes every
    field editable.
 
 From then on the repository's `backlog/` folder can be a copy of Zamu:
-
 1. `zamu backlog export` reads `GET /api/v1/projects/{project}/backlog/export`.
 2. Core builds the answer with the writer in `packages/backlog-md`.
 3. The CLI writes the files into the clone it runs in.
