@@ -9,11 +9,13 @@ import {
   CycleDetail,
   CycleList,
   Dashboard,
+  GateResult,
   Label,
   LabelList,
   LabelWithUsage,
   Me,
   MilestoneList,
+  MilestonePlan,
   MilestoneWithProgress,
   Project,
   ProjectList,
@@ -24,9 +26,20 @@ import {
   TaskListPage,
   TimelineCounts,
   TimelineItem,
+  Wave,
+  WaveNumberRef,
   WorkspaceRef,
 } from './entities';
-import { ProjectKey, ProjectKeyInput, TaskKey, TaskStatus, Timestamp, WorkspaceId } from './primitives';
+import {
+  MilestoneId,
+  ProjectKey,
+  ProjectKeyInput,
+  TaskKey,
+  TaskStatus,
+  Timestamp,
+  WaveId,
+  WorkspaceId,
+} from './primitives';
 import { Problem } from './problem';
 
 // Versioned `zamu ... --json` output. Every result is { "schema": "zamu.v1.<name>", "data": ... }.
@@ -160,8 +173,11 @@ export const CLI_BACKLOG_REFRESH_WAIT_MS = 5 * 60 * 1000;
 // M6: zamu instructions, zamu backlog export and the offline queue
 // ---------------------------------------------------------------------------
 
-/** zamu instructions [topic]: an overview and three guides bundled with the CLI. */
-export const CLI_INSTRUCTION_TOPICS = ['overview', 'creating', 'working', 'finishing'] as const;
+/**
+ * zamu instructions [topic]: an overview and the guides bundled with the CLI. M8 adds planning
+ * (plan link, waves, gates and zamu milestones show).
+ */
+export const CLI_INSTRUCTION_TOPICS = ['overview', 'creating', 'working', 'finishing', 'planning'] as const;
 export const CliInstructionTopic = z.enum(CLI_INSTRUCTION_TOPICS);
 export type CliInstructionTopic = z.infer<typeof CliInstructionTopic>;
 
@@ -311,7 +327,8 @@ export const cliDataSchemas = {
   /**
    * zamu tasks update. From M7 the task carries workBranch, pullRequests, checkAgain, closedAt,
    * archivedAt, archivedBy and mergedOpen, and tasks.list rows the compact pullRequest,
-   * pullRequestCount, checkAgain and archivedAt.
+   * pullRequestCount, checkAgain and archivedAt. From M8 the task and the rows carry `wave` (number,
+   * name and lock), in tasks.show, tasks.create and tasks.list too.
    */
   'tasks.update': Task,
   /** zamu tasks archive <keys...> (M7): the archived tasks, in the order given. */
@@ -346,8 +363,29 @@ export const cliDataSchemas = {
   'milestones.list': MilestoneList,
   /** zamu milestones create */
   'milestones.create': MilestoneWithProgress,
-  /** zamu milestones update */
+  /** zamu milestones update. From M8 with planUrl (--plan, --no-plan) and the wave summary. */
   'milestones.update': MilestoneWithProgress,
+  /**
+   * zamu milestones show <milestone> and zamu waves put (M8): the milestone, its plan link, the
+   * waves with their gates, locks and tasks, and the tasks in no wave.
+   */
+  'milestone-plan': MilestonePlan,
+  /** zamu waves add and zamu waves update (M8): the wave as it is now. */
+  wave: Wave,
+  /**
+   * zamu waves remove (M8): the wave as it was (number and name before the others renumbered) and
+   * the keys of its tasks, now in no wave.
+   */
+  'wave-removed': z.object({
+    milestoneId: MilestoneId,
+    removed: WaveNumberRef.extend({ id: WaveId }),
+    tasks: z.array(TaskKey),
+  }),
+  /** zamu waves pass and zamu waves fail (M8): the result recorded and the wave after it. */
+  'gate-result': z.object({
+    result: GateResult,
+    wave: Wave,
+  }),
   /** zamu cycles list */
   'cycles.list': CycleList,
   /** zamu cycles create */

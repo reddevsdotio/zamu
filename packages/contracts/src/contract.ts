@@ -19,6 +19,7 @@ import {
   Me,
   MemberList,
   MilestoneList,
+  MilestonePlan,
   MilestoneWithProgress,
   Project,
   ProjectList,
@@ -29,6 +30,7 @@ import {
   TaskBulkResult,
   TaskListPage,
   Timeline,
+  Wave,
 } from './entities';
 import {
   ArchivePreviewInput,
@@ -40,10 +42,12 @@ import {
   CreateMilestoneInput,
   CreateProjectInput,
   CreateTaskInput,
+  CreateWaveInput,
   DeleteCommentInput,
   DeleteLabelInput,
   DeleteMilestoneInput,
   DeleteProjectInput,
+  DeleteWaveInput,
   EndCycleInput,
   ExportBacklogInput,
   GetBacklogStatusInput,
@@ -51,6 +55,7 @@ import {
   GetDashboardInput,
   GetHomeInput,
   GetMilestoneInput,
+  GetMilestonePlanInput,
   GetRepositorySettingsInput,
   GetTaskInput,
   LinkPullRequestInput,
@@ -62,6 +67,8 @@ import {
   ListTasksInput,
   ListTaskTimelineInput,
   NewRepositoryWebhookSecretInput,
+  PutTasksInWaveInput,
+  RecordGateInput,
   RefreshBacklogInput,
   RestoreTasksInput,
   SyncRepositoryInput,
@@ -74,6 +81,7 @@ import {
   UpdateProjectInput,
   UpdateRepositoryInput,
   UpdateTaskInput,
+  UpdateWaveInput,
 } from './inputs';
 import { PROBLEM_STATUS, ProblemData } from './problem';
 
@@ -146,6 +154,11 @@ export const apiErrors = {
   NOT_A_REQUEST: { status: PROBLEM_STATUS.NOT_A_REQUEST, data: ProblemData },
   /** A request the host does not know, or one the task does not link (404). */
   REQUEST_NOT_FOUND: { status: PROBLEM_STATUS.REQUEST_NOT_FOUND, data: ProblemData },
+  // M8
+  /** An agent starting a task in a locked wave (409, waveLock and hint). */
+  WAVE_LOCKED: { status: PROBLEM_STATUS.WAVE_LOCKED, data: ProblemData },
+  /** Passing a gate while tasks of the wave are open (409, openKeys). */
+  GATE_TASKS_OPEN: { status: PROBLEM_STATUS.GATE_TASKS_OPEN, data: ProblemData },
 };
 
 const base = oc.errors(apiErrors);
@@ -294,7 +307,11 @@ export const contract = base.prefix(API_PREFIX).router({
           'criterion or done item is open gets 409 OPEN_ITEMS with the open items; people are not ' +
           'refused. Every work-record field of a mirrored task fails with 409 TASK_MIRRORED. ' +
           'checkAgain sets a day to look at the task again with a reason (both required; null ' +
-          'clears it). An archived task fails every change with 409 TASK_ARCHIVED.',
+          'clears it). An archived task fails every change with 409 TASK_ARCHIVED. wave puts the ' +
+          "task in a wave and its milestone in the wave's (null takes it out); changing milestone " +
+          'alone takes it out of its wave. An agent starting a task (Backlog or Todo to In progress ' +
+          'or In review) in a locked wave gets 409 WAVE_LOCKED with the wave it waits for; people ' +
+          'are not refused.',
       })
       .input(UpdateTaskInput)
       .output(Task),
@@ -468,6 +485,18 @@ export const contract = base.prefix(API_PREFIX).router({
       .route({ method: 'GET', path: '/milestones/{id}', tags: ['milestones'], summary: 'Get a milestone' })
       .input(GetMilestoneInput)
       .output(MilestoneWithProgress),
+    plan: base
+      .route({
+        method: 'GET',
+        path: '/milestones/{id}/plan',
+        tags: ['milestones'],
+        summary: 'Get the plan of a milestone',
+        description:
+          'The milestone with its progress, the plan link, the waves in order (number, name, gate ' +
+          'with its latest result, lock, progress and tasks) and the tasks in no wave.',
+      })
+      .input(GetMilestonePlanInput)
+      .output(MilestonePlan),
     update: base
       .route({
         method: 'PATCH',
@@ -476,7 +505,8 @@ export const contract = base.prefix(API_PREFIX).router({
         summary: 'Update a milestone',
         description:
           'Send only the fields to change. Completed is set by hand; any other status on a Completed ' +
-          'milestone reopens it as Active.',
+          'milestone reopens it as Active. planUrl sets the plan link, a web address or a file path ' +
+          '(null clears it); mirrored milestones take it too.',
       })
       .input(UpdateMilestoneInput)
       .output(MilestoneWithProgress),
@@ -491,6 +521,73 @@ export const contract = base.prefix(API_PREFIX).router({
       })
       .input(DeleteMilestoneInput)
       .output(z.void()),
+  },
+  waves: {
+    create: base
+      .route({
+        method: 'POST',
+        path: '/milestones/{milestone}/waves',
+        successStatus: 201,
+        tags: ['waves'],
+        summary: 'Add a wave to a milestone',
+        description:
+          'At the end, or at position (the waves from there move down one). Names are unique per ' +
+          'milestone, ignoring case. gateDescription says what the gate checks (Markdown).',
+      })
+      .input(CreateWaveInput)
+      .output(Wave),
+    update: base
+      .route({
+        method: 'PATCH',
+        path: '/waves/{id}',
+        tags: ['waves'],
+        summary: 'Change a wave',
+        description:
+          'Send only the fields to change: name, gateDescription (null clears it) or position (the ' +
+          'other waves renumber).',
+      })
+      .input(UpdateWaveInput)
+      .output(Wave),
+    delete: base
+      .route({
+        method: 'DELETE',
+        path: '/waves/{id}',
+        successStatus: 204,
+        tags: ['waves'],
+        summary: 'Remove a wave',
+        description:
+          'Its tasks go to Not in a wave, its gate results go with it, and the waves after it renumber.',
+      })
+      .input(DeleteWaveInput)
+      .output(z.void()),
+    putTasks: base
+      .route({
+        method: 'POST',
+        path: '/milestones/{milestone}/wave-tasks',
+        tags: ['waves'],
+        summary: 'Put tasks in a wave',
+        description:
+          'Up to 100 task keys into a wave of the milestone, or out of their wave with wave null, all ' +
+          'or nothing, with one activity row per changed task. Tasks of another milestone move to ' +
+          'this one; in a mirrored project that fails with 409 TASK_MIRRORED. Archived tasks fail ' +
+          'with 409 TASK_ARCHIVED. Returns the plan as it is now.',
+      })
+      .input(PutTasksInWaveInput)
+      .output(MilestonePlan),
+    recordGate: base
+      .route({
+        method: 'POST',
+        path: '/waves/{id}/gate',
+        tags: ['waves'],
+        summary: "Record a result on a wave's gate",
+        description:
+          'passed or failed, with a note that says what was checked (Markdown, required). A pass ' +
+          'while a task of the wave is neither Done nor Canceled fails with 409 GATE_TASKS_OPEN and ' +
+          'the open keys. A fail is accepted at any time and changes no task. A result can be ' +
+          'recorded again either way. Returns the wave.',
+      })
+      .input(RecordGateInput)
+      .output(Wave),
   },
   cycles: {
     list: base

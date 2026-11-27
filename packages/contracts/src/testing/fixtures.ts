@@ -16,6 +16,7 @@ import type {
   Me,
   Member,
   Milestone,
+  MilestonePlan,
   MilestoneWithProgress,
   Project,
   ProjectWithCounts,
@@ -27,6 +28,7 @@ import type {
   Timeline,
   TimelineItem,
   UserRef,
+  Wave,
   WorkItem,
   Workspace,
 } from '../entities';
@@ -916,3 +918,167 @@ export const archivePreviewFixture = {
   days: 14,
   count: 37,
 } satisfies z.input<typeof ArchivePreview>;
+
+// ---------------------------------------------------------------------------
+// M8: plan link, waves and gates
+// ---------------------------------------------------------------------------
+
+export const payoutsMilestoneId = '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4c01';
+export const waveIds = {
+  w1: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4c11',
+  w2: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4c12',
+  w3: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4c13',
+  w4: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4c14',
+  w5: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4c15',
+} as const;
+
+/** Payouts v2: five waves, W1 and W2 passed, W3 current with its gate open, W4 and W5 locked. */
+export const payoutsMilestoneFixture = {
+  ...milestoneWithProgressFixture,
+  id: payoutsMilestoneId,
+  name: 'Payouts v2',
+  description: 'Faster payouts with a ledger behind them.',
+  targetDate: '2026-12-18',
+  planUrl: 'plans/payouts-v2.html',
+  progress: { total: 22, done: 14, inProgress: 3, open: 4, canceled: 1 },
+  daysLeft: 21,
+  waves: { count: 5, current: 3, currentState: 'open', allPassed: false },
+} satisfies z.input<typeof MilestoneWithProgress>;
+
+const waveTask = (
+  key: string,
+  title: string,
+  status: 'todo' | 'in_progress' | 'in_review' | 'done' | 'canceled',
+  assignee: z.input<typeof UserRef> | null = null,
+) => ({ key, title, status, assignee, archived: false });
+
+/** W2 · Ledger: passed by claude-dev for Ana, from the CLI. */
+export const passedWaveFixture = {
+  id: waveIds.w2,
+  milestoneId: payoutsMilestoneId,
+  number: 2,
+  name: 'Ledger',
+  gate: {
+    description: 'Ledger entries balance for every payout in the staging run.',
+    state: 'passed',
+    result: {
+      state: 'passed',
+      note: 'Ran the staging payout batch: 412 entries, all balanced.',
+      recordedBy: claudeDev,
+      onBehalfOf: ana,
+      at: at('2026-11-24T16:00:00.000Z'),
+      source: { machine: 'ana-mbp', branch: 'feat/ledger' },
+    },
+  },
+  current: false,
+  locked: false,
+  lockedUntil: null,
+  progress: { total: 4, done: 4, canceled: 0, open: 0 },
+  canPass: true,
+  openKeys: [],
+  tasks: [
+    waveTask('PAY-160', 'Ledger table', 'done', claudeDev),
+    waveTask('PAY-161', 'Post entries on payout', 'done', claudeDev),
+    waveTask('PAY-162', 'Reverse entries on refund', 'done', claudeDev),
+    { ...waveTask('PAY-163', 'Ledger export', 'done', ana), archived: true },
+  ],
+} satisfies z.input<typeof Wave>;
+
+/** W3 · Payout screens: current, gate open, 4 of 6 done. */
+export const currentWaveFixture = {
+  id: waveIds.w3,
+  milestoneId: payoutsMilestoneId,
+  number: 3,
+  name: 'Payout screens',
+  gate: {
+    description: 'Screens match the design in light and dark, at 1440, 1280 and 1024.',
+    state: 'open',
+    result: null,
+  },
+  current: true,
+  locked: false,
+  lockedUntil: null,
+  progress: { total: 6, done: 4, canceled: 0, open: 2 },
+  canPass: false,
+  openKeys: ['PAY-173', 'PAY-174'],
+  tasks: [
+    waveTask('PAY-170', 'Payout list', 'done', claudeDev),
+    waveTask('PAY-171', 'Payout detail', 'done', claudeDev),
+    waveTask('PAY-172', 'Empty state', 'done', ana),
+    waveTask('PAY-175', 'Dark theme pass', 'done', claudeDev),
+    waveTask('PAY-173', 'Retry button', 'in_review', claudeDev),
+    waveTask('PAY-174', 'Failed payout banner', 'todo'),
+  ],
+} satisfies z.input<typeof Wave>;
+
+/** W4 · Rollout: locked until W3 passes. */
+export const lockedWaveFixture = {
+  id: waveIds.w4,
+  milestoneId: payoutsMilestoneId,
+  number: 4,
+  name: 'Rollout',
+  gate: { description: null, state: 'open', result: null },
+  current: false,
+  locked: true,
+  lockedUntil: { number: 3, name: 'Payout screens' },
+  progress: { total: 2, done: 0, canceled: 0, open: 2 },
+  canPass: false,
+  openKeys: ['PAY-180', 'PAY-181'],
+  tasks: [waveTask('PAY-180', 'Feature flag', 'todo'), waveTask('PAY-181', 'Merchant email', 'todo')],
+} satisfies z.input<typeof Wave>;
+
+/** A gate that failed: Tomás recorded it, so onBehalfOf is null and there is no CLI source. */
+export const failedWaveFixture = {
+  ...currentWaveFixture,
+  gate: {
+    description: currentWaveFixture.gate.description,
+    state: 'failed',
+    result: {
+      state: 'failed',
+      note: 'The banner overlaps the list at 1024.\n\nLogged the fix as PAY-176.',
+      recordedBy: tomas,
+      onBehalfOf: null,
+      at: at('2026-11-26T11:00:00.000Z'),
+      source: null,
+    },
+  },
+} satisfies z.input<typeof Wave>;
+
+/** The plan of Payouts v2 as GET /milestones/{id}/plan returns it (W1 and W5 left out for size). */
+export const milestonePlanFixture = {
+  milestone: payoutsMilestoneFixture,
+  planUrl: 'plans/payouts-v2.html',
+  waves: [passedWaveFixture, currentWaveFixture, lockedWaveFixture],
+  notInWave: [waveTask('PAY-190', 'Payout fees in the docs', 'todo', tomas)],
+} satisfies z.input<typeof MilestonePlan>;
+
+/** PAY-174 in the locked W4. */
+export const waveTaskFixture = {
+  ...taskFixture,
+  key: 'PAY-174',
+  status: 'todo',
+  milestone: { id: payoutsMilestoneId, name: 'Payouts v2', status: 'active', targetDate: '2026-12-18' },
+  wave: {
+    id: waveIds.w4,
+    number: 4,
+    name: 'Rollout',
+    locked: true,
+    lockedUntil: { number: 3, name: 'Payout screens' },
+  },
+} satisfies z.input<typeof Task>;
+
+/** Ana moving PAY-174 from W3 to W4. */
+export const waveActivityFixture = {
+  ...activityFixture,
+  id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4c21',
+  taskKey: 'PAY-174',
+  actor: ana,
+  onBehalfOf: null,
+  changes: [
+    {
+      field: 'wave',
+      from: { id: waveIds.w3, number: 3, name: 'Payout screens', removed: false },
+      to: { id: waveIds.w4, number: 4, name: 'Rollout', removed: false },
+    },
+  ],
+} satisfies z.input<typeof Activity>;

@@ -19,6 +19,8 @@ export const CycleId = RowId;
 export const CommentId = RowId;
 /** M5. */
 export const LabelId = RowId;
+/** M8. */
+export const WaveId = RowId;
 
 /**
  * Timestamps travel as ISO 8601 UTC strings. Servers may hand in a Date (what Drizzle returns);
@@ -731,6 +733,68 @@ export function checkAgainState(on: string, today: string): CheckAgainState {
 
 /** Longest work branch kept on a task, in characters. */
 export const MAX_WORK_BRANCH_LENGTH = 255;
+
+// ---------------------------------------------------------------------------
+// Plan links, waves and gates (M8)
+// ---------------------------------------------------------------------------
+
+/** Longest milestone plan link, in characters after trimming. One line. */
+export const MAX_PLAN_URL_LENGTH = 2_000;
+
+/**
+ * How a plan link shows: link (starts with http:// or https://, opens in a new tab) or path (a file
+ * path, shown in monospace). Both can be copied.
+ */
+export const PLAN_URL_KINDS = ['link', 'path'] as const;
+export const PlanUrlKind = z.enum(PLAN_URL_KINDS);
+export type PlanUrlKind = z.infer<typeof PlanUrlKind>;
+
+export function planUrlKind(value: string): PlanUrlKind {
+  return /^https?:\/\//i.test(value.trim()) ? 'link' : 'path';
+}
+
+/** Longest wave name, in characters after trimming. Unique per milestone, ignoring case. */
+export const MAX_WAVE_NAME_LENGTH = 100;
+/** Longest gate description (Markdown), in characters. */
+export const MAX_GATE_DESCRIPTION_LENGTH = 4_000;
+/** Longest gate result note (Markdown), in characters. Every result needs one. */
+export const MAX_GATE_NOTE_LENGTH = 10_000;
+/** Most open task keys a wave lists in openKeys (and GATE_TASKS_OPEN in its problem). */
+export const MAX_WAVE_OPEN_KEYS = 50;
+
+/**
+ * A gate's state is its latest recorded result: open until the first one, then passed or failed.
+ * A result can be recorded again either way at any time; there is no way back to open.
+ */
+export const GATE_STATES = ['open', 'passed', 'failed'] as const;
+export const GateState = z.enum(GATE_STATES);
+export type GateState = z.infer<typeof GateState>;
+
+export const GATE_STATE_LABELS: Record<GateState, string> = {
+  open: 'Open',
+  passed: 'Passed',
+  failed: 'Failed',
+};
+
+/** What can be recorded on a gate. */
+export const GATE_RESULT_STATES = ['passed', 'failed'] as const;
+export const GateResultState = z.enum(GATE_RESULT_STATES);
+export type GateResultState = z.infer<typeof GateResultState>;
+
+/** A wave's number is its position in the milestone, from 1. Shown as W3. */
+export function formatWaveNumber(number: number): string {
+  return `W${number}`;
+}
+
+/** A wave as the CLI names it within a milestone: its number (3 or W3) or its name. */
+export type WaveReference = { kind: 'number'; number: number } | { kind: 'name'; name: string };
+
+/** Reads `3`, `W3` or `w3` as a number, anything else (trimmed) as a name. */
+export function parseWaveReference(value: string): WaveReference {
+  const trimmed = value.trim();
+  const match = /^[Ww]?([1-9][0-9]{0,5})$/.exec(trimmed);
+  return match ? { kind: 'number', number: Number(match[1]) } : { kind: 'name', name: trimmed };
+}
 
 // ---------------------------------------------------------------------------
 // Theme

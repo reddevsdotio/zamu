@@ -22,7 +22,8 @@ function isProblemCode(code: string): code is ProblemCode {
  * Turns an ORPCError into a Problem body. Unknown codes fall back by status class. Validation
  * failures (an ORPCError caused by a ValidationError) list their issues. A `task` in the error
  * data (TASK_CHANGED), a `loop` (DEPENDENCY_LOOP), `openItems` (OPEN_ITEMS), `repository`
- * (REQUEST_OTHER_REPOSITORY) and the mirrored-problem extensions (`field`, `file`, `backlogId`, `hint`) are copied into the body.
+ * (REQUEST_OTHER_REPOSITORY), `waveLock` (WAVE_LOCKED), `openKeys` (GATE_TASKS_OPEN) and the
+ * mirrored-problem extensions (`field`, `file`, `backlogId`, `hint`) are copied into the body.
  */
 export function encodeProblem(error: ORPCError<string, unknown>, requestId?: string): Problem {
   const code: ProblemCode = isProblemCode(error.code)
@@ -42,6 +43,8 @@ export function encodeProblem(error: ORPCError<string, unknown>, requestId?: str
   const loop = data.success ? data.data.loop : undefined;
   const openItems = data.success ? data.data.openItems : undefined;
   const repository = data.success ? data.data.repository : undefined;
+  const waveLock = data.success ? data.data.waveLock : undefined;
+  const openKeys = data.success ? data.data.openKeys : undefined;
   const mirrored = data.success ? pickMirrored(data.data) : {};
   return {
     type: 'about:blank',
@@ -55,6 +58,8 @@ export function encodeProblem(error: ORPCError<string, unknown>, requestId?: str
     ...(loop ? { loop } : {}),
     ...(openItems ? { openItems } : {}),
     ...(repository ? { repository } : {}),
+    ...(waveLock ? { waveLock } : {}),
+    ...(openKeys ? { openKeys } : {}),
     ...mirrored,
   };
 }
@@ -76,7 +81,20 @@ function pickMirrored(source: MirroredProblemExtensions): MirroredProblemExtensi
 export function decodeProblem(body: unknown): ORPCError<ProblemCode, ProblemData> | null {
   const parsed = Problem.safeParse(body);
   if (!parsed.success) return null;
-  const { code, status, title, detail, requestId, issues, task, loop, openItems, repository } = parsed.data;
+  const {
+    code,
+    status,
+    title,
+    detail,
+    requestId,
+    issues,
+    task,
+    loop,
+    openItems,
+    repository,
+    waveLock,
+    openKeys,
+  } = parsed.data;
   const mirrored = pickMirrored(parsed.data);
   return new ORPCError(code, {
     defined: true,
@@ -89,6 +107,8 @@ export function decodeProblem(body: unknown): ORPCError<ProblemCode, ProblemData
       ...(loop ? { loop } : {}),
       ...(openItems ? { openItems } : {}),
       ...(repository ? { repository } : {}),
+      ...(waveLock ? { waveLock } : {}),
+      ...(openKeys ? { openKeys } : {}),
       ...mirrored,
     },
   });

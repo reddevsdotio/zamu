@@ -155,7 +155,7 @@ describe('check-again day', () => {
       UpdateTaskInput.safeParse({ key: 'PAY-142', status: 'in_progress', checkAgain: null }).success,
     ).toBe(true);
     expect(UpdateTaskInput.safeParse({ key: 'PAY-142' }).error?.issues[0]?.message).toContain(
-      'or checkAgain',
+      ', checkAgain or wave',
     );
   });
 

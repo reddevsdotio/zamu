@@ -261,7 +261,7 @@ describe('M5 inputs', () => {
     }
     const none = UpdateTaskInput.safeParse({ key: 'PAY-142' });
     expect(none.error?.issues[0]?.message).toBe(
-      'Change at least one of title, description, status, priority, assignee, milestone, cycle, position, labels, dueDate, parent, blockers, criteria, done items, plan, finalSummary or checkAgain',
+      'Change at least one of title, description, status, priority, assignee, milestone, cycle, position, labels, dueDate, parent, blockers, criteria, done items, plan, finalSummary, checkAgain or wave',
     );
     const both = UpdateTaskInput.safeParse({ key: 'PAY-142', labels: ['a'], addLabels: ['b'] });
     expect(both.error?.issues).toEqual([
