@@ -34,6 +34,13 @@ export function describeChange(subject: string, patch: TaskPatch | BulkTaskPatch
         : `Removed the milestone from ${subject}`,
     );
   }
+  if (full.wave !== undefined) {
+    parts.push(
+      full.wave
+        ? `Moved ${subject} to W${full.wave.number} · ${full.wave.name}`
+        : `Took ${subject} out of its wave`,
+    );
+  }
   if (patch.cycle !== undefined) {
     parts.push(
       patch.cycle ? `Added ${subject} to ${cycleLabel(patch.cycle)}` : `Removed ${subject} from its cycle`,

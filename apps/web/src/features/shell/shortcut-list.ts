@@ -1,5 +1,5 @@
 // The keyboard shortcut list (?), from .agent/design/m5/shortcuts.md and the M6 additions in
-// .agent/design/m6/shortcuts.md (M6 and M7 sections). On Windows and Linux ⌘ reads Ctrl.
+// .agent/design/m6/shortcuts.md (M6, M7 and M8 sections). On Windows and Linux ⌘ reads Ctrl.
 
 export interface ShortcutRow {
   /** Chips in order. */
@@ -107,6 +107,18 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       { keys: ['W'], action: 'Waive the focused item' },
       { keys: ['⌘↵'], action: 'Move the task anyway' },
       { keys: ['Esc'], action: 'Cancel: the status stays as it was' },
+    ],
+  },
+  {
+    id: 'waves',
+    title: 'Waves and gates (milestone page)',
+    rows: [
+      { keys: ['G'], action: 'Record the gate result, while a wave or its gate has focus' },
+      { keys: ['⌥↓', '⌥↑'], join: 'or', action: 'Move the focused task to the next or previous wave' },
+      { keys: ['←', '→'], join: 'or', action: 'Collapse or expand the focused wave' },
+      { keys: ['⇧N'], action: 'Add a wave' },
+      { keys: ['⌘↵'], action: 'Record the gate result, or start a task in a locked wave anyway' },
+      { keys: ['Esc'], action: 'Cancel a move or the result' },
     ],
   },
   {

@@ -191,3 +191,36 @@ export async function withTaskRef<T>(
     return call(narrowed);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Milestone arguments (M8)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves a milestone argument (id, or name with --project or the folder's project) to its id, as
+ * zamu milestones update does, and records the project for error messages.
+ */
+export async function resolveMilestoneArg(
+  context: CommandContext,
+  client: ApiClient,
+  value: string,
+  project: string | undefined,
+): Promise<string> {
+  const key = MilestoneId.safeParse(value.trim()).success
+    ? project
+    : (await resolveProject(context, project))?.key;
+  if (key) context.target = { ...context.target, project: key };
+  return resolveMilestone(client, key, value, 'Milestone');
+}
+
+/** A value as it can be pasted into a shell: bare when it is safe, else in double quotes. */
+export function shellWord(value: string): string {
+  const trimmed = value.trim();
+  if (/^[\w.,:/@+-]+$/.test(trimmed)) return trimmed;
+  return `"${trimmed.replace(/(["\\$`])/g, '\\$1')}"`;
+}
+
+/** " --project PAY" when the command was given one, for the commands zamu suggests; else nothing. */
+export function projectFlag(project: string | undefined): string {
+  return project ? ` --project ${project.trim().toUpperCase()}` : '';
+}

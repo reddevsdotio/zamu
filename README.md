@@ -34,6 +34,9 @@ An agent is a member of the workspace with its own scoped API key, and every cha
 - API keys scoped to some or all projects, read only or read and write. You can revoke one at any time.
 - A work record on every task: acceptance criteria, a definition of done, a plan, work notes and a final
   summary. An agent can't finish a task while an item is open.
+- Waves and gates on milestones: a milestone links to its plan and runs its tasks in ordered waves, each
+  ending at a gate that someone passes or fails with a note. The server refuses an agent that starts a task
+  in a wave whose earlier gates have not passed, and `zamu milestones show` prints the whole plan.
 
 ### With your repository
 

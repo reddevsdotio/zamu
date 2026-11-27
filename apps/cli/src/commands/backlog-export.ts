@@ -12,8 +12,9 @@ import {
   type CliBacklogExportFile,
   ExportBacklogInput,
 } from '@zamu/contracts';
+import { formatLimit, isNetworkFailure, NoAnswerError } from '../client';
 import { type CommandContext, emit } from '../context';
-import { usageError } from '../errors';
+import { serverError, usageError } from '../errors';
 import { git, gitRoot, requireProject } from '../project';
 import { parseInput } from './shared';
 
@@ -29,6 +30,24 @@ async function exportDir(context: CommandContext, dir: string | undefined): Prom
   const { io } = context;
   if (dir !== undefined) return resolve(io.cwd, dir);
   return join((await gitRoot(io)) ?? io.cwd, 'backlog');
+}
+
+/**
+ * PM-32: an export that runs out of time is not an unreachable server. Says how long zamu waited and
+ * whether the server had started to answer; a refused connection still fails as before.
+ */
+export function slowExport(error: unknown): never {
+  const cause = error instanceof Error ? error.cause : undefined;
+  if (isNetworkFailure(error) && cause instanceof NoAnswerError) {
+    const waited = formatLimit(cause.ms);
+    throw serverError(
+      cause.started
+        ? `The server started sending the export but did not finish within ${waited}. Try again; on a slow connection, try from a machine closer to the server.`
+        : `The server did not send the export within ${waited}. It may still be working on it: try again in a few minutes, and check the server's logs if it keeps happening.`,
+      504,
+    );
+  }
+  throw error;
 }
 
 /** The nearest folder that exists, from `path` up: git runs there when the folder is still to come. */
@@ -150,7 +169,7 @@ export async function backlogExport(context: CommandContext, options: ExportOpti
   }
 
   const client = await context.client();
-  const exported = BacklogExport.parse(await client.backlog.export(input));
+  const exported = BacklogExport.parse(await client.backlog.export(input).catch(slowExport));
 
   const files: CliBacklogExportFile[] = [];
   const writes: { path: string; content: string }[] = [];

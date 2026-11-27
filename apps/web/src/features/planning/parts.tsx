@@ -257,11 +257,30 @@ export interface FoldGroupProps {
   onToggle: () => void;
   /** Glyph before the label (a task status). */
   glyph?: ReactNode;
+  /** M8: an action at the end of the row ("+ Add waves"). */
+  end?: ReactNode;
   className?: string;
 }
 
 /** "▸ Completed 1": a 40px group row that folds what follows (.grp). ← and → fold and unfold it too. */
-export function FoldGroup({ label, count, expanded, onToggle, glyph, className }: FoldGroupProps) {
+export function FoldGroup({ label, count, expanded, onToggle, glyph, end, className }: FoldGroupProps) {
+  if (end) {
+    // An action at the end of the row ("+ Add waves", M8): drawn over the row, outside its button. The
+    // row's top margin collapses through the wrapper, so the action sits at its top.
+    return (
+      <div className="relative">
+        <FoldGroup
+          label={label}
+          count={count}
+          expanded={expanded}
+          onToggle={onToggle}
+          glyph={glyph}
+          className={className}
+        />
+        <span className="absolute top-0 right-4.5 flex h-10 items-center">{end}</span>
+      </div>
+    );
+  }
   return (
     <AriaButton
       aria-expanded={expanded}

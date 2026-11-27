@@ -22,13 +22,18 @@ import {
   CycleSelector,
   CycleState,
   cycleLengthDays,
+  GateResultState,
   GitConnectionId,
   GitProvider,
   LabelColor,
   LabelId,
   MAX_CHECK_AGAIN_REASON_LENGTH,
   MAX_CYCLE_DAYS,
+  MAX_GATE_DESCRIPTION_LENGTH,
+  MAX_GATE_NOTE_LENGTH,
   MAX_LABEL_NAME_LENGTH,
+  MAX_PLAN_URL_LENGTH,
+  MAX_WAVE_NAME_LENGTH,
   MilestoneId,
   MilestoneStatus,
   Priority,
@@ -38,6 +43,7 @@ import {
   TaskStatus,
   Theme,
   UserId,
+  WaveId,
   WorkspaceSlugInput,
 } from './primitives';
 import { MAX_REPOSITORY_URL_LENGTH, parseRepositoryUrl, REPOSITORY_URL_HINT } from './repository';
@@ -518,6 +524,12 @@ export const CreateTaskInput = z.object({
   plan: WorkText.optional(),
   /** M7: a day to look at the task again, with its reason. Omitted or null: none. */
   checkAgain: CheckAgainInput.nullable().optional(),
+  /**
+   * M8: a wave of the task's milestone; without `milestone`, the wave's milestone becomes the
+   * task's. An agent creating the task In progress or In review in a locked wave gets WAVE_LOCKED.
+   * Omitted or null: no wave.
+   */
+  wave: WaveId.nullable().optional(),
 });
 export type CreateTaskInput = z.output<typeof CreateTaskInput>;
 
@@ -588,6 +600,11 @@ export const UpdateTaskInput = z
      */
     checkAgain: CheckAgainInput.nullable().optional(),
     /**
+     * M8: puts the task in a wave (its milestone becomes the wave's milestone, in the same activity
+     * row); null takes it out. Changing `milestone` without `wave` takes the task out of its wave.
+     */
+    wave: WaveId.nullable().optional(),
+    /**
      * The updatedAt the caller last saw. When the stored task is newer, the update fails with
      * TASK_CHANGED (409) and the current task. Compared at millisecond precision.
      */
@@ -624,12 +641,13 @@ export const UpdateTaskInput = z
       'plan',
       'finalSummary',
       'checkAgain',
+      'wave',
     ]),
     {
       message:
         'Change at least one of title, description, status, priority, assignee, milestone, cycle, ' +
-        'position, labels, dueDate, parent, blockers, criteria, done items, plan, finalSummary or ' +
-        'checkAgain',
+        'position, labels, dueDate, parent, blockers, criteria, done items, plan, finalSummary, ' +
+        'checkAgain or wave',
     },
   )
   .refine((value) => value.labels === undefined || (!value.addLabels && !value.removeLabels), {
@@ -976,6 +994,17 @@ export const CreateMilestoneInput = z.object({
 });
 export type CreateMilestoneInput = z.output<typeof CreateMilestoneInput>;
 
+/**
+ * M8: where the milestone's plan lives: a web address (http:// or https://) or a file path, one
+ * line, trimmed, 1 to 2,000 characters. planUrlKind tells how it shows.
+ */
+export const PlanUrl = z
+  .string()
+  .trim()
+  .min(1, 'Add a link or a path to the plan')
+  .max(MAX_PLAN_URL_LENGTH, `Keep it to ${MAX_PLAN_URL_LENGTH.toLocaleString('en-US')} characters or fewer`)
+  .refine((value) => !/[\r\n]/.test(value), 'Keep it on one line');
+
 export const UpdateMilestoneInput = z
   .object({
     id: MilestoneId,
@@ -986,14 +1015,118 @@ export const UpdateMilestoneInput = z
     targetDate: CalendarDate.nullable().optional(),
     /** completed marks it done by hand; leaving completed sets active. */
     status: MilestoneStatus.optional(),
+    /** M8: the plan link; null clears it. Allowed on mirrored milestones (not a Backlog.md field). */
+    planUrl: PlanUrl.nullable().optional(),
   })
-  .refine(requireOneOf(['name', 'description', 'targetDate', 'status']), {
-    message: 'Change at least one of name, description, targetDate or status',
+  .refine(requireOneOf(['name', 'description', 'targetDate', 'status', 'planUrl']), {
+    message: 'Change at least one of name, description, targetDate, status or planUrl',
   });
 export type UpdateMilestoneInput = z.output<typeof UpdateMilestoneInput>;
 
 export const DeleteMilestoneInput = GetMilestoneInput;
 export type DeleteMilestoneInput = GetMilestoneInput;
+
+// ---------------------------------------------------------------------------
+// Waves and gates (M8)
+// ---------------------------------------------------------------------------
+
+/** A wave's name: one line, trimmed, 1 to 100 characters, unique per milestone ignoring case. */
+export const WaveName = z
+  .string()
+  .trim()
+  .min(1, 'Name the wave')
+  .max(MAX_WAVE_NAME_LENGTH, `Keep it to ${MAX_WAVE_NAME_LENGTH} characters or fewer`)
+  .refine((value) => !/[\r\n]/.test(value), 'Keep it on one line');
+
+/**
+ * What a wave's gate checks: Markdown, not trimmed, up to 4,000 characters. Blank text reads as
+ * null (no description).
+ */
+export const GateDescription = z
+  .string()
+  .max(
+    MAX_GATE_DESCRIPTION_LENGTH,
+    `Keep it to ${MAX_GATE_DESCRIPTION_LENGTH.toLocaleString('en-US')} characters or fewer`,
+  )
+  .transform((value) => (value.trim() === '' ? null : value));
+
+/** What was checked: Markdown, trimmed, 1 to 10,000 characters. Every gate result needs one. */
+export const GateNote = z
+  .string()
+  .trim()
+  .min(1, 'Say what was checked')
+  .max(
+    MAX_GATE_NOTE_LENGTH,
+    `Keep it to ${MAX_GATE_NOTE_LENGTH.toLocaleString('en-US')} characters or fewer`,
+  );
+
+/**
+ * Where a wave goes, from 1 (first). Past the last wave it goes last. An input bound only: core
+ * keeps the numbers dense.
+ */
+export const WavePosition = z.number().int('Use a whole number').min(1, 'Waves count from 1').max(10_000);
+
+/** GET /milestones/{id}/plan. */
+export const GetMilestonePlanInput = z.object({
+  id: MilestoneId,
+});
+export type GetMilestonePlanInput = z.output<typeof GetMilestonePlanInput>;
+
+/** POST /milestones/{milestone}/waves: a wave at the end, or at `position` (the others move down). */
+export const CreateWaveInput = z.object({
+  milestone: MilestoneId,
+  name: WaveName,
+  /** Omitted or null: no description. */
+  gateDescription: GateDescription.nullable().optional(),
+  position: WavePosition.optional(),
+});
+export type CreateWaveInput = z.output<typeof CreateWaveInput>;
+
+/** PATCH /waves/{id}: rename, describe the gate (null clears), or move to `position`. */
+export const UpdateWaveInput = z
+  .object({
+    id: WaveId,
+    name: WaveName.optional(),
+    gateDescription: GateDescription.nullable().optional(),
+    position: WavePosition.optional(),
+  })
+  .refine(requireOneOf(['name', 'gateDescription', 'position']), {
+    message: 'Change at least one of name, gateDescription or position',
+  });
+export type UpdateWaveInput = z.output<typeof UpdateWaveInput>;
+
+/** DELETE /waves/{id}: removes the wave; its tasks go to Not in a wave and the rest renumber. */
+export const DeleteWaveInput = z.object({
+  id: WaveId,
+});
+export type DeleteWaveInput = z.output<typeof DeleteWaveInput>;
+
+/**
+ * POST /milestones/{milestone}/wave-tasks: puts up to MAX_BULK_TASKS tasks in a wave of the
+ * milestone (wave null takes them out of their wave), all or nothing, one activity row per changed
+ * task. Tasks of another milestone move to this one with it.
+ */
+export const PutTasksInWaveInput = z.object({
+  milestone: MilestoneId,
+  wave: WaveId.nullable(),
+  keys: z
+    .array(TaskKeyInput)
+    .min(1, 'Pick at least one task')
+    .max(MAX_BULK_TASKS, `Change ${MAX_BULK_TASKS} tasks or fewer at once`)
+    .transform((keys) => [...new Set(keys)]),
+});
+export type PutTasksInWaveInput = z.output<typeof PutTasksInWaveInput>;
+
+/**
+ * POST /waves/{id}/gate: records a result with its note. A pass while a task of the wave is open
+ * fails with GATE_TASKS_OPEN; a fail is accepted at any time and changes no task.
+ */
+export const RecordGateInput = z.object({
+  id: WaveId,
+  state: GateResultState,
+  note: GateNote,
+});
+export type RecordGateInput = z.output<typeof RecordGateInput>;
 
 // ---------------------------------------------------------------------------
 // Cycles

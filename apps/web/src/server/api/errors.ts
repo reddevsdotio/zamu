@@ -4,11 +4,13 @@ import { ORPCError } from '@orpc/server';
 import { PROBLEM_STATUS, type ProblemCode, ProblemData } from '@zamu/contracts';
 import {
   DependencyLoop,
+  GateTasksOpen,
   isCoreError,
   mirroredExtensions,
   OpenItems,
   problemCodeOf,
   TaskChanged,
+  WaveLocked,
 } from '@zamu/core';
 
 /**
@@ -34,7 +36,8 @@ function withRequestId(data: unknown, requestId: string | undefined): ProblemDat
  * OPEN_ITEMS 409 with `openItems`; 0.10 WORKSPACE_CREATION_OFF 403, SLUG_TAKEN 409, SLUG_RESERVED 400
  * and LAST_OWNER 409, which only the web app's workspace server functions raise today; M7
  * TASK_ARCHIVED 409, REQUEST_OTHER_REPOSITORY 422 with `repository`, NOT_A_REQUEST 422 and
- * REQUEST_NOT_FOUND 404).
+ * REQUEST_NOT_FOUND 404; M8 WAVE_LOCKED 409 with `waveLock` and `hint`, GATE_TASKS_OPEN 409 with
+ * `openKeys`).
  * oRPC errors (input validation 400, our own 401, and the actor's 403 NOT_A_MEMBER and
  * WORKSPACE_MISMATCH from base.ts) keep their code and status and gain the request id.
  * Anything else is logged and becomes a 500 without internal details.
@@ -60,6 +63,10 @@ export function toApiError(error: unknown, requestId?: string): ORPCError<string
           : {}),
         // TASK_MIRRORED, MILESTONE_MIRRORED, PROJECT_MIRRORED: the file and what to do instead.
         ...mirroredExtensions(error),
+        // WAVE_LOCKED: the wave the task is in, the one it waits for, and the command that shows the plan.
+        ...(error instanceof WaveLocked ? { waveLock: error.waveLock, hint: error.hint } : {}),
+        // GATE_TASKS_OPEN: the tasks still open, so clients can list them.
+        ...(error instanceof GateTasksOpen ? { openKeys: error.openKeys } : {}),
       },
       cause: error,
     });

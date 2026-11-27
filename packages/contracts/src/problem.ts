@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { Task, WorkItemKind } from './entities';
+import { Task, WaveNumberRef, WorkItemKind } from './entities';
+import { MAX_WAVE_OPEN_KEYS, TaskKey } from './primitives';
 
 /**
  * Error codes shared by core, the API, the web app and the CLI. They match oRPC's common error
@@ -75,6 +76,15 @@ export const PROBLEM_CODES = [
   'NOT_A_REQUEST',
   /** A request the host does not know, or one not linked to the task (404). */
   'REQUEST_NOT_FOUND',
+  // M8: waves and gates.
+  /**
+   * An agent starting a task (Backlog or Todo to In progress or In review, or creating it there)
+   * in a wave whose earlier gate has not passed (409). The body carries `waveLock` and a `hint`;
+   * people are never refused, and system moves never are.
+   */
+  'WAVE_LOCKED',
+  /** Passing a gate while a task of the wave is neither Done nor Canceled (409). The body lists `openKeys`. */
+  'GATE_TASKS_OPEN',
 ] as const;
 export const ProblemCode = z.enum(PROBLEM_CODES);
 export type ProblemCode = z.infer<typeof ProblemCode>;
@@ -110,6 +120,8 @@ export const PROBLEM_STATUS: Record<ProblemCode, number> = {
   REQUEST_OTHER_REPOSITORY: 422,
   NOT_A_REQUEST: 422,
   REQUEST_NOT_FOUND: 404,
+  WAVE_LOCKED: 409,
+  GATE_TASKS_OPEN: 409,
 };
 
 export const PROBLEM_TITLES: Record<ProblemCode, string> = {
@@ -143,6 +155,8 @@ export const PROBLEM_TITLES: Record<ProblemCode, string> = {
   REQUEST_OTHER_REPOSITORY: 'Request is in another repository',
   NOT_A_REQUEST: 'Not a pull or merge request',
   REQUEST_NOT_FOUND: 'Request not found',
+  WAVE_LOCKED: 'Wave is locked',
+  GATE_TASKS_OPEN: 'Wave has open tasks',
 };
 
 /** The codes of the Backlog.md mirror rules, for clients that treat them alike. */
@@ -198,6 +212,20 @@ export const OpenItem = z.object({
 });
 export type OpenItem = z.infer<typeof OpenItem>;
 
+/**
+ * M8, WAVE_LOCKED only: the task refused, its wave, and the earlier wave whose gate it waits for
+ * ("PAY-174 is in W4 · Payout screens, which is locked until W3 · Ledger passes").
+ */
+export const ProblemWaveLock = z.object({
+  task: TaskKey,
+  wave: WaveNumberRef,
+  waitsFor: WaveNumberRef,
+});
+export type ProblemWaveLock = z.infer<typeof ProblemWaveLock>;
+
+/** M8, GATE_TASKS_OPEN only: the keys of the wave's open tasks, at most MAX_WAVE_OPEN_KEYS. */
+export const ProblemOpenKeys = z.array(TaskKey).min(1).max(MAX_WAVE_OPEN_KEYS);
+
 /** Extra data carried by contract errors (the `data` of an ORPCError). */
 export const ProblemData = z.object({
   requestId: z.string().optional(),
@@ -210,6 +238,10 @@ export const ProblemData = z.object({
   openItems: z.array(OpenItem).optional(),
   /** REQUEST_OTHER_REPOSITORY only: the project's repository, short form (github.com/northwind/payments). */
   repository: z.string().optional(),
+  /** WAVE_LOCKED only: the task, its wave and the wave it waits for. */
+  waveLock: ProblemWaveLock.optional(),
+  /** GATE_TASKS_OPEN only: the open task keys. */
+  openKeys: ProblemOpenKeys.optional(),
   ...MirroredProblemExtensions.shape,
 });
 export type ProblemData = z.infer<typeof ProblemData>;
@@ -218,8 +250,9 @@ export type ProblemData = z.infer<typeof ProblemData>;
  * Error body of every /api/v1 response with a 4xx or 5xx status, after RFC 9457 (problem details)
  * with these extensions: `code`, `requestId`, `issues`, `task` for TASK_CHANGED, `field`, `file`,
  * `backlogId`, `hint` for the *_MIRRORED codes (M3), `loop` for DEPENDENCY_LOOP (M5),
- * `openItems` for OPEN_ITEMS (M6), and `repository` for REQUEST_OTHER_REPOSITORY (M7). The CLI
- * prints it under `zamu.v1.error`.
+ * `openItems` for OPEN_ITEMS (M6), `repository` for REQUEST_OTHER_REPOSITORY (M7), and `waveLock`
+ * with `hint` for WAVE_LOCKED and `openKeys` for GATE_TASKS_OPEN (M8). The CLI prints it under
+ * `zamu.v1.error`.
  */
 export const Problem = z.object({
   type: z.string().default('about:blank'),
@@ -238,6 +271,10 @@ export const Problem = z.object({
   openItems: z.array(OpenItem).optional(),
   /** REQUEST_OTHER_REPOSITORY only: the repository the project links, so clients can say which one. */
   repository: z.string().optional(),
+  /** WAVE_LOCKED only: which wave holds the task back, so clients can say what to wait for. */
+  waveLock: ProblemWaveLock.optional(),
+  /** GATE_TASKS_OPEN only: the tasks still open, so clients can list them. */
+  openKeys: ProblemOpenKeys.optional(),
   ...MirroredProblemExtensions.shape,
 });
 export type Problem = z.output<typeof Problem>;
@@ -253,6 +290,8 @@ export function problem(
     task?: Problem['task'];
     openItems?: OpenItem[];
     repository?: string;
+    waveLock?: ProblemWaveLock;
+    openKeys?: string[];
   } & MirroredProblemExtensions = {},
 ): Problem {
   return {

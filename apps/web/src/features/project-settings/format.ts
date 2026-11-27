@@ -130,8 +130,10 @@ export function statusHeading(
       return { title: 'Paused', note: at(status.lastAttemptAt, (v, n) => `since ${sinceText(v, n)}`) };
     case 'detached':
       return {
-        title: status.mode === 'import' ? 'Imported' : 'Detached',
-        note: at(status.detachedAt, (v, n) => `detached ${dateText(v, n)}`),
+        title: status.mode === 'import' ? 'Imported' : 'Owned by Zamu',
+        note: at(status.detachedAt, (v, n) =>
+          status.mode === 'import' ? `imported ${dateText(v, n)}` : `since ${dateText(v, n)}`,
+        ),
       };
   }
 }
@@ -165,7 +167,7 @@ export function problemCount(status: Pick<BacklogSourceStatus, 'problems'>): num
 /** Mode line of the facts. */
 export function modeText(status: Pick<BacklogSourceStatus, 'mode' | 'state'>): string {
   if (status.state === 'detached') {
-    return status.mode === 'import' ? 'Imported once, then detached' : 'Mirrored, then detached';
+    return status.mode === 'import' ? 'Imported once' : 'Mirrored, then switched to Zamu';
   }
   return status.mode === 'import'
     ? 'Import · reads once, then detaches'

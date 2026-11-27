@@ -8,7 +8,17 @@ import { useOptionalQuickCreate } from '~/features/shell/quick-create';
 import { taskListQuery } from '~/features/tasks/queries';
 import { useApi, useWorkspaceSlug } from '~/lib/workspace';
 import { type WorkspaceUrlSlug, workspacePath } from '~/lib/workspace-paths';
-import { Button, cn, EmptyState, OPEN_STATUSES, Pill, type PillTone, Skeleton, useHotkeys } from '~/ui';
+import {
+  Button,
+  cn,
+  EmptyState,
+  OPEN_STATUSES,
+  Pill,
+  type PillTone,
+  Skeleton,
+  useHotkeys,
+  WaveStatusLine,
+} from '~/ui';
 import { formatDay } from './dates';
 import { FeatureOff } from './FeatureOff';
 import { NewMilestoneDialog } from './MilestoneDialogHost';
@@ -29,7 +39,8 @@ import { milestonesQuery } from './queries';
 // /p/HBR/milestones (frame 107): the open milestones with progress, target, task count and a status
 // pill (On track, 2 blocked), the completed ones folded at the bottom. J / K or ↓ / ↑ move the
 // highlight, Enter or a click opens the milestone. New milestone in native projects only: mirrored
-// milestones come from the Backlog.md files (notes.md call 3).
+// milestones come from the Backlog.md files (notes.md call 3). M8 (frame 118): the wave status under each
+// name ("Wave 3 of 5 · gate open", "Gate failed in wave 8 of 12", "All 4 gates passed", "No waves").
 
 export function milestoneHref(workspace: WorkspaceUrlSlug, projectKey: string, id: string): string {
   return workspacePath(
@@ -338,7 +349,12 @@ function MilestoneRow({ projectKey, milestone, today, blocked, isFocused, onFocu
         >
           {milestone.name}
         </Link>
-        {milestone.description ? (
+        {milestone.waves !== undefined ? (
+          <WaveStatusLine
+            waves={milestone.waves}
+            openTasks={progress.total - progress.done - progress.canceled}
+          />
+        ) : milestone.description ? (
           <span className="truncate text-xs text-fg-3">{firstLine(milestone.description)}</span>
         ) : null}
       </span>

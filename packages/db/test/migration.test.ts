@@ -1,8 +1,9 @@
 // Upgrade paths: a database migrated and filled under an older release keeps every row through the
 // later migrations, and each backfill fills what it should (M2 ranks in the M1 list order, M5 task
 // fields from Backlog.md blocks, the M6 work record from mirrored descriptions, in 0.10 the
-// workspace each user used last and workspace slugs that fit the URL rules, and in M7 when closed
-// tasks closed and which mirrored tasks start archived).
+// workspace each user used last and workspace slugs that fit the URL rules, in M7 when closed
+// tasks closed and which mirrored tasks start archived, and in M8 that milestones keep their tasks
+// and start without a plan link or waves).
 import { cpSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1362,5 +1363,139 @@ describe('M7 migration on a 0.10.0 database with closed, mirrored and linked pro
         { count: 0 },
       ]);
     }
+  });
+});
+
+/** Every migration released in 0.11.0, the last release before M8. */
+const V0_11_0_MIGRATIONS = [...V0_10_0_MIGRATIONS, '20261126143045_m7_pull_requests_archive'];
+
+describe('M8 migration on a 0.11.0 database with milestones and tasks', () => {
+  let url: string;
+  let folder: string;
+  let db: Db;
+  let end: () => Promise<void>;
+
+  const ANA = '0190a1b2-0000-7000-8000-0000000006a1';
+  const AGENT = '0190a1b2-0000-7000-8000-0000000006a2';
+  const NORTHWIND = '0190a1b2-0000-7000-8000-0000000006b1';
+  const PAY = '0190a1b2-0000-7000-8000-0000000006c1';
+  const PAYOUTS = '0190a1b2-0000-7000-8000-0000000006d1';
+  const LEDGER = '0190a1b2-0000-7000-8000-0000000006d2';
+
+  beforeAll(async () => {
+    folder = mkdtempSync(join(tmpdir(), 'zamu-0-11-0-migrations-'));
+    for (const name of V0_11_0_MIGRATIONS) {
+      cpSync(join(migrationsFolder, name), join(folder, name), { recursive: true });
+    }
+    url = withDatabase(testServerUrl(), uniqueDatabaseName('pm_test_upgrade_m8'));
+    await createDatabase(url);
+    await migrateFrom(url, folder);
+    const handle = createDb(url);
+    db = handle.db;
+    end = () => handle.pool.end();
+  });
+
+  afterAll(async () => {
+    await end?.();
+    if (url) await dropDatabase(url);
+    if (folder) rmSync(folder, { recursive: true, force: true });
+  });
+
+  async function rows(query: ReturnType<typeof sql>) {
+    const result = await db.execute<Record<string, unknown>>(query);
+    return result.rows;
+  }
+
+  it('keeps every milestone with its tasks, and adds no plan link and no waves', async () => {
+    await db.execute(sql`insert into "user" (id, name, email) values
+      (${ANA}, 'Ana', 'ana-m8@example.com'), (${AGENT}, 'claude-dev', 'claude-dev-m8@agents.invalid')`);
+    await db.execute(sql`update "user" set kind = 'agent', responsible_user_id = ${ANA} where id = ${AGENT}`);
+    await db.execute(
+      sql`insert into organization (id, name, slug) values (${NORTHWIND}, 'Northwind', 'northwind')`,
+    );
+    await db.execute(sql`insert into member (organization_id, user_id, role) values
+      (${NORTHWIND}, ${ANA}, 'owner'), (${NORTHWIND}, ${AGENT}, 'member')`);
+    await db.execute(sql`insert into project (id, workspace_id, key, name, next_task_number) values
+      (${PAY}, ${NORTHWIND}, 'PAY', 'Payments', 7)`);
+    await db.execute(sql`insert into milestone (id, workspace_id, project_id, name, status, target_date, created_by_id) values
+      (${PAYOUTS}, ${NORTHWIND}, ${PAY}, 'Payouts v2', 'active', '2026-12-18', ${ANA}),
+      (${LEDGER}, ${NORTHWIND}, ${PAY}, 'Ledger', 'completed', null, ${ANA})`);
+    // Five Payouts tasks over several statuses (one archived), one Ledger task, one in no milestone.
+    const statuses = ['done', 'done', 'in_progress', 'todo', 'canceled'];
+    for (const [index, status] of statuses.entries()) {
+      await db.execute(sql`
+        insert into task (project_id, number, title, status, milestone_id, assignee_id, created_by_id,
+          archived_at, updated_at)
+        values (${PAY}, ${index + 1}, ${`Payout task ${index + 1}`}, ${status}::task_status, ${PAYOUTS},
+          ${index === 2 ? AGENT : null}, ${ANA}, ${index === 0 ? '2026-11-20T08:00:00Z' : null}::timestamptz,
+          ${`2026-11-2${index}T10:00:00.123456Z`}::timestamptz)`);
+    }
+    await db.execute(sql`insert into task (project_id, number, title, status, milestone_id, created_by_id) values
+      (${PAY}, 6, 'Ledger table', 'done', ${LEDGER}, ${ANA}),
+      (${PAY}, 7, 'Loose task', 'backlog', null, ${ANA})`);
+    await db.execute(sql`
+      insert into activity (workspace_id, project_id, task_id, actor_id, on_behalf_of_id, type, changes)
+      select ${NORTHWIND}, project_id, id, ${AGENT}, ${ANA}, 'task.created',
+        jsonb_build_array(jsonb_build_object('field', 'milestone', 'from', null, 'to', milestone_id))
+      from task`);
+
+    const before = await rowCounts(db);
+    const tasksBefore = await rows(
+      sql`select id, milestone_id, status::text, updated_at::text from task order by number`,
+    );
+    const milestonesBefore = await rows(
+      sql`select id, name, status::text, target_date::text, updated_at::text from milestone order by name`,
+    );
+
+    await migrateFrom(url, migrationsFolder);
+
+    expect(await rowCounts(db)).toEqual(before);
+    expect(before.task).toBe(7);
+    // Tasks keep their milestone, status and updated_at; none is in a wave.
+    expect(
+      await rows(sql`select id, milestone_id, status::text, updated_at::text from task order by number`),
+    ).toEqual(tasksBefore);
+    expect(await rows(sql`select count(*)::int as count from task where wave_id is not null`)).toEqual([
+      { count: 0 },
+    ]);
+    // Milestones are as they were, without a plan link.
+    expect(
+      await rows(
+        sql`select id, name, status::text, target_date::text, updated_at::text from milestone order by name`,
+      ),
+    ).toEqual(milestonesBefore);
+    expect(await rows(sql`select distinct plan_url from milestone`)).toEqual([{ plan_url: null }]);
+    // No waves and no gate results were made.
+    for (const table of ['wave', 'gate_result']) {
+      expect(await rows(sql`select count(*)::int as count from ${sql.identifier(table)}`), table).toEqual([
+        { count: 0 },
+      ]);
+    }
+
+    // The new columns and tables take M8 data after the upgrade.
+    await db.execute(sql`update milestone set plan_url = 'plans/payouts-v2.html' where id = ${PAYOUTS}`);
+    await expect(db.execute(sql`update milestone set plan_url = '' where id = ${PAYOUTS}`)).rejects.toThrow();
+    const wave = await db.execute<{ id: string }>(sql`
+      insert into wave (workspace_id, milestone_id, position, name, gate_description, created_by_id)
+      values (${NORTHWIND}, ${PAYOUTS}, 1, 'Data and contracts', 'Migrations apply on 0.11.0', ${ANA})
+      returning id`);
+    const waveId = wave.rows[0]?.id as string;
+    await db.execute(
+      sql`update task set wave_id = ${waveId} where milestone_id = ${PAYOUTS} and number <= 2`,
+    );
+    await db.execute(sql`insert into gate_result (workspace_id, wave_id, state, note, actor_id, on_behalf_of_id)
+      values (${NORTHWIND}, ${waveId}, 'passed', 'Both tasks are done.', ${AGENT}, ${ANA})`);
+    expect(await rows(sql`select number from task where wave_id = ${waveId} order by number`)).toEqual([
+      { number: 1 },
+      { number: 2 },
+    ]);
+
+    // Deleting the milestone takes its waves and their results; its tasks stay, out of the wave.
+    await db.execute(sql`delete from milestone where id = ${PAYOUTS}`);
+    expect(await rows(sql`select count(*)::int as count from wave`)).toEqual([{ count: 0 }]);
+    expect(await rows(sql`select count(*)::int as count from gate_result`)).toEqual([{ count: 0 }]);
+    expect(
+      await rows(sql`select count(*)::int as count from task where milestone_id is null and wave_id is null`),
+    ).toEqual([{ count: 6 }]);
   });
 });

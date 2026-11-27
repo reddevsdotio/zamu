@@ -1,7 +1,7 @@
 // Every failure the CLI reports becomes a CliError: a Problem (printed as zamu.v1.error with --json)
 // plus the process exit code. Scripts and agents branch on the exit code, so it is part of the
 // stable interface:
-//   0 ok, 1 usage (OPEN_ITEMS and TASK_ARCHIVED included), 2 auth, 3 not found, 4 forbidden, 5 server,
+//   0 ok, 1 usage (OPEN_ITEMS, TASK_ARCHIVED, WAVE_LOCKED and GATE_TASKS_OPEN included), 2 auth, 3 not found, 4 forbidden, 5 server,
 //   6 Backlog.md conflict, 7 queued while the server was unreachable (queue.ts).
 import { ORPCError } from '@orpc/client';
 import {
@@ -209,6 +209,28 @@ export function openItemsLines(body: Problem, context: OpenItemsContext = {}): s
   return lines;
 }
 
+/**
+ * Under a WAVE_LOCKED refusal (M8): the server's hint (the command that shows the plan), then the
+ * rule that matters to an agent.
+ *
+ *   zamu: PAY-174 is in W4 · Rollout, which is locked until W3 · Payout screens passes. ...
+ *     The waves and their gates: zamu milestones show "Payouts v2" --project PAY
+ *     Don't take PAY-174 out of its wave to get around the lock.
+ */
+export function waveLockedHints(lock: Problem['waveLock'], hint: string | undefined): string[] {
+  const hints = hint ? [/^zamu\s/.test(hint) ? `The waves and their gates: ${hint}` : hint] : [];
+  return [...hints, `Don't take ${lock?.task ?? 'the task'} out of its wave to get around the lock.`];
+}
+
+/**
+ * Under a GATE_TASKS_OPEN refusal (M8): the open tasks, unless the message lists them already, and
+ * that a fail needs no finished tasks.
+ */
+export function gateTasksOpenHints(openKeys: readonly string[] | undefined, detail: string): string[] {
+  const listed = !openKeys?.length || detail.includes(openKeys[0] as string);
+  return [...(listed ? [] : [`Open: ${openKeys.join(', ')}`]), 'A fail can be recorded at any time.'];
+}
+
 function errorChain(error: unknown): string {
   const parts: string[] = [];
   let current: unknown = error;
@@ -256,6 +278,13 @@ export function toCliError(error: unknown, url?: string): CliError {
       code === 'REQUEST_OTHER_REPOSITORY' && typeof data?.repository === 'string'
         ? data.repository
         : undefined;
+    // WAVE_LOCKED names the wave and the gate it waits for; GATE_TASKS_OPEN lists the open tasks (M8).
+    const waveLock =
+      code === 'WAVE_LOCKED' && data?.waveLock
+        ? (data.waveLock as NonNullable<Problem['waveLock']>)
+        : undefined;
+    const openKeys =
+      code === 'GATE_TASKS_OPEN' && Array.isArray(data?.openKeys) ? (data.openKeys as string[]) : undefined;
     const body: Problem = {
       ...problem(code, error.message || undefined, {
         ...(requestId ? { requestId } : {}),
@@ -266,6 +295,8 @@ export function toCliError(error: unknown, url?: string): CliError {
       ...(loop ? { loop } : {}),
       ...(openItems ? { openItems } : {}),
       ...(repository ? { repository } : {}),
+      ...(waveLock ? { waveLock } : {}),
+      ...(openKeys ? { openKeys } : {}),
       status: status >= 400 && status <= 599 ? status : 500,
     };
     if (BACKLOG_CONFLICT_CODES.has(code)) {
@@ -300,6 +331,8 @@ export function toCliError(error: unknown, url?: string): CliError {
       );
     }
     if (code === 'NOT_A_REQUEST') hints.unshift(...REQUEST_URL_HINTS);
+    if (code === 'WAVE_LOCKED') hints.unshift(...waveLockedHints(waveLock, body.hint));
+    if (code === 'GATE_TASKS_OPEN') hints.unshift(...gateTasksOpenHints(openKeys, error.message));
     if (code === 'NOT_A_MEMBER') {
       hints.unshift('zamu workspaces lists your logins; ask an owner of that workspace for an invitation.');
     }

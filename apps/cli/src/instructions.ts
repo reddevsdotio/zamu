@@ -1,6 +1,7 @@
-// The guides `zamu instructions` prints (M6): an overview and three steps of the work on a task,
-// bundled with the CLI so an agent reads the version that matches its zamu. AGENTS.md only points
-// here (zamu agents), so the guidance changes with an upgrade, not with an edit in every repository.
+// The guides `zamu instructions` prints (M6): an overview, three steps of the work on a task and (M8)
+// planning a milestone in waves with gates, bundled with the CLI so an agent reads the version that
+// matches its zamu. AGENTS.md only points here (zamu agents), so the guidance changes with an upgrade,
+// not with an edit in every repository.
 import type { CliInstructionTopic } from '@zamu/contracts';
 
 const OVERVIEW = `# Working with zamu
@@ -20,6 +21,9 @@ The work, in three guides:
   zamu instructions working      the plan, notes after each step, checking what is proven
   zamu instructions finishing    the final summary, In review, the final report
 
+Planning a milestone:
+  zamu instructions planning     the plan link, waves with gates, zamu milestones show
+
 Basics:
   zamu whoami                                   who you act as, in which workspace, and which
                                                 project applies here
@@ -37,6 +41,8 @@ Rules:
 - Stop at In review. A person, or the merge of the task's pull request, moves the task to Done.
 - Zamu refuses an agent that moves a task to In review or Done while a criterion or done item is
   open (exit code 1, OPEN_ITEMS). The message lists each open item and the flags that settle it.
+- A milestone's tasks can run in waves. Zamu refuses an agent that starts a task in a wave whose
+  earlier gate has not passed (exit code 1, WAVE_LOCKED). Work on the wave it waits for instead.
 - If the server can't be reached, zamu may queue a write and exit with code 7. Name every queued
   write in your final report.
 - In a project owned by Zamu, never write Backlog.md task files by hand. Tasks are in Zamu, and
@@ -44,7 +50,7 @@ Rules:
 - In a project that still mirrors Backlog.md, the task files hold the work record. Change it in the
   files (or with backlog task edit) and push; zamu shows it read-only. Comments still go through zamu.
 
-Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS too), 2 not logged in or key refused,
+Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS and WAVE_LOCKED too), 2 not logged in or key refused,
 3 not found, 4 outside the key's scope, 5 server, 6 the change belongs in Backlog.md, 7 queued.
 `;
 
@@ -78,43 +84,90 @@ makes a subtask, and --blocked-by KEY records that it waits on another task.
 
 const WORKING = `# Working on a task
 
-1. Start it and write the plan in one command, from the git branch you will work on:
+1. Check the task's wave before you start. zamu tasks show KEY names its milestone and wave, and
+   zamu milestones show <milestone> lists the waves and what each gate checks. A task in a locked
+   wave can't start until the gates before it pass (WAVE_LOCKED): pick a task of the current wave.
+
+2. Start it and write the plan in one command, from the git branch you will work on:
      zamu tasks update KEY --status in_progress --plan - < plan.md
    The plan says how the work will be done: the steps, the files, the risks. It is Markdown.
    Replace it with --plan when it changes. zamu records the branch, so the pull request opened from
    it links to the task by itself.
 
-2. Add a note after each step that changes something: what you did, what you found, what failed.
+3. Add a note after each step that changes something: what you did, what you found, what failed.
      zamu notes add KEY "Migration written and tested on a copy of the data"
      zamu tasks update KEY --check-ac 2 --append-notes "Retry schedule covered by tests"
    Keep notes short. They tell the next person, or your next session, where things stand.
 
-3. Check criteria when you have proven them, not before:
+4. Check criteria when you have proven them, not before:
      zamu tasks update KEY --check-ac 2
      zamu tasks update KEY --check-ac 3 --check-ac 4 --check-dod 1
    Several flags go in one request. --uncheck-ac N takes a check back.
 
-4. Change the criteria when the work shows they were wrong, and say why in a note:
+5. Change the criteria when the work shows they were wrong, and say why in a note:
      zamu tasks update KEY --ac "Retries stop when the payout is canceled" --remove-ac 3
    Numbers are positions in the list. They shift after a removal, so read zamu tasks show KEY
    before the next change.
 
-5. Waive an item that no longer applies, with the reason:
+6. Waive an item that no longer applies, with the reason:
      zamu tasks update KEY --waive-ac 5 --reason "Load test replaced by a replay of last week's traffic"
    --unwaive-ac N takes a waiver back. --waive-dod N and --unwaive-dod N do the same for done items.
 
-6. Comments are for people: questions, decisions, blockers. @name mentions someone.
+7. Comments are for people: questions, decisions, blockers. @name mentions someone.
      zamu comments add KEY "@ana Should refunds retry too?"
 
-7. A pull request for several tasks links the others through its description: put a line such as
+8. A pull request for several tasks links the others through its description: put a line such as
    "Closes: KEY-1, KEY-2" in it. zamu pr link KEY URL links a request by hand.
 
-8. When the task waits on something outside your control, set a day to look again instead of
+9. When the task waits on something outside your control, set a day to look again instead of
    leaving it In progress:
      zamu tasks update KEY --check-again 2026-12-03 --reason "Waiting for the bank's answer"
    --no-check-again clears it.
 
+10. When every task of a wave is done or canceled, run the checks its gate describes and record the
+    result with a note that says what was checked:
+      zamu waves pass <milestone> W3 --note "Ran the payout suite and checked both themes at 1024"
+      zamu waves fail <milestone> W3 --note - < what-failed.md
+    A pass is refused while a task of the wave is open (GATE_TASKS_OPEN): the message lists them.
+    On a failure, log each fix as a task in the same wave (zamu waves put <milestone> W3 KEY), then
+    record the gate again when the fixes are done.
+
 When you are blocked, say on what in a note or a comment.
+`;
+
+const PLANNING = `# Planning a milestone in waves
+
+A milestone's tasks can run in waves, one after the other. Each wave ends at a gate: checks that must
+pass before the next wave starts. Zamu keeps the waves, the gates and their results; the plan itself
+stays where you wrote it.
+
+1. Write the plan first, in the repository or a wiki. Then link it from the milestone:
+     zamu milestones update <milestone> --plan plans/payouts-v2.html
+   A web address works too (https://wiki.northwind.dev/payouts). --no-plan removes the link.
+
+2. Add the waves in order, each with what its gate checks:
+     zamu waves add <milestone> "Ledger" --gate "Entries balance for every payout in the staging run"
+     zamu waves add <milestone> "Payout screens" --gate - < gate.md
+   Waves are numbered from 1 in order (W1, W2). --position N adds one in between; the rest renumber.
+   zamu waves update <milestone> W2 --name, --gate or --position changes one.
+
+3. Put the tasks in their waves:
+     zamu waves put <milestone> W1 PAY-160 PAY-161 PAY-162
+     zamu tasks update PAY-170 --wave 2
+   A task of another milestone moves to this one. none as the wave takes tasks out of their wave:
+     zamu waves put <milestone> none PAY-190
+
+4. Check the result:
+     zamu milestones show <milestone>
+   It lists the plan link, each wave with its gate, lock and tasks, the tasks in no wave, and a last
+   line that says what comes next. Run it again whenever you pick the next task.
+
+A wave is locked until every gate before it has passed. Never take a task out of its wave, or put it
+in another, to get around a lock. Record a gate only after running its checks, with a note that says
+what was checked.
+
+The milestone is named by id, or by name with --project (or the folder's project). A wave is named
+by its number (3 or W3) or its name.
 `;
 
 const FINISHING = `# Finishing a task
@@ -153,4 +206,5 @@ export const INSTRUCTIONS: Record<CliInstructionTopic, string> = {
   creating: CREATING,
   working: WORKING,
   finishing: FINISHING,
+  planning: PLANNING,
 };

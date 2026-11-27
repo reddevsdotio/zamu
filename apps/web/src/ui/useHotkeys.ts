@@ -177,3 +177,24 @@ export function useHotkeys(map: HotkeyMap, options: UseHotkeysOptions = {}): voi
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [enabled, allowInOverlays]);
 }
+
+/**
+ * ⌘↵ (Ctrl+Enter elsewhere) for a confirm dialog's main action, wherever focus is in the page. Taken
+ * in the capture phase: a dialog that opens with focus on Cancel would otherwise get the Enter as a
+ * press of Cancel before a bubbling listener runs.
+ */
+export function useModEnter(enabled: boolean, onModEnter: () => void): void {
+  const handler = useRef(onModEnter);
+  handler.current = onModEnter;
+  useEffect(() => {
+    if (!enabled) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey) || event.isComposing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      handler.current();
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [enabled]);
+}

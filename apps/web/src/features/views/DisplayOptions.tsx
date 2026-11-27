@@ -69,6 +69,19 @@ export interface DisplayOptionsPanelProps {
   groupChoices?: readonly GroupBy[];
   /** M7 "Archived tasks": Hidden or Shown (the Archived filter). Omit to leave the row out (Home). */
   archived?: { shown: boolean; onChange: (shown: boolean) => void };
+  /**
+   * M8: a grouping only this page has, listed first ("Wave" on a milestone page). The page holds its
+   * state: picking it calls onChange(true); picking a stored grouping calls onChange(false) first.
+   */
+  pageGrouping?: PageGrouping;
+}
+
+/** A grouping a page adds to the stored ones (M8: "Wave" on a milestone page). */
+export interface PageGrouping {
+  id: string;
+  label: string;
+  active: boolean;
+  onChange: (active: boolean) => void;
 }
 
 export type ArchivedChoice = 'hidden' | 'shown';
@@ -141,9 +154,14 @@ export function DisplayOptionsPanel({
   onLayoutChange,
   groupChoices = ['status', 'priority', 'assignee', 'milestone', 'cycle', 'label', 'none'],
   archived,
+  pageGrouping,
 }: DisplayOptionsPanelProps) {
   const board = view === 'board';
-  const groupItems = options(groupChoices, GROUP_BY_LABELS);
+  const groupItems = [
+    ...(pageGrouping && !board ? [{ id: pageGrouping.id, label: pageGrouping.label }] : []),
+    ...options(groupChoices, GROUP_BY_LABELS),
+  ];
+  const groupValue = pageGrouping?.active && !board ? pageGrouping.id : value.groupBy;
   const laneItems = options(
     groupChoices.filter((choice) => choice === 'none' || choice !== value.groupBy),
     GROUP_BY_LABELS,
@@ -168,13 +186,20 @@ export function DisplayOptionsPanel({
         ) : null}
         {view !== 'home' ? (
           <Row label={board ? 'Columns' : 'Grouping'}>
-            <DisplaySelect<GroupBy>
+            <DisplaySelect<string>
               label={board ? 'Columns' : 'Grouping'}
-              value={value.groupBy}
+              value={groupValue}
               items={groupItems}
-              onChange={(groupBy) =>
-                onChange({ groupBy, ...(groupBy === value.swimlanes ? { swimlanes: 'none' } : {}) })
-              }
+              onChange={(choice) => {
+                if (pageGrouping && choice === pageGrouping.id) {
+                  pageGrouping.onChange(true);
+                  return;
+                }
+                pageGrouping?.onChange(false);
+                const groupBy = choice as GroupBy;
+                if (groupBy === value.groupBy) return;
+                onChange({ groupBy, ...(groupBy === value.swimlanes ? { swimlanes: 'none' } : {}) });
+              }}
             />
           </Row>
         ) : null}
@@ -309,6 +334,8 @@ export interface DisplayButtonProps {
   view: TaskViewName;
   onLayoutChange?: (layout: ViewLayout) => void;
   groupChoices?: readonly GroupBy[];
+  /** M8: a grouping only this page has ("Wave" on a milestone page). */
+  pageGrouping?: PageGrouping;
   className?: string;
 }
 
@@ -321,6 +348,7 @@ export function DisplayButton({
   view,
   onLayoutChange,
   groupChoices,
+  pageGrouping,
   className,
 }: DisplayButtonProps) {
   const [displayOptions, set, reset] = useDisplayOptions(projectKey, view);
@@ -352,6 +380,7 @@ export function DisplayButton({
                   }
                 : {}),
               ...(groupChoices ? { groupChoices } : {}),
+              ...(pageGrouping ? { pageGrouping } : {}),
             };
             return projectKey && hasRouter ? (
               <PanelWithArchived {...panel} />

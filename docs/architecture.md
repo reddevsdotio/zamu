@@ -72,13 +72,14 @@ step.
 and the `zamu.v1.*` shapes of the CLI's `--json` output. Everything else imports its types from here.
 
 `packages/core` holds the services: workspaces, projects, tasks and their work record, comments and notes,
-milestones, cycles, labels, Home, members, keys, git connections, Backlog.md, repository links and pull
-requests, and the archive.
+milestones and their waves and gates, cycles, labels, Home, members, keys, git connections, Backlog.md,
+repository links and pull requests, and the archive.
 - Each service takes a context (database, clock, time zone, git settings, job queue), the actor and a parsed
   input.
 - `authz.ts` decides who may do what, and every service calls it first.
 - `criteria.ts` applies the operations on criteria and done items. It also holds the finishing rule: an
   agent can't move a task to In review or Done while an item is open.
+- `waves.ts` holds the waves, the gate results and the lock rule (see [Waves and gates](#waves-and-gates)).
 
 `packages/db` holds the Drizzle schema, the SQL migrations that drizzle-kit generates, and a test helper.
 The helper creates a throwaway database and applies every migration to it.
@@ -153,6 +154,21 @@ The schema is in `packages/db/src/schema/pull-requests.ts` and `app.ts`.
 | Merged with open items               | `task.merged_done_at`, cleared when the task leaves Done               |
 | Check again                          | `task.check_again_on` and `check_again_reason`, set together           |
 | The archive setting                  | `project.archive_after_days`, null for off                             |
+
+### Where waves and gates live
+
+The schema is in `packages/db/src/schema/waves.ts`. `task.wave_id` is in `app.ts`.
+
+| Data                    | Where                                                                      |
+| ----------------------- | -------------------------------------------------------------------------- |
+| A milestone's plan link | `milestone.plan_url`: a web address or a file path, never the plan itself  |
+| Waves                   | `wave`: milestone, `position` (the number, from 1, dense), name, gate text |
+| Gate results            | `gate_result`: state, note, actor, person acted for, machine, branch, time |
+| A gate's state          | The newest `gate_result` row of the wave; none means open                  |
+| The wave a task is in   | `task.wave_id`, null for none; always a wave of the task's milestone       |
+| A task's wave changes   | Activity rows with a `wave` change that stores the wave's number and name  |
+
+There is no unique index on `position`, so a reorder rewrites the numbers in one statement.
 
 ## How data moves
 
@@ -235,7 +251,7 @@ The CLI stores one login per server and workspace in `$XDG_CONFIG_HOME/zamu/conf
 #### Source headers and the offline queue
 
 Every CLI request also carries `x-zamu-machine` and `x-zamu-branch`. `apps/web/src/server/context.ts` reads
-them into the request's source, and core stores it on the activity rows and notes it writes.
+them into the request's source, and core stores it on the activity rows, notes and gate results it writes.
 
 When the server doesn't answer within 5 seconds, the CLI keeps some kinds of write to an existing task in a
 local queue (`$XDG_STATE_HOME/zamu/queue.json`, under a lock file). It sends them before its next request.
@@ -335,6 +351,32 @@ records it on the task (`workBranchFor` in `tasks.ts`) and links the open reques
 - For a mirrored project the Backlog.md refresh sets and clears `archived_at` from the file's folder
   (`archive/tasks/`), and the export writes archived tasks there.
 
+### Waves and gates
+
+`packages/core/src/waves.ts` holds the waves and their gates. The lock rule is computed in one place,
+`waveStates`.
+- One query reads the waves of a set of milestones with the latest result of each gate.
+- For each wave it returns the number, the gate state, whether the wave is current or locked, and the wave
+  it waits for. A wave is locked while an earlier wave's gate has not passed.
+- The milestone plan, the task and list rows, the milestone summaries and the refusal all read it, for a
+  whole list at once. So the page, the CLI and the server never disagree.
+
+The refusal sits in `tasks.ts` next to the finishing rule (`OPEN_ITEMS`).
+- An agent starts a task when it moves it from Backlog or Todo to In progress or In review, on update, bulk
+  update or create. When the task's wave is locked, the service throws `WaveLocked` (`409 WAVE_LOCKED`).
+- People are never refused. The web app warns them with one start guard that every status path calls.
+- `setStatusFromSource` (pull requests, Backlog.md refreshes) never checks the lock.
+- Passing a gate checks the wave's tasks and throws `GateTasksOpen` (`409 GATE_TASKS_OPEN`).
+
+Putting a task in a wave goes through `applyTaskPatch`. It writes one `task.updated` row and moves the task
+to the wave's milestone in the same row. Changing a task's milestone clears its wave, and so does a
+Backlog.md refresh that changes it.
+
+Wave writes take row locks in a fixed order:
+- Writes that touch tasks lock the task rows first (in id order, as bulk changes do), then the milestone
+  row.
+- Writes that touch only waves lock the milestone row. That keeps the numbers dense when two reorders race.
+
 ### From a mirror to Zamu as the source
 
 A mirror reads from the repository. The other direction starts with the switch. Settings > Backlog.md calls
@@ -428,6 +470,14 @@ bug can't touch a repository. Admins create the webhook themselves.
 The server refuses an agent that moves a task to In review or Done with open items, and tells it which flags
 settle them. People get a dialog that lets them move the task anyway. The rule lives in core, so the API,
 the CLI and bulk changes apply it the same way.
+
+### The wave lock binds agents only
+
+Like the finishing rule, the server refuses an agent that starts a task in a locked wave, and lets a person
+do it after a warning.
+
+Gates are results that people and agents record with a note, not checks Zamu runs. Zamu reads no CI and runs
+nothing.
 
 ### React Aria Components for the UI kit
 

@@ -3,9 +3,10 @@
 // `secondWorkspace`, the admin also owns a second workspace (Globex) whose project has the same key,
 // PAY, and its own claude-dev agent, so links, keys and lists can be checked for isolation. With
 // `pullRequests`, PAY links a repository and gets requests in every state, archived tasks and
-// check-again days. Everything goes through @zamu/auth and @zamu/core, like real use, except a few
-// direct writes noted where they happen (a backdated task, the repository link's check state, one
-// archive by the nightly job). Re-running is safe: existing workspaces, projects and agents are kept,
+// check-again days. With `waves`, PAY gets milestones planned in waves with gates in every state.
+// Everything goes through @zamu/auth and @zamu/core, like real use, except a few direct writes noted
+// where they happen (a backdated task, the repository link's check state, one archive by the nightly
+// job, the times of gate results). Re-running is safe: existing workspaces, projects and agents are kept,
 // and new keys are issued each time.
 import {
   AcceptInvitationError,
@@ -35,6 +36,7 @@ import {
   createMilestone,
   createProject,
   createTask,
+  createWave,
   createWorkspace,
   ensureRepositoryLink,
   formatMention,
@@ -42,11 +44,14 @@ import {
   listMembers,
   listMyWorkspaces,
   newRepositoryWebhookSecret,
+  putTasksInWave,
   recordActivities,
+  recordGateResult,
   SlugTaken,
   todayIn,
   touchLastWorkspace,
   toWorkspaceRole,
+  updateMilestone,
   updateProject,
   updateTask,
 } from '@zamu/core';
@@ -81,6 +86,15 @@ export interface SeedOptions {
    * has archiving off, like a project from before archiving existed. Default false.
    */
   pullRequests?: boolean;
+  /**
+   * M8, when PAY is new: four PAY milestones planned in waves with gates. "Payouts v2" (plan link
+   * plans/payouts-v2.html) has five waves: W1 and W2 passed, W3 current with its gate open and 4 of
+   * 6 tasks done, W4 and W5 locked, and tasks in no wave. "Statements export" has a failed gate,
+   * "Card vault migration" every gate passed, and "Refunds rework" (a wiki plan link) 12 waves:
+   * W1 to W7 passed, W8 current with 30 tasks and a failed result with a long note. Gate results
+   * are recorded by the agent for the admin and by the admin. Default false.
+   */
+  waves?: boolean;
   adminName?: string;
   adminEmail?: string;
   adminPassword?: string;
@@ -145,6 +159,7 @@ export const SEED_DEFAULTS = {
   dashboard: false,
   secondWorkspace: false,
   pullRequests: false,
+  waves: false,
 } satisfies Required<SeedOptions>;
 
 /** How long ago the seed's stalled agent task was last updated: past the 24-hour agent threshold. */
@@ -357,6 +372,12 @@ export async function seedDevData(ctx: CoreContext, options: SeedOptions = {}): 
 
   if (opts.pullRequests && created.has('PAY')) {
     const added = await seedRequests(ctx, admin, agent, { webIsNew: created.has('WEB') });
+    const pay = createdProjects.find((p) => p.key === 'PAY');
+    if (pay) pay.tasks += added;
+  }
+
+  if (opts.waves && created.has('PAY')) {
+    const added = await seedWaves(ctx, admin, agent);
     const pay = createdProjects.find((p) => p.key === 'PAY');
     if (pay) pay.tasks += added;
   }
@@ -935,4 +956,436 @@ async function seedRequests(
     ]),
   );
   return Object.keys(REQUEST_TASKS).length;
+}
+
+/** A task of a seed wave: title, status and who works on it. Priority medium unless set. */
+interface WaveSeedTask {
+  title: string;
+  status: TaskStatus;
+  assignee: Who;
+  priority?: Priority;
+}
+
+/** A gate result the seed records, `hoursAgo` back from now. */
+interface GateSeedResult {
+  state: 'passed' | 'failed';
+  by: 'admin' | 'agent';
+  note: string;
+  hoursAgo: number;
+}
+
+interface WaveSeed {
+  name: string;
+  gate: string;
+  tasks: WaveSeedTask[];
+  /** In the order they were recorded; the last one is the gate's state. */
+  results?: GateSeedResult[];
+}
+
+interface MilestoneSeed {
+  name: string;
+  /** The git branch the agent's gate results come from, as the CLI sends it. */
+  branch: string;
+  description: string;
+  targetInDays: number | null;
+  planUrl: string | null;
+  waves: WaveSeed[];
+  notInWave: WaveSeedTask[];
+}
+
+const done = (title: string, assignee: Who = 'agent'): WaveSeedTask => ({ title, status: 'done', assignee });
+
+/**
+ * "Refunds rework" W8 has a task per currency (22 done, 2 in progress, 3 to do) and the three fixes
+ * its failed gate logged: 30 tasks.
+ */
+const REFUND_CURRENCIES = [
+  'EUR',
+  'USD',
+  'GBP',
+  'JPY',
+  'CHF',
+  'SEK',
+  'NOK',
+  'DKK',
+  'PLN',
+  'CZK',
+  'HUF',
+  'RON',
+  'BGN',
+  'AUD',
+  'NZD',
+  'CAD',
+  'MXN',
+  'BRL',
+  'SGD',
+  'HKD',
+  'KRW',
+  'INR',
+  'ZAR',
+  'AED',
+  'TRY',
+  'THB',
+  'IDR',
+];
+
+const LONG_GATE_NOTE = `Failed on the currency suite. 27 of 30 currencies pass; three do not.
+
+**What was checked**
+
+- The partial refund suite against the staging processor, every currency in this wave.
+- Rounding at the minor unit for refunds split across up to 12 line items.
+- The refund webhook payloads against the v2 schema.
+
+**What failed**
+
+1. JPY and KRW have no minor unit. The refund total is divided by 100 a second time, so a
+   ¥1,200 refund goes out as ¥12. The processor accepts it, which is why nothing alerted.
+2. HUF rounds to whole forint for cash but not for cards. Our rounding treats both as cash and
+   loses up to 0.49 Ft per line item.
+3. Two IDR refunds timed out at the processor after 30 seconds. They went through on retry, but
+   the webhook arrived before our row was written and was dropped.
+
+**Next**
+
+The three fixes are tasks in this wave. Record the gate again once they are done and the suite
+passes in full. W9 stays locked until then.`;
+
+const WAVE_MILESTONES: MilestoneSeed[] = [
+  {
+    name: 'Payouts v2',
+    branch: 'claude/payouts-v2',
+    description:
+      'Payouts on the new ledger: scheduled runs, per-merchant limits and a payout history merchants can read.',
+    targetInDays: 30,
+    planUrl: 'plans/payouts-v2.html',
+    waves: [
+      {
+        name: 'Data and contracts',
+        gate: "Migrations apply on a fresh database and on a copy of last week's data. Contract tests pass.",
+        tasks: [
+          done('Add the payout_run and payout_item tables'),
+          done('Payout contracts and error codes', 'admin'),
+          done('Backfill payout history from the old ledger'),
+        ],
+        results: [
+          {
+            state: 'passed',
+            by: 'agent',
+            note:
+              "Ran the migrations on a fresh database and on the copy of last week's data (1.2 million payouts, " +
+              '41 seconds). Contract tests: 212 passed.',
+            hoursAgo: 96,
+          },
+        ],
+      },
+      {
+        name: 'Core and API',
+        gate: 'Core and API tests pass against Postgres. GET /payouts answers in under 200 ms for 1,000 payouts.',
+        tasks: [
+          done('Schedule payout runs per merchant'),
+          done('Enforce per-merchant payout limits'),
+          done('Payout routes in the API', 'admin'),
+          done('Load payout items in one query'),
+        ],
+        results: [
+          {
+            state: 'failed',
+            by: 'agent',
+            note: 'GET /payouts takes 640 ms for 1,000 payouts: one query per payout for its items. Logged the fix in this wave.',
+            hoursAgo: 60,
+          },
+          {
+            state: 'passed',
+            by: 'admin',
+            note: 'Items load in one query now. GET /payouts answers in 120 ms for 1,000 payouts. Core and API tests pass.',
+            hoursAgo: 30,
+          },
+        ],
+      },
+      {
+        name: 'Screens',
+        gate: 'Every payout screen works in light and dark at 1440, 1280 and 1024, with no hydration warnings.',
+        tasks: [
+          done('Payout list screen'),
+          done('Payout detail with its items'),
+          done('Limits in the merchant settings', 'admin'),
+          done('Empty and error states for payouts'),
+          { title: 'Payout history export as CSV', status: 'in_progress', assignee: 'agent' },
+          { title: 'Keyboard shortcuts on the payout list', status: 'todo', assignee: null },
+        ],
+      },
+      {
+        name: 'End-to-end tests',
+        gate: 'The payout specs pass against the Docker Compose stack, upgrade spec included.',
+        tasks: [
+          { title: 'End-to-end spec for a scheduled payout run', status: 'todo', assignee: 'agent' },
+          { title: 'End-to-end spec for payout limits', status: 'todo', assignee: 'agent' },
+          { title: 'Upgrade spec with payouts from the old ledger', status: 'backlog', assignee: null },
+        ],
+      },
+      {
+        name: 'Release',
+        gate: 'Release notes are written, the migration ran on a backup of production, and the release is tagged.',
+        tasks: [
+          { title: 'Release notes for payouts v2', status: 'backlog', assignee: null },
+          { title: 'Check the migration on a production backup', status: 'backlog', assignee: 'admin' },
+        ],
+      },
+    ],
+    notInWave: [
+      { title: 'Decide how payout fees show for EU accounts', status: 'todo', assignee: null },
+      { title: 'Announce payouts v2 to merchants', status: 'backlog', assignee: null },
+    ],
+  },
+  {
+    name: 'Statements export',
+    branch: 'claude/statements-export',
+    description: 'Monthly statements in the formats banks import.',
+    targetInDays: 9,
+    planUrl: 'plans/statements-export.md',
+    waves: [
+      {
+        name: 'Exporter',
+        gate: 'The exporter writes a statement for every merchant in the staging data.',
+        tasks: [done('Statement exporter job'), done('Store statements for 13 months', 'admin')],
+        results: [
+          {
+            state: 'passed',
+            by: 'admin',
+            note: 'Exported statements for all 1,840 staging merchants in 6 minutes.',
+            hoursAgo: 50,
+          },
+        ],
+      },
+      {
+        name: 'Bank formats',
+        gate: 'CAMT.053 and MT940 files pass the validators of both partner banks.',
+        tasks: [
+          done('CAMT.053 statements'),
+          done('MT940 statements'),
+          { title: 'Fix the CAMT.053 booking date for weekend payouts', status: 'todo', assignee: 'agent' },
+        ],
+        results: [
+          {
+            state: 'failed',
+            by: 'agent',
+            note:
+              'MT940 passes both validators. CAMT.053 fails at the second bank: payouts made on a Saturday carry ' +
+              'the Saturday as booking date, and the bank expects the next business day. Logged the fix in this wave.',
+            hoursAgo: 4,
+          },
+        ],
+      },
+      {
+        name: 'Rollout',
+        gate: 'Ten merchants imported a statement into their bank without help.',
+        tasks: [
+          { title: 'Turn statements on for the first ten merchants', status: 'todo', assignee: 'admin' },
+        ],
+      },
+    ],
+    notInWave: [],
+  },
+  {
+    name: 'Card vault migration',
+    branch: 'claude/card-vault',
+    description: 'Move stored cards to the new vault without a failed charge.',
+    targetInDays: null,
+    planUrl: 'https://wiki.northwind.dev/plans/card-vault',
+    waves: [
+      {
+        name: 'Dual writes',
+        gate: 'Every new card lands in both vaults for a week.',
+        tasks: [done('Write new cards to both vaults'), done('Compare the vaults every night')],
+        results: [{ state: 'passed', by: 'agent', note: 'Seven nights, 0 differences.', hoursAgo: 400 }],
+      },
+      {
+        name: 'Backfill',
+        gate: 'Every stored card is in the new vault and the nightly comparison is clean.',
+        tasks: [done('Backfill stored cards', 'admin'), done('Retry cards the backfill skipped')],
+        results: [
+          {
+            state: 'passed',
+            by: 'admin',
+            note: '2.3 million cards copied; 112 retried and copied. The nightly comparison is clean.',
+            hoursAgo: 300,
+          },
+        ],
+      },
+      {
+        name: 'Read switch',
+        gate: 'Charges read from the new vault for a week with no rise in declines.',
+        tasks: [done('Read cards from the new vault'), done('Alert on declines by vault')],
+        results: [
+          { state: 'passed', by: 'agent', note: 'Declines stayed at 1.8% for seven days.', hoursAgo: 150 },
+        ],
+      },
+      {
+        name: 'Cleanup',
+        gate: 'The old vault is read-only and nothing has read from it for a week.',
+        tasks: [done('Make the old vault read-only', 'admin'), done('Remove the dual writes')],
+        results: [
+          {
+            state: 'passed',
+            by: 'admin',
+            note: 'No reads on the old vault since the switch. Its keys are revoked.',
+            hoursAgo: 20,
+          },
+        ],
+      },
+    ],
+    notInWave: [{ title: 'Delete the old vault after the audit', status: 'todo', assignee: 'admin' }],
+  },
+  {
+    name: 'Refunds rework',
+    branch: 'claude/refunds-rework',
+    description: 'Refunds on the new ledger, one wave per refund type.',
+    targetInDays: 60,
+    planUrl: 'https://wiki.northwind.dev/plans/refunds',
+    waves: [
+      ...[
+        'Ledger entries',
+        'Full refunds',
+        'Refund reasons',
+        'Refund limits',
+        'Disputes',
+        'Refund emails',
+        'Refund webhooks',
+      ].map(
+        (name, index): WaveSeed => ({
+          name,
+          gate: `The ${name.toLowerCase()} suite passes against the staging processor.`,
+          tasks: [done(`${name}: core`), done(`${name}: API`, index % 2 === 0 ? 'agent' : 'admin')],
+          results: [
+            {
+              state: 'passed',
+              by: index % 2 === 0 ? 'agent' : 'admin',
+              note: `Ran the ${name.toLowerCase()} suite against the staging processor: all green.`,
+              hoursAgo: 24 * (14 - index),
+            },
+          ],
+        }),
+      ),
+      {
+        name: 'Partial refunds',
+        gate: 'Partial refunds in every supported currency round correctly at the minor unit.',
+        tasks: [
+          ...REFUND_CURRENCIES.map(
+            (currency, index): WaveSeedTask => ({
+              title: `Partial refunds in ${currency}`,
+              status: index < 22 ? 'done' : index < 24 ? 'in_progress' : 'todo',
+              assignee: index < 24 ? 'agent' : null,
+            }),
+          ),
+          {
+            title: 'Stop dividing JPY and KRW refunds by 100',
+            status: 'todo',
+            assignee: 'agent',
+            priority: 'urgent',
+          },
+          {
+            title: 'Round HUF card refunds to the fillér',
+            status: 'todo',
+            assignee: 'agent',
+            priority: 'high',
+          },
+          {
+            title: 'Write the refund row before calling the processor',
+            status: 'todo',
+            assignee: 'agent',
+            priority: 'high',
+          },
+        ],
+        results: [{ state: 'failed', by: 'agent', note: LONG_GATE_NOTE, hoursAgo: 6 }],
+      },
+      ...[
+        ['Refund reports', 'Refunds in the monthly report'],
+        ['Merchant settings', 'Refund settings for merchants'],
+        ['Migration', 'Move open refunds to the new ledger'],
+        ['Release', 'Release notes for the refunds rework'],
+      ].map(
+        ([name, title]): WaveSeed => ({
+          name: name as string,
+          gate: 'The checks for this wave in the plan pass.',
+          tasks: [{ title: title as string, status: 'todo', assignee: null }],
+        }),
+      ),
+    ],
+    notInWave: [],
+  },
+];
+
+/**
+ * M8 demo data for a new PAY (see SeedOptions.waves): the milestones of WAVE_MILESTONES with their
+ * waves, tasks and gate results. Tasks are created first, then put in their waves, then the gates
+ * are recorded, as a planning agent would. Each result's time is moved back afterwards (a direct
+ * write: only the clock sets it), so the page reads like a plan that ran for days. Returns how many
+ * tasks it added.
+ */
+async function seedWaves(ctx: CoreContext, admin: Actor, agent: Actor): Promise<number> {
+  const today = todayIn(ctx);
+  const now = Date.now();
+  let added = 0;
+  for (const spec of WAVE_MILESTONES) {
+    const created = await createMilestone(ctx, admin, {
+      project: 'PAY',
+      name: spec.name,
+      description: spec.description,
+      targetDate: spec.targetInDays === null ? null : addCalendarDays(today, spec.targetInDays),
+    });
+    // Work has started on every one of them; a milestone whose tasks were only created as Done would
+    // otherwise stay Planned (only a task start activates it).
+    await updateMilestone(ctx, admin, {
+      id: created.id,
+      status: 'active',
+      ...(spec.planUrl ? { planUrl: spec.planUrl } : {}),
+    });
+
+    const newTask = async (task: WaveSeedTask) => {
+      const row = await createTask(ctx, task.assignee === 'agent' ? agent : admin, {
+        project: 'PAY',
+        title: task.title,
+        status: task.status,
+        priority: task.priority ?? 'medium',
+        milestone: created.id,
+        assignee: task.assignee === 'admin' ? admin.userId : task.assignee === 'agent' ? agent.userId : null,
+      });
+      added++;
+      return row.key;
+    };
+
+    const waves: { id: string; spec: WaveSeed }[] = [];
+    for (const wave of spec.waves) {
+      const row = await createWave(ctx, admin, {
+        milestone: created.id,
+        name: wave.name,
+        gateDescription: wave.gate,
+      });
+      waves.push({ id: row.id, spec: wave });
+    }
+    for (const { id, spec: wave } of waves) {
+      const keys: string[] = [];
+      for (const task of wave.tasks) keys.push(await newTask(task));
+      await putTasksInWave(ctx, admin, { milestone: created.id, wave: id, keys });
+    }
+    for (const task of spec.notInWave) await newTask(task);
+
+    const fromCli: Actor = { ...agent, source: { machine: 'claude-dev-laptop', branch: spec.branch } };
+    for (const { id, spec: wave } of waves) {
+      for (const result of wave.results ?? []) {
+        await recordGateResult(ctx, result.by === 'agent' ? fromCli : admin, {
+          id,
+          state: result.state,
+          note: result.note,
+        });
+        const at = new Date(now - result.hoursAgo * 3_600_000).toISOString();
+        await ctx.db.execute(
+          `update gate_result set created_at = '${at}' where id = (select id from gate_result ` +
+            `where wave_id = '${id}' order by created_at desc limit 1)`,
+        );
+      }
+    }
+  }
+  return added;
 }

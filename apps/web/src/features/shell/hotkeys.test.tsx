@@ -271,4 +271,23 @@ describe('useGoToHotkeys', () => {
     await user.keyboard('gxh');
     expect(onHome).not.toHaveBeenCalled();
   });
+
+  it('leaves G to a wave header or gate with focus (M8), and keeps the chord elsewhere', async () => {
+    const user = userEvent.setup();
+    const onHome = vi.fn();
+    render(
+      <>
+        <GoTo onHome={onHome} onM={() => {}} />
+        <div data-gate-key>
+          <button type="button">W3 · Screens</button>
+        </div>
+      </>,
+    );
+    screen.getByRole('button', { name: 'W3 · Screens' }).focus();
+    await user.keyboard('gh');
+    expect(onHome).not.toHaveBeenCalled();
+    await user.click(document.body);
+    await user.keyboard('gh');
+    expect(onHome).toHaveBeenCalledTimes(1);
+  });
 });

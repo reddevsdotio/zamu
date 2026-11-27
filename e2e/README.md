@@ -68,6 +68,11 @@ Set the project name, the ports and the image tag when another checkout runs the
   the merge, the merged-with-open-criteria flag and Home group, a link by hand with its preview and the
   other-repository refusal, closing on merge off, a request closed without merging, a bad signature on the
   status line and Check now catching up with the webhook off.
+- `waves.spec.ts`: an agent's `zamu` sets up a milestone with a plan link, three waves and their gates, and
+  `zamu milestones show` prints it. The agent is refused a task in a locked wave, while a person gets the
+  warning and starts it anyway. Pass waits for the wave's tasks and the agent passes W1; a gate failed from
+  the web app shows the stop line; Alt+↓ and Alt+↑ move a task between waves. It also covers the milestone
+  list's status line and the page in the dark theme.
 - `workspaces.spec.ts`: a second workspace with the same project key, created from the switcher; switching
   with the switcher and the palette, two tabs on two workspaces, an invitation that opens its workspace,
   leaving, the no-workspace page, changing the address with old links still working, deleting, the CLI
@@ -93,7 +98,8 @@ adding data at each one:
 4. 0.8.0, when that release exists.
 5. 0.9.0, when that release exists.
 6. 0.10.0, when that release exists. It finishes a task there.
-7. The new image.
+7. 0.11.0, when that release exists. It adds a milestone with tasks there.
+8. The new image.
 
 On the new image it checks these:
 - Every task key and route still works.
@@ -105,12 +111,13 @@ On the new image it checks these:
   `/w/<slug>/p/...`.
 - Archiving is off on every existing project (a new one gets 14 days), each finished task has the time it was
   finished, and the Repository page opens for a project that had a repository.
+- Every milestone keeps its tasks and progress, with no waves, no plan link and no new history lines.
 
 The older images come from `E2E_M1_IMAGE`, `E2E_M2_1_IMAGE`, `E2E_0_6_IMAGE`, `E2E_0_8_IMAGE`,
-`E2E_0_9_IMAGE` and `E2E_0_10_IMAGE`, pulled when missing. Without them the spec builds each image once from
+`E2E_0_9_IMAGE`, `E2E_0_10_IMAGE` and `E2E_0_11_IMAGE`, pulled when missing. Without them the spec builds each image once from
 git as `zamu:m1-0.1.1`, `zamu:m2.1-<ref>`, `zamu:release-0.6.0` and `zamu:release-<ref>`, which takes a few
 minutes each the first time.
 
-The 0.8.0, 0.9.0 and 0.10.0 steps build from the tags `0.8.0`, `0.9.0` and `0.10.0`, or from the refs in
-`E2E_0_8_REF`, `E2E_0_9_REF` and `E2E_0_10_REF` (for example `0.8.0-rc.1`). With neither the tag nor one of
+The 0.8.0 to 0.11.0 steps build from the tags `0.8.0`, `0.9.0`, `0.10.0` and `0.11.0`, or from the refs in
+`E2E_0_8_REF`, `E2E_0_9_REF`, `E2E_0_10_REF` and `E2E_0_11_REF` (for example `0.8.0-rc.1`). With neither the tag nor one of
 the variables, the spec skips that step with a message.

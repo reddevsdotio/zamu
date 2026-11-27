@@ -3,7 +3,8 @@
 // labels, dueDate, blockedBy and parent changes. M6 adds the work record changes (criteria, done
 // items, plan, final summary) and the machine and branch the CLI sent with the change. M7 adds the
 // cause of system changes (a request event, the archive job), origin git, the system actor a
-// history line names, and the work branch, check-again and pull request changes.
+// history line names, and the work branch, check-again and pull request changes. M8 adds the wave
+// change, stored with the wave's number and name at the time and read back with the current ones.
 import {
   type Activity,
   ActivityCause,
@@ -51,6 +52,16 @@ export interface StoredTaskRef {
 }
 
 /**
+ * M8: a wave inside a stored change: its id with the number and name it had then. Reads return the
+ * current number and name while the wave exists, and mark it removed once it is gone.
+ */
+export interface StoredWaveRef {
+  id: string;
+  number: number;
+  name: string;
+}
+
+/**
  * A change as stored in activity.changes: priority by name; assignee, milestone and cycle by id.
  * listTaskActivity resolves the ids to references.
  *
@@ -72,6 +83,7 @@ export type StoredChange =
   | { field: 'dueDate'; from: string | null; to: string | null }
   | { field: 'blockedBy'; from: StoredTaskRef[]; to: StoredTaskRef[] }
   | { field: 'parent'; from: StoredTaskRef | null; to: StoredTaskRef | null }
+  | { field: 'wave'; from: StoredWaveRef | null; to: StoredWaveRef | null }
   | StoredWorkRecordChange
   | StoredM7Change;
 
@@ -108,6 +120,7 @@ const CONTRACT_FIELDS = new Set<string>([
   'parent',
   ...WORK_RECORD_CHANGE_FIELDS,
   ...M7_CHANGE_FIELDS,
+  'wave',
 ]);
 
 /** Orders labels as stored changes and task shapes list them: by name ignoring case, then by name. */
@@ -339,6 +352,19 @@ async function currentTaskRefs(
   );
 }
 
+/** M8: current number (position) and name of the waves in `ids` (removed ones are left out). */
+async function currentWaveRefs(
+  db: DbOrTx,
+  ids: Set<string>,
+): Promise<Map<string, { number: number; name: string }>> {
+  if (ids.size === 0) return new Map();
+  const rows = await db
+    .select({ id: schema.wave.id, number: schema.wave.position, name: schema.wave.name })
+    .from(schema.wave)
+    .where(inArray(schema.wave.id, [...ids]));
+  return new Map(rows.map((row) => [row.id, { number: row.number, name: row.name }]));
+}
+
 /** Actor and on-behalf-of references of activity rows, resolved in one query. */
 async function loadActors(db: DbOrTx, rows: ActivityRow[], extraUserIds: Iterable<string> = []) {
   const userIds = new Set<string>(extraUserIds);
@@ -367,9 +393,14 @@ export async function toActivities(db: DbOrTx, taskKey: string, rows: ActivityRo
   const cycleIds = new Set<string>();
   const labelIds = new Set<string>();
   const taskIds = new Set<string>();
+  const waveIds = new Set<string>();
   for (const row of rows) {
     for (const change of row.changes as StoredChange[]) {
       switch (change.field) {
+        case 'wave':
+          if (change.from) waveIds.add(change.from.id);
+          if (change.to) waveIds.add(change.to.id);
+          continue;
         case 'labels':
           for (const ref of [...(change.from ?? []), ...(change.to ?? [])]) labelIds.add(ref.id);
           continue;
@@ -398,6 +429,7 @@ export async function toActivities(db: DbOrTx, taskKey: string, rows: ActivityRo
   // Sequential: `db` may be a transaction, whose queries share one connection.
   const colors = await labelColors(db, labelIds);
   const tasks = await currentTaskRefs(db, taskIds);
+  const waves = await currentWaveRefs(db, waveIds);
   const [{ user, actor }, milestones, cycles] = await Promise.all([
     loadActors(db, rows, userIds),
     milestoneIds.size === 0
@@ -428,8 +460,21 @@ export async function toActivities(db: DbOrTx, taskKey: string, rows: ActivityRo
       : { key: ref.key, title: ref.title, removed: true };
   };
 
+  const waveRef = (ref: StoredWaveRef) => {
+    const now = waves.get(ref.id);
+    return now
+      ? { id: ref.id, number: now.number, name: now.name, removed: false }
+      : { id: ref.id, number: ref.number, name: ref.name, removed: true };
+  };
+
   const resolve = (change: StoredChange): z.input<typeof ActivityChange> => {
     switch (change.field) {
+      case 'wave':
+        return {
+          field: 'wave',
+          from: change.from ? waveRef(change.from) : null,
+          to: change.to ? waveRef(change.to) : null,
+        };
       case 'assignee':
         return { field: 'assignee', from: user(change.from), to: user(change.to) };
       case 'milestone':
@@ -518,7 +563,8 @@ export async function loadProjectActivityRows(db: DbOrTx, projectId: string): Pr
 
 /**
  * The activity of a task, oldest first, with user, milestone and cycle ids resolved to references,
- * labels to their recorded name and current colour, and blockers and parents to their current key.
+ * labels to their recorded name and current colour, blockers and parents to their current key, and
+ * (M8) waves to their current number and name.
  */
 export async function listTaskActivity(
   { db }: DbContext,

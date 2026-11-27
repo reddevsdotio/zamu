@@ -326,9 +326,7 @@ describe('hidden and detached tasks', () => {
       { name: 'Status' },
     );
     expect(status).not.toHaveAttribute('data-locked');
-    expect(
-      await within(historyRegion()).findByText(/detached Payments from Backlog\.md/),
-    ).toBeInTheDocument();
+    expect(await within(historyRegion()).findByText(/switched Payments to Zamu/)).toBeInTheDocument();
   });
 });
 

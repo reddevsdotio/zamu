@@ -12,6 +12,8 @@ import {
   CommentId,
   CycleId,
   CycleState,
+  GateResultState,
+  GateState,
   GitConnectionId,
   GitConnectionStatus,
   GitProvider,
@@ -19,6 +21,7 @@ import {
   LabelId,
   LabelSource,
   MAX_CHECK_AGAIN_REASON_LENGTH,
+  MAX_WAVE_OPEN_KEYS,
   MilestoneId,
   MilestoneOwnedField,
   MilestoneStatus,
@@ -34,6 +37,7 @@ import {
   Timestamp,
   UserId,
   UserKind,
+  WaveId,
   WorkspaceId,
   WorkspaceRole,
 } from './primitives';
@@ -578,6 +582,29 @@ export const ActivitySystemActor = z.discriminatedUnion('kind', [
 export type ActivitySystemActor = z.output<typeof ActivitySystemActor>;
 
 // ---------------------------------------------------------------------------
+// Wave references (M8); waves, gates and the milestone plan follow the milestones
+// ---------------------------------------------------------------------------
+
+/** A wave by its number (its position in the milestone, from 1: W3) and its name. */
+export const WaveNumberRef = z.object({
+  number: z.number().int().positive(),
+  name: z.string(),
+});
+export type WaveNumberRef = z.output<typeof WaveNumberRef>;
+
+/**
+ * The wave a task is in, as the task view, rows and zamu tasks show it ("W3 · Screens"). locked:
+ * an earlier wave's gate has not passed. lockedUntil: the first earlier wave whose gate has not
+ * passed; null while unlocked.
+ */
+export const TaskWave = WaveNumberRef.extend({
+  id: WaveId,
+  locked: z.boolean(),
+  lockedUntil: WaveNumberRef.nullable(),
+});
+export type TaskWave = z.output<typeof TaskWave>;
+
+// ---------------------------------------------------------------------------
 // Tasks
 // ---------------------------------------------------------------------------
 
@@ -663,6 +690,10 @@ export const Task = z.object({
   archivedBy: UserRef.nullable().optional(),
   /** M7: a merge moved the task to Done with items open; null otherwise. */
   mergedOpen: MergedOpen.nullable().optional(),
+  // M8 fields are optional in the type, so shapes built before M8 (fixtures, fakes) stay valid.
+  // Servers from M8 on always send them; read a missing wave as null.
+  /** M8: the wave of the task's milestone it is in, with its lock; null when in no wave. */
+  wave: TaskWave.nullable().optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 });
@@ -691,6 +722,7 @@ export const TaskListItem = Task.pick({
   blocked: true,
   checkAgain: true,
   archivedAt: true,
+  wave: true,
   createdAt: true,
   updatedAt: true,
 }).extend({
@@ -762,6 +794,12 @@ export const Milestone = z.object({
   locked: z.array(MilestoneOwnedField).optional(),
   /** M3: the milestone's file is gone from the default branch. */
   hidden: z.boolean().optional(),
+  // M8 fields are optional in the type, so shapes built before M8 stay valid; servers send them.
+  /**
+   * M8: where the plan lives, a web address or a file path (planUrlKind tells which); null when
+   * none. Not a Backlog.md field: mirrored milestones may have one. Missing reads as null.
+   */
+  planUrl: z.string().nullable().optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
 });
@@ -785,14 +823,135 @@ export function milestoneProgressRatio(progress: MilestoneProgress): number {
   return counted > 0 ? progress.done / counted : 0;
 }
 
+/**
+ * M8: the wave status of a milestone, for the line under its name on the milestone list ("Wave 3
+ * of 5 · gate open", "Gate failed in wave 8 of 12", "All 4 gates passed"). current: the number of
+ * the first wave whose gate has not passed, with that gate's state; both null once every gate passed.
+ */
+export const MilestoneWaveSummary = z
+  .object({
+    count: z.number().int().positive(),
+    current: z.number().int().positive().nullable(),
+    currentState: z.enum(['open', 'failed']).nullable(),
+    allPassed: z.boolean(),
+  })
+  .superRefine((value, ctx) => {
+    if ((value.current === null) !== (value.currentState === null)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['currentState'],
+        message: 'Send current and its state together',
+      });
+    }
+    if (value.allPassed !== (value.current === null)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['allPassed'],
+        message: 'All gates pass only when no wave is current',
+      });
+    }
+    if (value.current !== null && value.current > value.count) {
+      ctx.addIssue({ code: 'custom', path: ['current'], message: 'The current wave is one of the waves' });
+    }
+  });
+export type MilestoneWaveSummary = z.output<typeof MilestoneWaveSummary>;
+
 export const MilestoneWithProgress = Milestone.extend({
   progress: MilestoneProgress,
   /** Days from today to the target date in APP_TIME_ZONE (0 on the day, negative after); null without a target. */
   daysLeft: z.number().int().nullable(),
   /** Target date before today and not Completed. */
   overdue: z.boolean(),
+  /** M8: the wave status; null when the milestone has no waves. Missing reads as null. */
+  waves: MilestoneWaveSummary.nullable().optional(),
 });
 export type MilestoneWithProgress = z.output<typeof MilestoneWithProgress>;
+
+// ---------------------------------------------------------------------------
+// Waves and gates (M8)
+// ---------------------------------------------------------------------------
+
+/**
+ * One recorded gate result: passed or failed, the note that says what was checked (Markdown), who
+ * recorded it, the person an agent acted for, and when. source: the machine and branch the CLI
+ * sent; null when neither was set, missing reads as null.
+ */
+export const GateResult = z.object({
+  state: GateResultState,
+  note: z.string().min(1),
+  recordedBy: UserRef,
+  onBehalfOf: UserRef.nullable(),
+  at: Timestamp,
+  source: EntrySource.nullable().optional(),
+});
+export type GateResult = z.output<typeof GateResult>;
+
+/** A wave's gate: what it checks (Markdown, null when not written), its state and its latest result. */
+export const WaveGate = z
+  .object({
+    description: z.string().nullable(),
+    state: GateState,
+    result: GateResult.nullable(),
+  })
+  .refine((gate) => (gate.result === null ? gate.state === 'open' : gate.state === gate.result.state), {
+    path: ['state'],
+    message: 'The gate state is its latest result, or open without one',
+  });
+export type WaveGate = z.output<typeof WaveGate>;
+
+/** Task counts of a wave. open: neither Done nor Canceled (total - done - canceled). */
+export const WaveProgress = z.object({
+  total: z.number().int().nonnegative(),
+  done: z.number().int().nonnegative(),
+  canceled: z.number().int().nonnegative(),
+  open: z.number().int().nonnegative(),
+});
+export type WaveProgress = z.output<typeof WaveProgress>;
+
+/** A task in a wave, or in no wave, as the milestone plan and zamu milestones show list it. */
+export const WaveTask = z.object({
+  key: TaskKey,
+  title: z.string(),
+  status: TaskStatus,
+  /** Name and kind for the row; null when unassigned. */
+  assignee: UserRef.nullable(),
+  archived: z.boolean(),
+});
+export type WaveTask = z.output<typeof WaveTask>;
+
+/**
+ * A wave of a milestone with its gate and its tasks. current: the first wave whose gate has not
+ * passed. locked: a wave before it has a gate that has not passed (W1 never is). lockedUntil: the
+ * first earlier wave whose gate has not passed; the wave right after it reads "Locked until W3
+ * passes", the ones after that "Locked". canPass: every task is Done or Canceled, so a pass would
+ * be accepted. openKeys: the keys of the open tasks, at most MAX_WAVE_OPEN_KEYS. tasks: in the order
+ * the task list uses.
+ */
+export const Wave = WaveNumberRef.extend({
+  id: WaveId,
+  milestoneId: MilestoneId,
+  gate: WaveGate,
+  current: z.boolean(),
+  locked: z.boolean(),
+  lockedUntil: WaveNumberRef.nullable(),
+  progress: WaveProgress,
+  canPass: z.boolean(),
+  openKeys: z.array(TaskKey).max(MAX_WAVE_OPEN_KEYS),
+  tasks: z.array(WaveTask),
+});
+export type Wave = z.output<typeof Wave>;
+
+/**
+ * GET /milestones/{id}/plan: the milestone, its plan link, its waves in order with their gates and
+ * tasks, and the tasks of the milestone in no wave (no gate; they never hold a wave up).
+ */
+export const MilestonePlan = z.object({
+  milestone: MilestoneWithProgress,
+  planUrl: z.string().nullable(),
+  waves: z.array(Wave),
+  notInWave: z.array(WaveTask),
+});
+export type MilestonePlan = z.output<typeof MilestonePlan>;
 
 // ---------------------------------------------------------------------------
 // Cycles
@@ -951,6 +1110,17 @@ export const ActivityTaskRef = z.object({
 });
 export type ActivityTaskRef = z.output<typeof ActivityTaskRef>;
 
+/**
+ * M8: a wave inside an activity change. The row stores the id with the number and name at the
+ * time; core returns the current number and name while the wave exists. removed: the wave was
+ * removed since ("a removed wave").
+ */
+export const ActivityWaveRef = WaveNumberRef.extend({
+  id: WaveId,
+  removed: z.boolean(),
+});
+export type ActivityWaveRef = z.output<typeof ActivityWaveRef>;
+
 /** M7: a request inside an activity change, with how it was linked at the time. */
 export const ActivityPullRequestRef = PullRequestRef.extend({ how: PullRequestLinkHow });
 export type ActivityPullRequestRef = z.output<typeof ActivityPullRequestRef>;
@@ -1010,7 +1180,9 @@ function workItemChanges<P extends string>(prefix: P) {
  * key), so the UI diffs them for "added payouts, removed backend". M6 adds the eight item changes
  * of criteria (criterion.*) and done items (doneItem.*), and plan and finalSummary with the text
  * before and after. M7 adds workBranch, checkAgain (set, changed, or cleared when the task closes)
- * and pullRequest (a link from null, an unlink to null).
+ * and pullRequest (a link from null, an unlink to null). M8 adds wave (put in a wave, moved to
+ * another, or taken out); putting a task in a wave of another milestone records the milestone
+ * change in the same row.
  */
 export const ActivityChange = z.discriminatedUnion('field', [
   z.object({ field: z.literal('title'), from: z.string().nullable(), to: z.string().nullable() }),
@@ -1042,6 +1214,8 @@ export const ActivityChange = z.discriminatedUnion('field', [
     from: ActivityPullRequestRef.nullable(),
     to: ActivityPullRequestRef.nullable(),
   }),
+  // M8
+  z.object({ field: z.literal('wave'), from: ActivityWaveRef.nullable(), to: ActivityWaveRef.nullable() }),
 ]);
 export type ActivityChange = z.output<typeof ActivityChange>;
 

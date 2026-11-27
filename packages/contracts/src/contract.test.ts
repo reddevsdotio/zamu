@@ -14,7 +14,7 @@ function procedures(router: unknown, path: string[] = []): [string, AnyContractP
 const all = procedures(contract);
 
 describe('contract', () => {
-  it('exposes exactly the M1 to M7 routes under /api/v1', () => {
+  it('exposes exactly the M1 to M8 routes under /api/v1', () => {
     const routes = Object.fromEntries(
       all.map(([name, procedure]) => {
         const { method, path } = procedure['~orpc'].route;
@@ -47,8 +47,14 @@ describe('contract', () => {
       'milestones.list': 'GET /api/v1/projects/{project}/milestones',
       'milestones.create': 'POST /api/v1/projects/{project}/milestones',
       'milestones.get': 'GET /api/v1/milestones/{id}',
+      'milestones.plan': 'GET /api/v1/milestones/{id}/plan',
       'milestones.update': 'PATCH /api/v1/milestones/{id}',
       'milestones.delete': 'DELETE /api/v1/milestones/{id}',
+      'waves.create': 'POST /api/v1/milestones/{milestone}/waves',
+      'waves.update': 'PATCH /api/v1/waves/{id}',
+      'waves.delete': 'DELETE /api/v1/waves/{id}',
+      'waves.putTasks': 'POST /api/v1/milestones/{milestone}/wave-tasks',
+      'waves.recordGate': 'POST /api/v1/waves/{id}/gate',
       'cycles.list': 'GET /api/v1/projects/{project}/cycles',
       'cycles.create': 'POST /api/v1/projects/{project}/cycles',
       'cycles.get': 'GET /api/v1/cycles/{project}/{number}',
@@ -102,6 +108,8 @@ describe('contract', () => {
         'REQUEST_OTHER_REPOSITORY',
         'NOT_A_REQUEST',
         'REQUEST_NOT_FOUND',
+        'WAVE_LOCKED',
+        'GATE_TASKS_OPEN',
       ]),
     );
   });
@@ -129,6 +137,7 @@ describe('contract', () => {
       'milestones.create',
       'projects.create',
       'tasks.create',
+      'waves.create',
     ]);
     const noContent = all
       .filter(([, procedure]) => procedure['~orpc'].route.successStatus === 204)
@@ -138,6 +147,7 @@ describe('contract', () => {
       'milestones.delete',
       'projects.delete',
       'pullRequests.unlink',
+      'waves.delete',
     ]);
     const accepted = all
       .filter(([, procedure]) => procedure['~orpc'].route.successStatus === 202)

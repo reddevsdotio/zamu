@@ -7,7 +7,8 @@
 // that release exists (the rename: the mirror keeps working and the sections stay in the description), then
 // to 0.9.0 when that release exists (the M6 migration moves the sections out of the description into the work
 // record, with no activity rows), then to 0.10.0 when that release exists (the workspaces migration; a task is
-// finished there), then to the image globalSetup built: the M5 migrations run (on 0.8.0 when that step ran),
+// finished there), then to 0.11.0 when that release exists (the M7 migration; a project gets a milestone with
+// tasks), then to the image globalSetup built: the M5 migrations run (on 0.8.0 when that step ran),
 // the backfill turns the mirror's block into native labels, due date, blockers and parent with no activity
 // rows, the M6 migration runs unless 0.9.0 ran it, the next refresh changes nothing, and every task key and
 // route still works. The rename to Zamu dropped the pm_live_ prefix with no fallback, so the 0.6.0 API key
@@ -15,7 +16,8 @@
 // workspace's slug, fills in the workspace each user used last, and the pre-0.10 URLs redirect to the same
 // page under /w/<slug>/. The M7 migration leaves archiving off on every existing project (a new one archives
 // after 14 days) and fills in when each finished task was finished, and the Repository page of a project that
-// already had a repository works.
+// already had a repository works. The M8 migration adds the plan link, waves and gate results with no
+// backfill: every milestone keeps its tasks and has no waves, and waves can be added to it afterwards.
 //
 // Older images, each used when it is already local:
 //   M1    E2E_M1_IMAGE (pulled if it is not local, for example from a private registry after
@@ -33,6 +35,8 @@
 //         tag 0.9.0. Skipped the same way when neither exists.
 //   0.10.0 E2E_0_10_IMAGE (pulled likewise), else zamu:release-<ref>, built once from E2E_0_10_REF or the git
 //         tag 0.10.0. Skipped the same way when neither exists.
+//   0.11.0 E2E_0_11_IMAGE (pulled likewise), else zamu:release-<ref>, built once from E2E_0_11_REF or the git
+//         tag 0.11.0. Skipped the same way when neither exists.
 // Builds use git archive, so the checkout is untouched. The mirror reads from a Forgejo container (e2e/forgejo.ts)
 // attached to the upgrade stack's network. E2E_SKIP_UPGRADE=1 skips this spec.
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -92,6 +96,16 @@ const release0_10Missing =
     : `The git ref ${release0_10Ref} does not exist, so the 0.10.0 step is skipped and the next step upgrades ` +
       'from the release before it. Tag the release, or set E2E_0_10_IMAGE (an image) or E2E_0_10_REF (a git ' +
       'ref such as 0.10.0-rc.1) to run it.';
+/** Pull requests and the archive (M7), the release before waves. E2E_0_11_REF picks another ref. */
+const RELEASE_0_11_TAG = '0.11.0';
+const release0_11Ref = process.env.E2E_0_11_REF ?? RELEASE_0_11_TAG;
+const release0_11Image = process.env.E2E_0_11_IMAGE ?? `zamu:release-${release0_11Ref}`;
+const release0_11Missing =
+  process.env.E2E_0_11_IMAGE || gitRefExists(release0_11Ref)
+    ? null
+    : `The git ref ${release0_11Ref} does not exist, so the 0.11.0 step is skipped and the next step upgrades ` +
+      'from the release before it. Tag the release, or set E2E_0_11_IMAGE (an image) or E2E_0_11_REF (a git ' +
+      'ref such as 0.11.0-rc.1) to run it.';
 const upgradePort = process.env.E2E_UPGRADE_PORT ?? '3101';
 /** API key prefix up to 0.7.0. The current build no longer accepts it. */
 const OLD_API_KEY_PREFIX = 'pm_live_';
@@ -274,6 +288,10 @@ const timelineBefore: Record<string, number> = {};
 let workspaceBefore: { id: string; slug: string } | undefined;
 /** When OPS-5 was finished on 0.10.0 (when that step ran), for the M7 backfill of closedAt. */
 let finishedOn0_10: { from: number; to: number } | undefined;
+/** The project, milestone and tasks added on 0.11.0 (when that step ran), with each task's timeline length. */
+let addedOn0_11: { milestoneId: string; timelines: Record<string, number> } | undefined;
+/** The project of the 0.11.0 step: a milestone with three tasks, and one task in no milestone. */
+const launch = { name: 'Launch', key: 'LCH' };
 
 const byKey = (a: { key: string }, b: { key: string }) => a.key.localeCompare(b.key);
 
@@ -369,6 +387,8 @@ test.beforeAll(async ({ browser }) => {
   else ensureImage(release0_9Image, Boolean(process.env.E2E_0_9_IMAGE), release0_9Ref);
   if (release0_10Missing) console.log(`[e2e] ${release0_10Missing}`);
   else ensureImage(release0_10Image, Boolean(process.env.E2E_0_10_IMAGE), release0_10Ref);
+  if (release0_11Missing) console.log(`[e2e] ${release0_11Missing}`);
+  else ensureImage(release0_11Image, Boolean(process.env.E2E_0_11_IMAGE), release0_11Ref);
   stack.compose(['down', '-v', '--remove-orphans'], { quiet: true });
   console.log(`[e2e] starting ${stack.project} on ${m1Image} at ${upgradeURL}`);
   await startStack();
@@ -695,6 +715,39 @@ test('0.10.0: pages move under the workspace; a task is finished before the M7 m
   workspaceBefore = workspace;
 });
 
+test('0.11.0: a milestone with tasks before the M8 migration', async () => {
+  test.skip(release0_11Missing !== null, release0_11Missing ?? '');
+  test.setTimeout(6 * 60_000);
+  await switchTo(release0_11Image);
+  await signInAsAdmin(page);
+  const workspace = readWorkspace();
+  expect(workspace).toEqual(workspaceBefore);
+
+  // 0.11.0 has no plan link and no waves.
+  await api(page.request, 'POST', '/projects', launch);
+  const milestone = await api<Record<string, unknown> & { id: string }>(
+    page.request,
+    'POST',
+    `/projects/${launch.key}/milestones`,
+    { name: 'Public beta', targetDate: '2027-03-01' },
+  );
+  expect(milestone).not.toHaveProperty('planUrl');
+  expect(milestone).not.toHaveProperty('waves');
+  const tasks = [
+    { title: 'Invite the first customers', milestone: milestone.id, status: 'done' },
+    { title: 'Status page', milestone: milestone.id, status: 'in_progress' },
+    { title: 'Pricing page', milestone: milestone.id },
+    { title: 'Press kit' },
+  ];
+  for (const task of tasks) await api(page.request, 'POST', '/tasks', { project: launch.key, ...task });
+  const started = await api<Record<string, unknown>>(page.request, 'GET', `/tasks/${launch.key}-2`);
+  expect(started).not.toHaveProperty('wave');
+  const timelines: Record<string, number> = {};
+  for (const key of ['LCH-1', 'LCH-2', 'LCH-3', 'LCH-4']) timelines[key] = await timelineLength(key);
+  addedOn0_11 = { milestoneId: milestone.id, timelines };
+  workspaceBefore = workspace;
+});
+
 test('this build: the M5 migrations backfill the mirror, and every key and route still works', async () => {
   test.setTimeout(6 * 60_000);
   await switchTo(currentImage);
@@ -908,4 +961,91 @@ test('this build: archiving is off on existing projects, finished tasks have clo
   await page.goto(w('/p/OPS/settings/archive', slug));
   await settle(page);
   await expect(page.getByRole('switch', { name: 'Archive finished tasks' })).not.toBeChecked();
+});
+
+test('this build: milestones keep their tasks and have no waves; waves can be added', async () => {
+  const slug = readWorkspace().slug;
+  // The M8 migration adds the columns and tables, with nothing in them.
+  const columns = sql(
+    "select table_name || '.' || column_name from information_schema.columns where table_schema = 'public' " +
+      "and ((table_name = 'milestone' and column_name = 'plan_url') or (table_name = 'task' and column_name = " +
+      "'wave_id')) order by 1",
+  );
+  expect(columns).toEqual(['milestone.plan_url', 'task.wave_id']);
+  expect(sql('select count(*) from wave')).toEqual(['0']);
+  expect(sql('select count(*) from gate_result')).toEqual(['0']);
+  expect(sql('select count(*) from task where wave_id is not null')).toEqual(['0']);
+  expect(sql('select count(*) from milestone where plan_url is not null')).toEqual(['0']);
+
+  interface MilestoneRow {
+    id: string;
+    name: string;
+    planUrl?: string | null;
+    waves?: unknown;
+    progress: { total: number; done: number };
+  }
+  interface Plan {
+    planUrl: string | null;
+    waves: { number: number; name: string; tasks: { key: string }[] }[];
+    notInWave: { key: string }[];
+  }
+  // Hardening (M2.1) keeps OPS-1, with no plan link and no waves.
+  const ops = await api<{ items: MilestoneRow[] }>(page.request, 'GET', '/projects/OPS/milestones');
+  const hardening = ops.items.find((item) => item.name === 'Hardening');
+  expect(hardening).toBeDefined();
+  expect(hardening?.planUrl ?? null).toBeNull();
+  expect(hardening?.waves ?? null).toBeNull();
+  const hardeningPlan = await api<Plan>(page.request, 'GET', `/milestones/${hardening?.id}/plan`);
+  expect(hardeningPlan).toMatchObject({ planUrl: null, waves: [] });
+  expect(hardeningPlan.notInWave.map((task) => task.key)).toContain('OPS-1');
+  expect((await api<{ wave?: unknown }>(page.request, 'GET', '/tasks/OPS-1')).wave ?? null).toBeNull();
+
+  // The milestone added on 0.11.0 keeps its three tasks and their history.
+  if (addedOn0_11) {
+    const launchMilestones = await api<{ items: MilestoneRow[] }>(
+      page.request,
+      'GET',
+      `/projects/${launch.key}/milestones`,
+    );
+    const beta = launchMilestones.items.find((item) => item.id === addedOn0_11?.milestoneId);
+    expect(beta).toMatchObject({ name: 'Public beta', progress: { total: 3, done: 1 } });
+    expect(beta?.waves ?? null).toBeNull();
+    const plan = await api<Plan>(page.request, 'GET', `/milestones/${addedOn0_11.milestoneId}/plan`);
+    expect(plan.waves).toEqual([]);
+    expect(plan.notInWave.map((task) => task.key).sort()).toEqual(['LCH-1', 'LCH-2', 'LCH-3']);
+    for (const [key, length] of Object.entries(addedOn0_11.timelines)) {
+      expect(await timelineLength(key), key).toBe(length);
+    }
+  }
+
+  // The screens: "No waves" under the name in the list, and the milestone page as before with "Add waves"
+  // and the plan link button.
+  await page.goto(w('/p/OPS/milestones', slug));
+  await settle(page);
+  const row = page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('link', { name: 'Hardening', exact: true }) });
+  await expect(row.locator('[data-part="wave-status"]')).toHaveText('No waves');
+  await page.goto(w(`/p/OPS/milestones/${hardening?.id}`, slug));
+  await settle(page);
+  await expect(page.getByRole('heading', { level: 1, name: 'Hardening' })).toBeVisible();
+  await expect(page.getByText('Rotate the database password').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add waves' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Add a link to the plan/ })).toBeVisible();
+
+  // Waves work on the upgraded data: a wave on Hardening takes OPS-1.
+  const wave = await api<{ id: string; number: number }>(
+    page.request,
+    'POST',
+    `/milestones/${hardening?.id}/waves`,
+    { name: 'Rotation', gateDescription: 'Every secret is rotated' },
+  );
+  expect(wave.number).toBe(1);
+  await api(page.request, 'POST', `/milestones/${hardening?.id}/wave-tasks`, {
+    wave: wave.id,
+    keys: ['OPS-1'],
+  });
+  expect(
+    (await api<{ wave: { number: number; name: string } | null }>(page.request, 'GET', '/tasks/OPS-1')).wave,
+  ).toMatchObject({ number: 1, name: 'Rotation' });
 });

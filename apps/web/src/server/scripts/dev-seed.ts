@@ -9,7 +9,8 @@
 // whose PAY project shares its key with the first workspace's. Reads DATABASE_URL, BETTER_AUTH_SECRET,
 // BETTER_AUTH_URL and PUBLIC_URL; SEED_ADMIN_EMAIL, SEED_ADMIN_PASSWORD and SEED_WORKSPACE override
 // the first-run admin and workspace. SEED_PLANNING=0 skips the demo data of M2 and later (planning,
-// dashboard, pull requests, archive, check again); SEED_SECOND_WORKSPACE=0 skips Globex; SEED_BACKLOG=1 adds the mirrored Backlog.md project BACK (needs APP_ENCRYPTION_KEY).
+// dashboard, pull requests, archive, check again, waves and gates); SEED_SECOND_WORKSPACE=0 skips
+// Globex; SEED_BACKLOG=1 adds the mirrored Backlog.md project BACK (needs APP_ENCRYPTION_KEY).
 // Never run it against production.
 import { createServerContext } from '../context';
 import { SEED_DEFAULTS, seedDevData } from '../seed';
@@ -25,6 +26,7 @@ async function main() {
       backlog: process.env.SEED_BACKLOG === '1',
       dashboard: process.env.SEED_PLANNING !== '0',
       pullRequests: process.env.SEED_PLANNING !== '0',
+      waves: process.env.SEED_PLANNING !== '0',
       secondWorkspace: process.env.SEED_SECOND_WORKSPACE !== '0',
     });
     const projects = (list: { key: string; tasks: number }[]) =>

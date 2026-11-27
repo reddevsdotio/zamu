@@ -9,7 +9,7 @@ import {
 } from '~/features/task-fields';
 import { taskQuery } from '~/features/tasks/queries';
 import { useApi } from '~/lib/workspace';
-import { Button, ConfirmBody, Dialog, DialogFooter, Modal, useHotkeys } from '~/ui';
+import { Button, ConfirmBody, Dialog, DialogFooter, Modal, useModEnter } from '~/ui';
 import { FinishDialog } from './FinishDialog';
 import { needsFinishing } from './ops';
 
@@ -138,7 +138,8 @@ function ManyFinishingContent({
   body: string;
   onAnswer: (move: boolean) => void;
 }) {
-  useHotkeys({ 'Mod+Enter': () => onAnswer(true) }, { allowInOverlays: true });
+  // Capture phase: focus starts on Cancel, which would otherwise take the Enter as its own press.
+  useModEnter(true, () => onAnswer(true));
   return (
     <Dialog role="alertdialog">
       <ConfirmBody title={title}>{body}</ConfirmBody>

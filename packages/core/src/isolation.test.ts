@@ -73,6 +73,14 @@ import {
 } from './testing/fixtures';
 import { FakeRequestHost, fakeRequestFactory, requestInfo } from './testing/requests';
 import { listTaskTimeline } from './timeline';
+import {
+  createWave,
+  deleteWave,
+  getMilestonePlan,
+  putTasksInWave,
+  recordGateResult,
+  updateWave,
+} from './waves';
 import { getWorkspaceContents, updateWorkspace } from './workspaces';
 
 /** In every Globex title, name and body; never in what Acme's actors get back. */
@@ -187,6 +195,8 @@ describe('workspace isolation', () => {
         .select()
         .from(schema.taskPullRequest)
         .where(inArray(schema.taskPullRequest.taskId, taskIds)),
+      wave: await ctx.db.select().from(schema.wave).where(eq(schema.wave.workspaceId, ws)),
+      gateResult: await ctx.db.select().from(schema.gateResult).where(eq(schema.gateResult.workspaceId, ws)),
     };
     return Object.fromEntries(
       Object.entries(rows).map(([table, list]) => [table, sorted(list as Record<string, unknown>[])]),
@@ -293,6 +303,20 @@ describe('workspace isolation', () => {
     });
     await archiveTasks(ctx, globex.ownerActor, { keys: [four.key] });
 
+    // M8: a plan link, two waves with PAY-1 in the first and a recorded gate result.
+    await updateMilestone(ctx, globex.ownerActor, { id: milestone.id, planUrl: `plans/${MARK}.html` });
+    const wave = await createWave(ctx, globex.ownerActor, {
+      milestone: milestone.id,
+      name: `${MARK} wave`,
+      gateDescription: `${MARK} gate`,
+    });
+    const lockedWave = await createWave(ctx, globex.ownerActor, {
+      milestone: milestone.id,
+      name: `${MARK} next`,
+    });
+    await putTasksInWave(ctx, globex.ownerActor, { milestone: milestone.id, wave: wave.id, keys: [one.key] });
+    await recordGateResult(ctx, globex.agentActor, { id: wave.id, state: 'failed', note: `${MARK} note` });
+
     Object.assign(ids, {
       label: label.id,
       milestone: milestone.id,
@@ -306,6 +330,8 @@ describe('workspace isolation', () => {
       request: request.id,
       three: three.id,
       four: four.id,
+      wave: wave.id,
+      lockedWave: lockedWave.id,
     });
     for (const id of [
       ...Object.values(ids),
@@ -407,6 +433,37 @@ describe('workspace isolation', () => {
     await expectRefused(updateCycle(ctx, patA, { project: 'PAY', number: 1, name: 'mine' }));
     await expectRefused(endCycle(ctx, patA, { project: 'PAY', number: 1 }));
     await expectRefused(getCycle(ctx, patA, { project: 'PAY', number: 'current' }));
+  });
+
+  it('waves, gates and the plan: Globex waves and milestones are out of reach', async () => {
+    const wave = ids.wave as string;
+    const milestone = ids.milestone as string;
+    await expectRefused(getMilestonePlan(ctx, patA, { id: milestone }));
+    await expectRefused(createWave(ctx, patA, { milestone, name: 'Into Globex' }));
+    await expectRefused(updateWave(ctx, patA, { id: wave, name: 'mine' }));
+    await expectRefused(updateWave(ctx, acme.ownerActor, { id: ids.lockedWave as string, position: 1 }));
+    await expectRefused(deleteWave(ctx, acme.ownerActor, { id: wave }));
+    await expectRefused(recordGateResult(ctx, acme.agentActor, { id: wave, state: 'passed', note: 'mine' }));
+    await expectRefused(putTasksInWave(ctx, patA, { milestone, wave, keys: ['PAY-1'] }));
+    await expectRefused(updateMilestone(ctx, patA, { id: milestone, planUrl: 'plans/mine.html' }));
+    // Acme's PAY-1 cannot join a Globex wave, by update or on create.
+    await expectRefused(updateTask(ctx, patA, { key: 'PAY-1', wave }));
+    await expectRefused(createTask(ctx, patA, { project: 'PAY', title: 'x', wave }));
+    // Acme's own plan, with Pat's Acme waves, shows nothing of Globex.
+    const acmeMilestone = await createMilestone(ctx, acme.ownerActor, { project: 'PAY', name: 'Acme plan' });
+    const acmeWave = await createWave(ctx, patA, { milestone: acmeMilestone.id, name: 'Acme wave' });
+    expectNoLeak(
+      await putTasksInWave(ctx, patA, { milestone: acmeMilestone.id, wave: acmeWave.id, keys: ['PAY-1'] }),
+    );
+    expectNoLeak(await recordGateResult(ctx, patA, { id: acmeWave.id, state: 'failed', note: 'Acme note' }));
+    expectNoLeak(await getMilestonePlan(ctx, patA, { id: acmeMilestone.id }));
+    expectNoLeak(await getTask(ctx, patA, { key: 'PAY-1' }));
+    expectNoLeak(await listTasks(ctx, patA, {}));
+    expectNoLeak(await listMilestones(ctx, patA, { project: 'PAY' }));
+    // Pat sees the Globex plan in Globex.
+    const globexPlan = await getMilestonePlan(ctx, patG, { id: milestone });
+    expect(globexPlan.planUrl).toBe(`plans/${MARK}.html`);
+    expect(globexPlan.waves.map((w) => w.id)).toEqual([wave, ids.lockedWave]);
   });
 
   it('members, invitations and API keys stay in Acme', async () => {

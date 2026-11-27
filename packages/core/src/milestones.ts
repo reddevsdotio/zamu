@@ -2,6 +2,8 @@
 // (activateMilestoneForTask), Active then, Completed only by hand. Progress comes from task counts.
 // M3: milestones of a project mirrored from Backlog.md come from its files. Creating, changing and
 // deleting them in the app fails with MILESTONE_MIRRORED; hidden ones (file gone) leave the list.
+// M8: the plan link (planUrl, not a Backlog.md field, so mirrored milestones take it too) and the
+// wave summary of list and get rows, from waveStates in waves.ts for every milestone at once.
 import {
   CreateMilestoneInput,
   DeleteMilestoneInput,
@@ -34,6 +36,7 @@ import {
   sourceMirrors,
   userRef,
 } from './internal';
+import { type WaveState, waveStates, waveSummaryOf } from './waves';
 
 const { milestone, project, task } = schema;
 
@@ -90,26 +93,29 @@ async function milestoneProgress(db: DbOrTx, ids: string[]): Promise<Map<string,
   return result;
 }
 
+/**
+ * Milestones with progress and (M8) the wave summary. `states` passes wave states the caller read
+ * already (the plan); otherwise one waveStates query covers every row.
+ */
 async function toMilestones(
   db: DbOrTx,
   projectRow: ProjectRow,
   rows: MilestoneRow[],
   clock: ClockContext,
+  states?: Map<string, WaveState[]>,
 ): Promise<MilestoneWithProgress[]> {
   const today = todayIn(clock);
   const locked: MilestoneOwnedField[] = (await isMirrored(db, projectRow.id))
     ? [...MILESTONE_OWNED_FIELDS]
     : [];
-  const [progress, users] = await Promise.all([
-    milestoneProgress(
-      db,
-      rows.map((row) => row.id),
-    ),
-    loadUsers(
-      db,
-      rows.map((row) => row.createdById),
-    ),
-  ]);
+  const ids = rows.map((row) => row.id);
+  // Sequential: callers run this inside transactions, where queries share one connection.
+  const progress = await milestoneProgress(db, ids);
+  const users = await loadUsers(
+    db,
+    rows.map((row) => row.createdById),
+  );
+  const waves = states ?? (await waveStates(db, ids));
   return rows.map((row) => {
     const creator = users.get(row.createdById);
     if (!creator) throw new Error(`user ${row.createdById} referenced by a milestone does not exist`);
@@ -125,26 +131,38 @@ async function toMilestones(
       backlogId: row.backlogId,
       locked,
       hidden: row.hiddenAt !== null,
+      planUrl: row.planUrl,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       progress: progress.get(row.id) ?? EMPTY_PROGRESS,
       daysLeft: row.targetDate ? calendarDaysBetween(today, row.targetDate) : null,
       overdue: row.targetDate !== null && row.targetDate < today && row.status !== 'completed',
+      waves: waveSummaryOf(waves.get(row.id)),
     });
   });
 }
 
-async function toMilestone(db: DbOrTx, projectRow: ProjectRow, row: MilestoneRow, clock: ClockContext) {
-  const [item] = await toMilestones(db, projectRow, [row], clock);
+/** One milestone with progress and its wave summary (`states` when the caller has them). */
+export async function toMilestoneWithProgress(
+  db: DbOrTx,
+  projectRow: ProjectRow,
+  row: MilestoneRow,
+  clock: ClockContext,
+  states?: Map<string, WaveState[]>,
+): Promise<MilestoneWithProgress> {
+  const [item] = await toMilestones(db, projectRow, [row], clock, states);
   if (!item) throw new Error('milestone mapping returned nothing');
   return item;
 }
+
+const toMilestone = toMilestoneWithProgress;
 
 // ---------------------------------------------------------------------------
 // Shared checks
 // ---------------------------------------------------------------------------
 
-function requireMilestones(projectRow: ProjectRow): void {
+/** Conflict when the project has milestones turned off. Wave writes check it too. */
+export function requireMilestones(projectRow: ProjectRow): void {
   if (!projectRow.usesMilestones) {
     throw new Conflict(`${projectRow.key} does not use milestones. Turn them on in the project settings.`);
   }
@@ -204,9 +222,10 @@ function nameTaken(name: string): Conflict {
 
 /**
  * The milestone with `id` and its project, after the read check. NotFound outside the actor's
- * workspace; Forbidden outside the key's scope.
+ * workspace; Forbidden outside the key's scope. `forUpdate` locks the milestone row (wave writes
+ * take it to keep positions dense).
  */
-async function findMilestone(
+export async function findMilestone(
   db: DbOrTx,
   actor: Actor,
   id: string,
@@ -307,6 +326,8 @@ export async function createMilestone(
  * Changes name, description, target date or status. Completed is set by hand only; any other
  * status on a Completed milestone reopens it as Active. MilestoneMirrored for a real change in a
  * project that mirrors Backlog.md (sending the stored values changes nothing and passes).
+ * M8: planUrl sets the plan link (null clears it); it is not a Backlog.md field, so mirrored
+ * milestones take it, and a request that changes only it passes the mirror check.
  */
 export async function updateMilestone(
   ctx: MilestoneContext,
@@ -342,9 +363,11 @@ export async function updateMilestone(
           set.status = parsed.status;
         }
       }
+      if (parsed.planUrl !== undefined && parsed.planUrl !== current.planUrl) set.planUrl = parsed.planUrl;
       if (Object.keys(set).length === 0) return toMilestone(tx, projectRow, current, ctx);
-      const source = await loadBacklogSource(tx, projectRow.id);
-      if (sourceMirrors(source)) {
+      const ownedChange = MILESTONE_OWNED_FIELDS.some((name) => name in set) || 'completedAt' in set;
+      const source = ownedChange ? await loadBacklogSource(tx, projectRow.id) : null;
+      if (ownedChange && sourceMirrors(source)) {
         const field = MILESTONE_OWNED_FIELDS.find(
           (name) => name in set || (name === 'status' && 'completedAt' in set),
         );
@@ -367,7 +390,8 @@ export async function updateMilestone(
 
 /**
  * Deletes a milestone. Its tasks lose it, each with a task.updated activity entry, in the same
- * transaction. MilestoneMirrored when the project mirrors Backlog.md.
+ * transaction. MilestoneMirrored when the project mirrors Backlog.md. M8: its waves and their gate
+ * results go with it; a task that was in a wave records that change in the same row.
  */
 export async function deleteMilestone(
   ctx: MilestoneContext,
@@ -384,17 +408,38 @@ export async function deleteMilestone(
     const source = await loadBacklogSource(tx, projectRow.id);
     if (sourceMirrors(source)) throw await milestoneMirrored(tx, source as BacklogSourceRow, current, null);
 
+    const waves = (await waveStates(tx, [current.id])).get(current.id) ?? [];
+    const waveById = new Map(waves.map((state) => [state.id, state]));
+    const before = await tx
+      .select({ id: task.id, waveId: task.waveId })
+      .from(task)
+      .where(eq(task.milestoneId, current.id));
+    const waveOfTask = new Map(before.map((row) => [row.id, row.waveId]));
     const cleared = await tx
       .update(task)
-      .set({ milestoneId: null })
+      .set({ milestoneId: null, waveId: null })
       .where(eq(task.milestoneId, current.id))
       .returning({ id: task.id });
-    const entries: ActivityEntry[] = cleared.map((row) => ({
-      projectId: projectRow.id,
-      taskId: row.id,
-      type: 'task.updated',
-      changes: [{ field: 'milestone', from: current.id, to: null }],
-    }));
+    const entries: ActivityEntry[] = cleared.map((row) => {
+      const state = waveById.get(waveOfTask.get(row.id) ?? '');
+      return {
+        projectId: projectRow.id,
+        taskId: row.id,
+        type: 'task.updated',
+        changes: [
+          { field: 'milestone', from: current.id, to: null },
+          ...(state
+            ? [
+                {
+                  field: 'wave' as const,
+                  from: { id: state.id, number: state.number, name: state.name },
+                  to: null,
+                },
+              ]
+            : []),
+        ],
+      };
+    });
     await recordActivities(tx, actor, entries);
     await tx.delete(milestone).where(eq(milestone.id, current.id));
   });

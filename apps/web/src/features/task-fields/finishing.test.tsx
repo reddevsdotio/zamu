@@ -232,6 +232,15 @@ describe('a selection', () => {
     expect(fake().calls.bulk).toHaveLength(0);
   });
 
+  it('moves every selected task with ⌘↵ while focus is on Cancel', async () => {
+    const { user } = await pickStatus(await rows(), /In review/);
+    const dialog = await screen.findByRole('alertdialog', { name: '1 of 2 tasks has open items' });
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus());
+    await user.keyboard('{Meta>}{Enter}{/Meta}');
+    await waitFor(() => expect(fake().calls.bulk).toHaveLength(1));
+    expect(fake().calls.bulk[0]).toMatchObject({ keys: ['PAY-1', 'PAY-3'], status: 'in_review' });
+  });
+
   it('moves every selected task with Move anyway', async () => {
     const { user } = await pickStatus(await rows(), /In review/);
     // PAY-2 is in review already: two tasks move, one of them with open items.

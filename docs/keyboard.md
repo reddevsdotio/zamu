@@ -134,6 +134,27 @@ items are open.
 | ⌘Enter | Move the task anyway               |
 | Esc    | Cancel. The status stays as it was |
 
+## Milestone page with waves
+
+These keys work on the page of a milestone whose tasks run in waves (see
+[guide.md](guide.md#milestones-in-waves)).
+
+| Key           | Action                                                                           |
+| ------------- | -------------------------------------------------------------------------------- |
+| G             | On a wave header or its gate: record the gate result                             |
+| ← / →         | On a wave header: collapse or expand the wave                                    |
+| Alt+↑ / Alt+↓ | On a task in a wave: move it to the previous or next wave                        |
+| Shift+N       | Add a wave                                                                       |
+| ⌘Enter        | In the gate result: record it. In the locked-wave warning: start the task anyway |
+| Esc           | Cancel the gate result or the warning                                            |
+
+G records a gate only while a wave header or its gate has focus. Anywhere else, on this page too, G still
+starts the "go to" keys (G then H, G then M). Alt+↓ past the last wave moves the task to "Not in a wave".
+Alt+↑ and Alt+↓ also move a line inside the criteria list; the two lists are never on screen together.
+
+The locked-wave warning opens when you move a task of a locked wave to In progress or In review, whichever
+way you do it: the status picker (S), the board, the palette or the task view.
+
 ## Pickers and menus
 
 | Key                             | Action                                                            |
@@ -161,6 +182,14 @@ items are open.
 In quick create (C), I assigns the task to you, Shift+M opens the milestone and Shift+C the cycle.
 
 ## Changes by release
+
+### 0.12.0
+
+- On a milestone page with waves, G records the gate result of the focused wave, ← and → collapse and expand
+  a wave, Alt+↑ and Alt+↓ move the focused task between waves, and Shift+N adds a wave.
+- ⌘Enter records a gate result, and in the locked-wave warning it starts the task anyway.
+- In the dialog for moving several tasks with open items, ⌘Enter now moves them, even while focus is on
+  Cancel.
 
 ### 0.11.0
 

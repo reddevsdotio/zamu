@@ -9,6 +9,7 @@ import {
   commentMention,
   cycle,
   cycleRollover,
+  gateResult,
   gitConnection,
   label,
   milestone,
@@ -23,6 +24,7 @@ import {
   taskPullRequest,
   user,
   WORKSPACE_SLUG_MAX_LENGTH,
+  wave,
   workspaceSlugAlias,
 } from '../src/schema';
 import { createTestDatabase, sharedTestDatabaseUrl, type TestDatabase } from './index';
@@ -83,6 +85,7 @@ describe('schema on a throwaway database', () => {
       'comment_mention',
       'cycle',
       'cycle_rollover',
+      'gate_result',
       'git_connection',
       'invitation',
       'label',
@@ -100,6 +103,7 @@ describe('schema on a throwaway database', () => {
       'task_pull_request',
       'user',
       'verification',
+      'wave',
       'workspace_slug_alias',
     ]);
   });
@@ -1418,6 +1422,212 @@ describe('M7 schema', () => {
         indexname: 'task_pull_request_pullRequestId_idx',
         indexdef:
           'CREATE INDEX "task_pull_request_pullRequestId_idx" ON public.task_pull_request USING btree (pull_request_id)',
+      },
+    ]);
+  });
+});
+
+describe('M8 schema', () => {
+  let database: TestDatabase;
+  let db: Db;
+
+  beforeAll(async () => {
+    database = await createTestDatabase();
+    db = database.db;
+  });
+
+  afterAll(async () => {
+    await database?.drop();
+  });
+
+  async function world() {
+    const base = await seed(db);
+    const [payouts] = await db
+      .insert(milestone)
+      .values({
+        workspaceId: base.workspace.id,
+        projectId: base.pay.id,
+        name: 'Payouts v2',
+        createdById: base.owner.id,
+      })
+      .returning();
+    if (!payouts) throw new Error('milestone insert failed');
+    return { ...base, payouts };
+  }
+
+  async function newWave(
+    w: Awaited<ReturnType<typeof world>>,
+    position: number,
+    values: Partial<typeof wave.$inferInsert> = {},
+  ) {
+    const [row] = await db
+      .insert(wave)
+      .values({
+        workspaceId: w.workspace.id,
+        milestoneId: w.payouts.id,
+        position,
+        name: `Wave ${position}`,
+        createdById: w.owner.id,
+        ...values,
+      })
+      .returning();
+    if (!row) throw new Error('wave insert failed');
+    return row;
+  }
+
+  it('starts milestones without a plan link and tasks in no wave', async () => {
+    const w = await world();
+    expect(w.payouts.planUrl).toBeNull();
+    const [row] = await db
+      .insert(task)
+      .values({ projectId: w.pay.id, number: 1, title: 'Task 1', createdById: w.owner.id })
+      .returning();
+    expect(row?.waveId).toBeNull();
+  });
+
+  it('takes a one-line plan link of 1 to 2,000 characters', async () => {
+    const w = await world();
+    const set = (value: string) =>
+      db.update(milestone).set({ planUrl: value }).where(eq(milestone.id, w.payouts.id));
+    await set('https://wiki.northwind.dev/plans/payouts-v2');
+    await set('plans/payouts-v2.html');
+    await set('x'.repeat(2_000));
+    expect(await pgErrorCode(set(''))).toBe('23514');
+    expect(await pgErrorCode(set('x'.repeat(2_001)))).toBe('23514');
+    expect(await pgErrorCode(set('plans/a.html\nplans/b.html'))).toBe('23514');
+  });
+
+  it('keeps wave names unique per milestone ignoring case, and checks name, position and gate text', async () => {
+    const w = await world();
+    const first = await newWave(w, 1, { name: 'Screens' });
+    expect(first).toMatchObject({ gateDescription: null, position: 1 });
+    expect(await pgErrorCode(newWave(w, 2, { name: 'screens' }))).toBe('23505');
+    // Positions are not unique, so a reorder can pass through duplicates in one statement.
+    await newWave(w, 1, { name: 'Data' });
+    expect(await pgErrorCode(newWave(w, 0, { name: 'Zero' }))).toBe('23514');
+    expect(await pgErrorCode(newWave(w, 3, { name: '' }))).toBe('23514');
+    expect(await pgErrorCode(newWave(w, 3, { name: 'x'.repeat(101) }))).toBe('23514');
+    expect(await pgErrorCode(newWave(w, 3, { name: 'two\nlines' }))).toBe('23514');
+    await newWave(w, 3, { name: 'Gate long', gateDescription: 'x'.repeat(4_000) });
+    expect(
+      await pgErrorCode(newWave(w, 4, { name: 'Gate longer', gateDescription: 'x'.repeat(4_001) })),
+    ).toBe('23514');
+    // Another milestone may reuse the name.
+    const [other] = await db
+      .insert(milestone)
+      .values({ workspaceId: w.workspace.id, projectId: w.pay.id, name: 'Ledger', createdById: w.owner.id })
+      .returning();
+    await db.insert(wave).values({
+      workspaceId: w.workspace.id,
+      milestoneId: other?.id as string,
+      position: 1,
+      name: 'Screens',
+      createdById: w.owner.id,
+    });
+  });
+
+  it('records gate results with a state and a note of 1 to 10,000 characters', async () => {
+    const w = await world();
+    const screens = await newWave(w, 1);
+    const result = (values: Partial<typeof gateResult.$inferInsert>) =>
+      db
+        .insert(gateResult)
+        .values({
+          workspaceId: w.workspace.id,
+          waveId: screens.id,
+          state: 'passed',
+          note: 'Checked in both themes.',
+          actorId: w.owner.id,
+          ...values,
+        })
+        .returning();
+    const [row] = await result({});
+    expect(row).toMatchObject({ onBehalfOfId: null, machine: null, branch: null, state: 'passed' });
+    await result({ state: 'failed', note: 'x'.repeat(10_000), machine: 'ana-mbp', branch: 'feat/screens' });
+    expect(await pgErrorCode(result({ state: 'open' as 'passed' }))).toBe('23514');
+    expect(await pgErrorCode(result({ note: '' }))).toBe('23514');
+    expect(await pgErrorCode(result({ note: 'x'.repeat(10_001) }))).toBe('23514');
+    // Someone who recorded a result can't be deleted.
+    const [recorder] = await db
+      .insert(user)
+      .values({ name: 'Tomás', email: `tomas-${crypto.randomUUID()}@example.com` })
+      .returning();
+    await result({ actorId: recorder?.id as string });
+    expect(await pgErrorCode(db.delete(user).where(eq(user.id, recorder?.id as string)))).toBe('23001');
+  });
+
+  it('takes tasks out of a removed wave and drops waves and results with their milestone', async () => {
+    const w = await world();
+    const screens = await newWave(w, 1);
+    const [row] = await db
+      .insert(task)
+      .values({
+        projectId: w.pay.id,
+        number: 1,
+        title: 'Task 1',
+        createdById: w.owner.id,
+        milestoneId: w.payouts.id,
+        waveId: screens.id,
+      })
+      .returning();
+    await db.delete(wave).where(eq(wave.id, screens.id));
+    const [after] = await db
+      .select()
+      .from(task)
+      .where(eq(task.id, row?.id as string));
+    expect(after).toMatchObject({ waveId: null, milestoneId: w.payouts.id });
+
+    const data = await newWave(w, 1, { name: 'Data' });
+    await db
+      .update(task)
+      .set({ waveId: data.id })
+      .where(eq(task.id, row?.id as string));
+    await db.insert(gateResult).values({
+      workspaceId: w.workspace.id,
+      waveId: data.id,
+      state: 'failed',
+      note: 'Migration fails on 0.11.0.',
+      actorId: w.owner.id,
+    });
+    await db.delete(milestone).where(eq(milestone.id, w.payouts.id));
+    expect(await db.select().from(wave).where(eq(wave.milestoneId, w.payouts.id))).toEqual([]);
+    expect(await db.select().from(gateResult).where(eq(gateResult.waveId, data.id))).toEqual([]);
+    const [kept] = await db
+      .select()
+      .from(task)
+      .where(eq(task.id, row?.id as string));
+    expect(kept).toMatchObject({ waveId: null, milestoneId: null });
+  });
+
+  it('indexes waves by milestone and position, results by wave and time, and tasks by wave', async () => {
+    const result = await db.execute<{ indexname: string; indexdef: string }>(sql`
+      select indexname, indexdef from pg_indexes
+      where schemaname = 'public' and indexname in (
+        'wave_milestoneId_name_unique',
+        'wave_milestoneId_position_idx',
+        'gate_result_waveId_createdAt_idx',
+        'task_waveId_idx')
+      order by indexname`);
+    expect(result.rows).toEqual([
+      {
+        indexname: 'gate_result_waveId_createdAt_idx',
+        indexdef:
+          'CREATE INDEX "gate_result_waveId_createdAt_idx" ON public.gate_result USING btree (wave_id, created_at DESC NULLS LAST)',
+      },
+      {
+        indexname: 'task_waveId_idx',
+        indexdef:
+          'CREATE INDEX "task_waveId_idx" ON public.task USING btree (wave_id) WHERE (wave_id IS NOT NULL)',
+      },
+      {
+        indexname: 'wave_milestoneId_name_unique',
+        indexdef:
+          'CREATE UNIQUE INDEX "wave_milestoneId_name_unique" ON public.wave USING btree (milestone_id, lower(name))',
+      },
+      {
+        indexname: 'wave_milestoneId_position_idx',
+        indexdef:
+          'CREATE INDEX "wave_milestoneId_position_idx" ON public.wave USING btree (milestone_id, "position")',
       },
     ]);
   });

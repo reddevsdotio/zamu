@@ -1,5 +1,6 @@
 // /api/v1 procedures. Each one hands the parsed input and the actor to a core service and returns
 // its result; the rules live in @zamu/core. M7: archiving, pull requests and repository settings.
+// M8: the milestone plan, waves and gate results.
 import {
   archivePreview,
   archiveTasks,
@@ -10,10 +11,12 @@ import {
   createMilestone,
   createProject,
   createTask,
+  createWave,
   deleteComment,
   deleteLabel,
   deleteMilestone,
   deleteProject,
+  deleteWave,
   endCycle,
   exportBacklog,
   getBacklogStatus,
@@ -24,6 +27,7 @@ import {
   getHomeCounts,
   getMe,
   getMilestone,
+  getMilestonePlan,
   getRepositorySettings,
   getTask,
   linkPullRequest,
@@ -37,6 +41,8 @@ import {
   listTasks,
   listTaskTimeline,
   newRepositoryWebhookSecret,
+  putTasksInWave,
+  recordGateResult,
   requestBacklogRefresh,
   restoreTasks,
   syncRepositoryNow,
@@ -49,6 +55,7 @@ import {
   updateProject,
   updateRepositorySettings,
   updateTask,
+  updateWave,
 } from '@zamu/core';
 import { api } from './base';
 
@@ -121,11 +128,27 @@ export const router = api.router({
       createMilestone(context.core, context.actor, input),
     ),
     get: api.milestones.get.handler(({ context, input }) => getMilestone(context.core, context.actor, input)),
+    plan: api.milestones.plan.handler(({ context, input }) =>
+      getMilestonePlan(context.core, context.actor, input),
+    ),
     update: api.milestones.update.handler(({ context, input }) =>
       updateMilestone(context.core, context.actor, input),
     ),
     delete: api.milestones.delete.handler(({ context, input }) =>
       deleteMilestone(context.core, context.actor, input),
+    ),
+  },
+  waves: {
+    create: api.waves.create.handler(({ context, input }) => createWave(context.core, context.actor, input)),
+    update: api.waves.update.handler(({ context, input }) => updateWave(context.core, context.actor, input)),
+    delete: api.waves.delete.handler(async ({ context, input }) => {
+      await deleteWave(context.core, context.actor, input);
+    }),
+    putTasks: api.waves.putTasks.handler(({ context, input }) =>
+      putTasksInWave(context.core, context.actor, input),
+    ),
+    recordGate: api.waves.recordGate.handler(({ context, input }) =>
+      recordGateResult(context.core, context.actor, input),
     ),
   },
   cycles: {

@@ -15,8 +15,8 @@ import {
   plural,
   problemCount,
   repositoryShort,
-  SOURCE_TITLES,
   sourceDotState,
+  sourceTitle,
   triggerText,
 } from './mirror';
 import { projectViewHref } from './tabs';
@@ -233,7 +233,7 @@ export function MirrorSourceButton({ project, refreshHotkey = true }: MirrorSour
       }}
     >
       <AriaButton
-        aria-label={`Backlog.md: ${SOURCE_TITLES[state]}`}
+        aria-label={`Backlog.md: ${sourceTitle(shownSummary)}`}
         aria-keyshortcuts={canRefresh ? 'Shift+R' : undefined}
         className="inline-flex h-7.5 shrink-0 cursor-pointer items-center gap-1.75 rounded-md px-2 text-sm whitespace-nowrap text-fg-3 outline-none hover:bg-bg-lane focus-visible:shadow-[var(--focus-ring)] aria-expanded:bg-bg-lane"
       >
@@ -245,7 +245,7 @@ export function MirrorSourceButton({ project, refreshHotkey = true }: MirrorSour
         <Dialog aria-label="Backlog.md mirror" className="outline-none">
           <div className="flex items-center gap-2 border-b border-line-soft px-3 py-2.5">
             <SourceStatusDot state={sourceDotState(state)} decorative />
-            <b className="font-semibold">{SOURCE_TITLES[state]}</b>
+            <b className="font-semibold">{sourceTitle(shownSummary)}</b>
             <span className="flex-1" />
             {canRefresh ? <Kbd aria-hidden>⇧R</Kbd> : null}
           </div>

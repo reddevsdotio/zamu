@@ -1,7 +1,14 @@
 // Typed errors thrown by core services. Adapters map them to Problem responses by `code`
-// (NotFound 404, Forbidden 403, Conflict 409, TaskChanged 409, Invalid 422, and the workspace codes
-// of 0.10); see PROBLEM_STATUS in @zamu/contracts.
-import type { MirroredProblemExtensions, ProblemCode, ProblemIssue, Task, UserRef } from '@zamu/contracts';
+// (NotFound 404, Forbidden 403, Conflict 409, TaskChanged 409, Invalid 422, the workspace codes
+// of 0.10, and M8's WaveLocked and GateTasksOpen); see PROBLEM_STATUS in @zamu/contracts.
+import type {
+  MirroredProblemExtensions,
+  ProblemCode,
+  ProblemIssue,
+  ProblemWaveLock,
+  Task,
+  UserRef,
+} from '@zamu/contracts';
 import { toProblemIssues } from '@zamu/contracts';
 import { ZodError } from 'zod';
 
@@ -150,6 +157,46 @@ export class ResponsibleForAgents extends Conflict {
   constructor(message: string, agents: UserRef[]) {
     super(message, { issues: agents.map((agent) => ({ path: 'agents', message: agent.name })) });
     this.agents = agents;
+  }
+}
+
+// M8: waves and gates. Adapters read the contract code with problemCodeOf() (relations.ts).
+
+/**
+ * An agent starting a task (Backlog or Todo to In progress or In review, or creating it there) in
+ * a locked wave (409 WAVE_LOCKED). `waveLock` names the task, its wave and the earlier wave whose
+ * gate it waits for; `hint` is the command that shows the plan. In a bulk change the issues name
+ * each refused task and `waveLock` the first one. People are never refused, and system moves never
+ * are.
+ */
+export class WaveLocked extends Conflict {
+  readonly problemCode = 'WAVE_LOCKED' as const;
+  readonly waveLock: ProblemWaveLock;
+  readonly hint: string;
+
+  constructor(
+    message: string,
+    waveLock: ProblemWaveLock,
+    hint: string,
+    options?: { issues?: ProblemIssue[] },
+  ) {
+    super(message, options);
+    this.waveLock = waveLock;
+    this.hint = hint;
+  }
+}
+
+/**
+ * Passing a gate while tasks of its wave are neither Done nor Canceled (409 GATE_TASKS_OPEN).
+ * `openKeys` lists them, at most MAX_WAVE_OPEN_KEYS.
+ */
+export class GateTasksOpen extends Conflict {
+  readonly problemCode = 'GATE_TASKS_OPEN' as const;
+  readonly openKeys: string[];
+
+  constructor(message: string, openKeys: string[]) {
+    super(message);
+    this.openKeys = openKeys;
   }
 }
 

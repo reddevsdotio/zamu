@@ -452,6 +452,84 @@ These cases fail the whole request:
 - A milestone or cycle change when the tasks are not all in one project, with `422 NOT_SAME_PROJECT`.
 - An agent's move to In review or Done while one of the tasks has open items, with `409 OPEN_ITEMS`.
 
+## Milestones, waves and gates (0.12.0)
+
+A milestone can link to its plan and hold ordered waves of its tasks. Each wave ends at a gate, whose state
+is its latest recorded result. A wave is locked while a wave before it has a gate that has not passed.
+
+| Method and path                           | What it does                                                                                   |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `GET /milestones/{id}/plan`               | The plan: the milestone, its plan link, the waves with gates and tasks, the rest.              |
+| `PATCH /milestones/{id}`                  | Takes `planUrl` besides the other fields; null clears it.                                      |
+| `POST /milestones/{milestone}/waves`      | Add a wave: `{ name, gateDescription?, position? }`. Returns the `Wave` (`201`).               |
+| `PATCH /waves/{id}`                       | `{ name?, gateDescription?, position? }`: rename it, describe its gate (null clears), move it. |
+| `DELETE /waves/{id}`                      | Remove it with its gate results (`204`). Its tasks go to no wave.                              |
+| `POST /milestones/{milestone}/wave-tasks` | `{ wave, keys }`: put up to 100 tasks in the wave, or take them out (`wave: null`).            |
+| `POST /waves/{id}/gate`                   | Record a result: `{ state, note }`, `state` `passed` or `failed`. Returns the `Wave`.          |
+
+The fields:
+- `planUrl` on milestones: a web address or a file path, one line, 1 to 2,000 characters, trimmed. It is
+  free text; clients show values that start with `http://` or `https://` as links.
+- `waves` on milestones (`GET /projects/{project}/milestones`, `GET /milestones/{id}`): `{ count, current,
+  currentState, allPassed }`, or null without waves. `current` is the number of the first wave whose gate
+  has not passed and `currentState` its gate (`open` or `failed`); both are null when every gate passed.
+- A `Wave` is `{ id, milestoneId, number, name, gate: { description, state, result }, current, locked,
+  lockedUntil, progress: { total, done, canceled, open }, canPass, openKeys, tasks }`. `number` is its
+  position, from 1. `state` is `open`, `passed` or `failed`. `result` is the latest one, `{ state, note,
+  recordedBy, onBehalfOf, at, source }`, or null. `lockedUntil` is `{ number, name }` of the first earlier
+  wave whose gate has not passed. `openKeys` holds up to 50 keys of tasks that are neither Done nor
+  Canceled. `tasks` are `{ key, title, status, assignee, archived }`.
+- The plan is `{ milestone, planUrl, waves, notInWave }`, where `notInWave` lists the milestone's tasks in
+  no wave. Hidden tasks are left out; archived ones show with `archived: true`.
+- Tasks and list rows carry `wave`: `{ id, number, name, locked, lockedUntil }` or null. `POST /tasks` and
+  `PATCH /tasks/{key}` take `wave` (an id, or null to take the task out).
+- History has a `wave` change: `{ field: "wave", from, to }`, each `{ id, number, name }` with
+  `removed: true` once the wave is gone, or null.
+
+The rules:
+- Wave names are 1 to 100 characters, unique in the milestone ignoring case (`409 CONFLICT`). A gate
+  description is Markdown up to 4,000 characters; a gate note is required, 1 to 10,000 characters.
+- Numbers stay dense: adding at `position`, moving and removing renumber the other waves. A position past
+  the last wave puts it last.
+- A task is in at most one wave, of its own milestone. A wave of another milestone moves the task to that
+  milestone in the same history line; in a mirrored project, where Backlog.md owns the milestone, that is
+  `409 TASK_MIRRORED`. Changing a task's milestone takes it out of its wave. `wave-tasks` with
+  `wave: null` needs every task in that milestone (`422`); a wave of another milestone is `404`. It is all
+  or nothing, writes one history line per task that changed, and returns the plan. Archived tasks fail it
+  with `409 TASK_ARCHIVED`.
+- A result can be recorded at any time and again later, either way. A gate never goes back to open. A
+  pass needs every task of the wave Done or Canceled (hidden tasks are ignored, archived ones count by
+  their status). A gate that passed stays passed when a task is added to the wave or reopened.
+- Anyone who may write the project's tasks may change waves and record results, agents included, on
+  Completed and mirrored milestones too. A project with milestones turned off gets `409 CONFLICT`.
+
+| Code              | Status | When                                                                                                    |
+| ----------------- | ------ | ------------------------------------------------------------------------------------------------------- |
+| `WAVE_LOCKED`     | 409    | An agent starts a task in a locked wave. `waveLock` names the task, its wave and the wave it waits for. |
+| `GATE_TASKS_OPEN` | 409    | A pass while a task of the wave is open. `openKeys` lists them.                                         |
+
+Starting a task means a status change from Backlog or Todo to In progress or In review, or creating it in
+one of those two. `WAVE_LOCKED` applies to API keys of agents only, on `PATCH /tasks/{key}`, `POST /tasks`
+and `POST /tasks/bulk` (one refused task fails the bulk change, and `issues` names each). A person's request
+is never refused, and neither is a move by a pull request or a Backlog.md refresh.
+
+```json
+{
+  "type": "about:blank",
+  "title": "Wave is locked",
+  "status": 409,
+  "code": "WAVE_LOCKED",
+  "detail": "PAY-36 is in W4 · End-to-end tests, which is locked until W3 · Screens passes. Wait for the gate of W3 to pass, or ask a person to start it.",
+  "requestId": "5258cd6f-8957-4c0b-a415-1592271c274e",
+  "waveLock": {
+    "task": "PAY-36",
+    "wave": { "number": 4, "name": "End-to-end tests" },
+    "waitsFor": { "number": 3, "name": "Screens" }
+  },
+  "hint": "zamu milestones show \"Payouts v2\" --project PAY"
+}
+```
+
 ## Repositories
 
 These routes read and change a project's repository settings. [repositories.md](repositories.md) explains

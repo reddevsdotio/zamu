@@ -291,7 +291,8 @@ The project header shows the state of the source:
 | Mirroring, with problems | Some files were skipped or read with a warning, or some values fell back.                       |
 | Last refresh failed      | `config.yml` did not parse, or the read failed. Nothing was written. The last good state stays. |
 | Paused                   | The connection is missing, rejected or unreachable, or `APP_ENCRYPTION_KEY` is missing.         |
-| Detached                 | The project was switched to Zamu (or imported) and no longer reads the files.                   |
+| Owned by Zamu            | The project was switched to Zamu and no longer reads the files.                                 |
+| Imported                 | The project was imported once and no longer reads the files.                                    |
 
 Settings > Backlog.md lists the problems of the last refresh, file by file:
 - A task file that does not parse is skipped, and its task keeps its last good version. A new task appears
@@ -440,7 +441,7 @@ Run `zamu agents` in the repository afterwards. It replaces the Backlog.md guide
 line saying that tasks are in Zamu, so agents stop writing task files.
 
 Settings > Backlog.md then shows "Owned by Zamu since" with the date, who switched the project, the export
-command, and the repository the project is still linked to. The project header shows the state as Detached.
+command, and the repository the project is still linked to. The project header shows the state as Owned by Zamu.
 
 An import is a mirror that switches to Zamu right after its first read, with no check.
 
@@ -498,6 +499,10 @@ or its prefix differs. Create one with `backlog init`, or fix the prefix.
 - who waived an item
 - the state of completed milestones
 - cycles
+- waves, gates and the plan link
+
+An import or a mirror creates no waves, gates or plan link either. They live in Zamu only, also in a mirrored
+project.
 
 ### Keep the copy current
 
@@ -549,7 +554,7 @@ them out of the description into the work record of every mirrored task, by the 
 The migration writes no history lines. The next refresh reads the same values from the files, so it changes
 nothing for files that did not change.
 
-Projects that were already imported or detached keep the moved items as their own, and the items become
+Projects that were already imported or owned by Zamu keep the moved items as their own, and the items become
 editable.
 
 ### Upgrading from 0.6.0
@@ -561,4 +566,4 @@ stored.
 The copy writes no history lines. The next refresh reads the same values from the files, so it changes nothing
 for files that did not change.
 
-Imports that were already detached get their labels as app labels.
+Imports that had already finished get their labels as app labels.

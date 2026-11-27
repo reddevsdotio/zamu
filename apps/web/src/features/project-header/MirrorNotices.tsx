@@ -158,7 +158,7 @@ export const detachedToastKey = (workspaceId: string, projectKey: string, detach
   workspaceStorageKey('detached-toast', workspaceId, projectKey, detachedAt);
 
 /**
- * "Payments is detached from Backlog.md. Everything is editable here now." once per browser session,
+ * "Payments is owned by Zamu now. Everything is editable here." once per browser session,
  * on the first task view after a recent detach.
  */
 export function DetachedToast({ project }: { project: ProjectWithCounts | undefined }) {

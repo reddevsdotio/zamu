@@ -37,12 +37,13 @@ Run it again at any time for new keys. It keeps what exists.
 
 Reddevs' `PAY` links the made-up repository `github.com/northwind/payments`. It has pull requests in every
 state, tasks linked by branch, by a `Closes:` line and by hand, a task merged with open criteria, archived
-tasks and check-again days. Its hourly check then fails, as that repository doesn't exist.
+tasks and check-again days. Its hourly check then fails, as that repository doesn't exist. It also has
+milestones planned in waves, with a plan link and gates that passed, failed or are still open.
 
 Two variables trim the seed:
 - `SEED_SECOND_WORKSPACE=0` leaves Globex out.
-- `SEED_PLANNING=0` leaves out the pull request, archive and check-again data, and the planning and Home
-  data before it.
+- `SEED_PLANNING=0` leaves out the waves, pull request, archive and check-again data, and the planning and
+  Home data before it.
 
 ## Checks
 

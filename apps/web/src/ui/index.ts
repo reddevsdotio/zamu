@@ -126,6 +126,39 @@ export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { type Fact, FactList, type FactListProps } from './FactList';
 export { FieldDescription, FieldError, inputBase, Label } from './Field';
 export {
+  countWord,
+  GATE_NOTE_MAX_LENGTH,
+  GATE_STATE_LABELS,
+  GateBox,
+  type GateBoxProps,
+  GatePill,
+  type GatePillProps,
+  type GatePillState,
+  GateResultPanel,
+  type GateResultPanelProps,
+  GateResultPopover,
+  type GateResultPopoverProps,
+  type GateResultState,
+  type GateResultView,
+  type GateState,
+  gateNextStepText,
+  gatePillText,
+  gateResultByline,
+  isPlainKey,
+  LockedWaveDialog,
+  type LockedWaveDialogProps,
+  LockedWaveWarning,
+  type LockedWaveWarningProps,
+  listWaves,
+  PlanDoneLine,
+  type PlanDoneLineProps,
+  PlanStopLine,
+  type PlanStopLineProps,
+  passBlockedText,
+  planDoneText,
+  waveRef,
+} from './Gates';
+export {
   AlertGlyph,
   ArchiveGlyph,
   BranchGlyph,
@@ -135,6 +168,7 @@ export {
   CloseGlyph,
   ExternalGlyph,
   FiltersGlyph,
+  GateGlyph,
   GripGlyph,
   LockGlyph,
   PlusGlyph,
@@ -245,6 +279,7 @@ export {
   pickerOptionId,
 } from './PickerPopover';
 export { Pill, type PillProps, type PillTone } from './Pill';
+export { isWebLink, PlanLink, type PlanLinkProps, planLinkText } from './PlanLink';
 export {
   CycleGlyph,
   type CycleGlyphProps,
@@ -364,8 +399,31 @@ export {
   parseHotkey,
   type UseHotkeysOptions,
   useHotkeys,
+  useModEnter,
 } from './useHotkeys';
 export { WaivePanel, type WaivePanelProps, WaivePopover, type WaivePopoverProps } from './WaivePopover';
+export {
+  AddWaveRow,
+  type AddWaveRowProps,
+  FoldedWavesHeader,
+  type FoldedWavesHeaderProps,
+  MoveHint,
+  type MoveHintProps,
+  moveHintText,
+  NoWaveHeader,
+  type NoWaveHeaderProps,
+  WAVE_NAME_MAX_LENGTH,
+  WaveHeader,
+  type WaveHeaderProps,
+  WaveLockMark,
+  type WaveLockMarkProps,
+  WaveNumber,
+  type WaveNumberProps,
+  WaveStatusLine,
+  type WaveStatusLineProps,
+  type WaveSummary,
+  waveStatusText,
+} from './Waves';
 export {
   ClippedText,
   type ClippedTextProps,
