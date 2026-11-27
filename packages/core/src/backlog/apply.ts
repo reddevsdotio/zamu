@@ -4,6 +4,8 @@
 // M6: the work record too (plan and final summary columns, task_item rows).
 // M7: archived_at follows the archive folder (task.archived and task.unarchived rows), closed_at follows
 // status changes, and a move to Done or Canceled clears the check-again day with a history line.
+// M8: a milestone change takes the task out of its wave (Zamu holds waves, Backlog.md does not),
+// with a wave line in the same history row.
 // Rows are written directly with Drizzle; services' owned-field locks do not apply to the refresh
 // itself.
 import type { WorkRecordItem } from '@zamu/backlog-md';
@@ -33,8 +35,18 @@ import type {
   TaskValues,
 } from './plan';
 
-const { backlogFile, backlogSource, label, milestone, project, task, taskDependency, taskItem, taskLabel } =
-  schema;
+const {
+  backlogFile,
+  backlogSource,
+  label,
+  milestone,
+  project,
+  task,
+  taskDependency,
+  taskItem,
+  taskLabel,
+  wave,
+} = schema;
 
 export type BacklogSourceRow = typeof backlogSource.$inferSelect;
 export type ProjectRow = typeof project.$inferSelect;
@@ -222,7 +234,8 @@ export async function applyPlan(tx: Tx, input: ApplyInput): Promise<ApplyResult>
       doneItems: _doneItems,
       ...rest
     } = values;
-    return { ...rest, ...(target !== undefined ? { milestoneId: milestoneId(target) } : {}) };
+    // M8: a wave belongs to one milestone, so leaving the milestone leaves the wave.
+    return { ...rest, ...(target !== undefined ? { milestoneId: milestoneId(target), waveId: null } : {}) };
   };
   // Number changes go through temporary numbers so two moves never collide on the unique key.
   const renumbered = plan.tasks.updates.filter((update) => update.set.number !== undefined);
@@ -245,6 +258,19 @@ export async function applyPlan(tx: Tx, input: ApplyInput): Promise<ApplyResult>
     for (const row of rows) {
       if (row.on !== null) checkAgainCleared.set(row.id, { on: row.on, reason: row.reason ?? '' });
     }
+  }
+  // M8: tasks that change milestone while in a wave lose the wave; the history line names it.
+  const moving = plan.tasks.updates
+    .filter((update) => update.set.milestone !== undefined)
+    .map((update) => update.id);
+  const waveCleared = new Map<string, { id: string; number: number; name: string }>();
+  for (const batch of chunks(moving)) {
+    const rows = await tx
+      .select({ taskId: task.id, id: wave.id, number: wave.position, name: wave.name })
+      .from(task)
+      .innerJoin(wave, eq(wave.id, task.waveId))
+      .where(inArray(task.id, batch));
+    for (const row of rows) waveCleared.set(row.taskId, { id: row.id, number: row.number, name: row.name });
   }
   const at = sql`${now.toISOString()}::timestamptz`;
   const closedColumns = (change: ClosedAtChange | undefined) => {
@@ -469,6 +495,8 @@ export async function applyPlan(tx: Tx, input: ApplyInput): Promise<ApplyResult>
       for (const change of update.changes) changes.push(await stored(change));
       const cleared = checkAgainCleared.get(update.id);
       if (cleared) changes.push(checkAgainChange(cleared));
+      const leftWave = waveCleared.get(update.id);
+      if (leftWave) changes.push({ field: 'wave', from: leftWave, to: null });
       if (update.archived === false) entries.push(entry(update.id, 'task.unarchived'));
       if (update.restore) entries.push(entry(update.id, 'task.restored', changes));
       else if (changes.length > 0) entries.push(entry(update.id, 'task.updated', changes));

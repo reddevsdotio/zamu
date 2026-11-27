@@ -16,6 +16,7 @@ import {
   testContext,
   type World,
 } from '../testing/fixtures';
+import { createWave, putTasksInWave } from '../waves';
 import { holdSourceLock, loadSource, pollBacklogSources, refreshBacklogSource } from './refresh';
 import { previewBacklog } from './setup';
 import {
@@ -582,4 +583,71 @@ describe('refreshBacklogSource', () => {
     const activity = await projectActivity(ctx.db, project.id);
     expect(activity).toHaveLength(1);
   }, 60_000);
+
+  it('M8: a milestone change in the files takes the task out of its wave; locked waves refuse nothing', async () => {
+    const repo = smallRepo();
+    repo.set(
+      `${FOLDER}/milestones/m-2 - Later.md`,
+      '---\nid: m-2\ntitle: "Later"\n---\n\n## Description\n\nAfter launch.\n',
+    );
+    repo.commit();
+    const { project, key, sourceId } = await mirror(repo);
+    const launch = (
+      await ctx.db
+        .select()
+        .from(schema.milestone)
+        .where(and(eq(schema.milestone.projectId, project.id), eq(schema.milestone.backlogId, 'm-1')))
+    )[0];
+    if (!launch) throw new Error('milestone m-1 missing');
+    const w1 = await createWave(ctx, world.ownerActor, { milestone: launch.id, name: 'Build' });
+    const w2 = await createWave(ctx, world.ownerActor, { milestone: launch.id, name: 'Ship' });
+    // BACK-2 joins m-1 in the files first, then both tasks sit in waves of m-1.
+    repo.set(
+      taskPath(FOLDER, 'back-2', 'Second'),
+      taskFile({ id: 'BACK-2', title: 'Second', milestone: 'm-1' }),
+    );
+    repo.commit();
+    await refreshBacklogSource(ctx, sourceId, 'manual');
+    await putTasksInWave(ctx, world.ownerActor, { milestone: launch.id, wave: w1.id, keys: [`${key}-1`] });
+    await putTasksInWave(ctx, world.ownerActor, { milestone: launch.id, wave: w2.id, keys: [`${key}-2`] });
+
+    // The files move BACK-1 to m-2 and start BACK-2, whose wave is locked: both apply.
+    repo.set(
+      taskPath(FOLDER, 'back-1', 'First'),
+      taskFile({
+        id: 'BACK-1',
+        title: 'First',
+        status: 'In Progress',
+        priority: 'high',
+        milestone: 'm-2',
+        assignee: ['@ana'],
+        ordinal: 100,
+      }),
+    );
+    repo.set(
+      taskPath(FOLDER, 'back-2', 'Second'),
+      taskFile({ id: 'BACK-2', title: 'Second', milestone: 'm-1', status: 'In Progress' }),
+    );
+    repo.commit();
+    const outcome = await refreshBacklogSource(ctx, sourceId, 'manual');
+    expect(outcome.outcome).toBe('applied');
+    const tasks = await tasksByKey(ctx.db, project.id, key);
+    const first = tasks.get(`${key}-1`);
+    expect(first?.waveId).toBeNull();
+    expect(first?.milestoneId).not.toBe(launch.id);
+    expect(tasks.get(`${key}-2`)).toMatchObject({ status: 'in_progress', waveId: w2.id });
+    const rows = await ctx.db
+      .select()
+      .from(schema.activity)
+      .where(eq(schema.activity.taskId, first?.id as string));
+    const last = rows
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
+      .at(-1);
+    expect(last).toMatchObject({ actorId: null, origin: 'backlog', type: 'task.updated' });
+    expect(last?.changes).toContainEqual({
+      field: 'wave',
+      from: { id: w1.id, number: 1, name: 'Build' },
+      to: null,
+    });
+  });
 });

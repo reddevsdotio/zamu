@@ -28,4 +28,5 @@ export * from './repository';
 export * from './secrets';
 export * from './tasks';
 export * from './timeline';
+export * from './waves';
 export * from './workspaces';

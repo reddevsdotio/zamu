@@ -19,6 +19,7 @@ import {
   testContext,
   type World,
 } from './testing/fixtures';
+import { createWave, recordGateResult } from './waves';
 
 async function rejection(promise: Promise<unknown>): Promise<MilestoneMirrored> {
   const error = await promise.then(
@@ -137,5 +138,27 @@ describe('milestones of a project mirrored from Backlog.md', () => {
       createMilestone(ctx, w.memberActor, { project: detached.key, name: 'New one' }),
     ).resolves.toMatchObject({ locked: [], backlogId: null });
     await expect(deleteMilestone(ctx, w.memberActor, { id: detached.milestone.id })).resolves.toBeUndefined();
+  });
+
+  it('M8: takes a plan link, waves and gates: Zamu holds them, not Backlog.md', async () => {
+    const w = await createWorld(ctx.db);
+    const own = await createMirroredProject(ctx.db, w);
+    const { id } = own.milestone;
+    const linked = await updateMilestone(ctx, w.agentActor, { id, planUrl: 'plans/webhooks-v2.html' });
+    expect(linked).toMatchObject({ planUrl: 'plans/webhooks-v2.html', locked: [...MILESTONE_OWNED_FIELDS] });
+    // The plan link with an owned field still refuses, naming the owned field.
+    const refused = await rejection(
+      updateMilestone(ctx, w.agentActor, { id, planUrl: 'plans/other.html', name: 'Webhooks v3' }),
+    );
+    expect(refused.extensions.field).toBe('name');
+    const [row] = await ctx.db.select().from(schema.milestone).where(eq(schema.milestone.id, id));
+    expect(row?.planUrl).toBe('plans/webhooks-v2.html');
+    const wave = await createWave(ctx, w.memberActor, { milestone: id, name: 'Delivery' });
+    await expect(getMilestone(ctx, w.memberActor, { id })).resolves.toMatchObject({
+      waves: { count: 1, current: 1, currentState: 'open' },
+    });
+    await expect(
+      recordGateResult(ctx, w.memberActor, { id: wave.id, state: 'failed', note: 'Retries still loop' }),
+    ).resolves.toMatchObject({ gate: { state: 'failed' } });
   });
 });

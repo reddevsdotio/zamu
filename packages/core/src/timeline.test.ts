@@ -1,4 +1,5 @@
 import { schema } from '@zamu/db';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { recordActivities, recordActivity } from './activity';
 import { createComment, deleteComment } from './comments';
@@ -166,5 +167,65 @@ describe('timeline', () => {
     await expect(listTaskTimeline(ctx, elsewhere, { key })).rejects.toBeInstanceOf(Forbidden);
     const other = await createWorld(ctx.db, 'Elsewhere');
     await expect(listTaskTimeline(ctx, other.ownerActor, { key })).rejects.toBeInstanceOf(NotFound);
+  });
+
+  it('M8: names waves by their current number and name, and a removed wave by what it was', async () => {
+    const { row: task, key } = await newTask();
+    const [milestone] = await ctx.db
+      .insert(schema.milestone)
+      .values({ workspaceId: world.workspaceId, projectId, name: 'Payouts v2', createdById: world.owner.id })
+      .returning();
+    if (!milestone) throw new Error('milestone insert failed');
+    const [screens, rollout] = await ctx.db
+      .insert(schema.wave)
+      .values([
+        {
+          workspaceId: world.workspaceId,
+          milestoneId: milestone.id,
+          position: 3,
+          name: 'Screens',
+          createdById: world.owner.id,
+        },
+        {
+          workspaceId: world.workspaceId,
+          milestoneId: milestone.id,
+          position: 4,
+          name: 'Rollout',
+          createdById: world.owner.id,
+        },
+      ])
+      .returning();
+    if (!screens || !rollout) throw new Error('wave insert failed');
+    await ctx.db.transaction((tx) =>
+      recordActivity(tx, world.memberActor, {
+        projectId,
+        taskId: task.id,
+        type: 'task.updated',
+        changes: [
+          {
+            field: 'wave',
+            from: { id: screens.id, number: 3, name: 'Screens' },
+            to: { id: rollout.id, number: 4, name: 'Rollout' },
+          },
+        ],
+      }),
+    );
+    // Since then: Screens was renamed and moved up, Rollout removed.
+    await ctx.db
+      .update(schema.wave)
+      .set({ name: 'Payout screens', position: 2 })
+      .where(eq(schema.wave.id, screens.id));
+    await ctx.db.delete(schema.wave).where(eq(schema.wave.id, rollout.id));
+    const { items } = await listTaskTimeline(ctx, world.memberActor, { key });
+    expect(items.at(-1)).toMatchObject({
+      kind: 'activity',
+      changes: [
+        {
+          field: 'wave',
+          from: { id: screens.id, number: 2, name: 'Payout screens', removed: false },
+          to: { id: rollout.id, number: 4, name: 'Rollout', removed: true },
+        },
+      ],
+    });
   });
 });

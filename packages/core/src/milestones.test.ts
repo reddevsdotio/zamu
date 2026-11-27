@@ -14,6 +14,7 @@ import {
 } from './milestones';
 import { createProject, updateProject } from './projects';
 import { createWorld, randomProjectKey, type TestContext, testContext, type World } from './testing/fixtures';
+import { createWave } from './waves';
 
 function clockAt(iso: string, timeZone = 'UTC'): ClockContext {
   const now = new Date(iso);
@@ -259,5 +260,53 @@ describe('milestones', () => {
     const elsewhere = await createWorld(ctx.db, 'Elsewhere');
     await expect(getMilestone(ctx, elsewhere.ownerActor, { id: m.id })).rejects.toThrow(NotFound);
     await expect(deleteMilestone(ctx, elsewhere.ownerActor, { id: m.id })).rejects.toThrow(NotFound);
+  });
+
+  it('M8: sets and clears the plan link, and lists it with the wave summary', async () => {
+    const project = await newProject();
+    const m = await createMilestone(ctx, world.ownerActor, { project: project.key, name: 'Payouts v2' });
+    expect(m).toMatchObject({ planUrl: null, waves: null });
+    const linked = await updateMilestone(ctx, world.agentActor, {
+      id: m.id,
+      planUrl: '  https://wiki.northwind.dev/plans/payouts-v2  ',
+    });
+    expect(linked.planUrl).toBe('https://wiki.northwind.dev/plans/payouts-v2');
+    const path = await updateMilestone(ctx, world.memberActor, {
+      id: m.id,
+      planUrl: 'plans/payouts-v2.html',
+    });
+    expect(path.planUrl).toBe('plans/payouts-v2.html');
+    await expect(updateMilestone(ctx, world.memberActor, { id: m.id, planUrl: 'a\nb' })).rejects.toThrow(
+      Invalid,
+    );
+    await createWave(ctx, world.ownerActor, { milestone: m.id, name: 'Ledger' });
+    await createWave(ctx, world.ownerActor, { milestone: m.id, name: 'Screens' });
+    const { items } = await listMilestones(ctx, world.memberActor, { project: project.key });
+    expect(items[0]).toMatchObject({
+      planUrl: 'plans/payouts-v2.html',
+      waves: { count: 2, current: 1, currentState: 'open', allPassed: false },
+    });
+    const cleared = await updateMilestone(ctx, world.memberActor, { id: m.id, planUrl: null });
+    expect(cleared.planUrl).toBeNull();
+  });
+
+  it('M8: deleting a milestone deletes its waves; its tasks record leaving the wave', async () => {
+    const project = await newProject();
+    const m = await createMilestone(ctx, world.ownerActor, { project: project.key, name: 'Payouts v2' });
+    const wave = await createWave(ctx, world.ownerActor, { milestone: m.id, name: 'Ledger' });
+    const task = await insertTask(ctx.db, world, project.id, m.id, 'todo');
+    await ctx.db.update(schema.task).set({ waveId: wave.id }).where(eq(schema.task.id, task.id));
+    await deleteMilestone(ctx, world.ownerActor, { id: m.id });
+    const [row] = await ctx.db.select().from(schema.task).where(eq(schema.task.id, task.id));
+    expect(row).toMatchObject({ milestoneId: null, waveId: null });
+    const waves = await ctx.db.select().from(schema.wave).where(eq(schema.wave.milestoneId, m.id));
+    expect(waves).toEqual([]);
+    const { items } = await listTaskActivity(ctx, world.memberActor, {
+      key: `${project.key}-${task.number}`,
+    });
+    expect(items.at(-1)?.changes).toEqual([
+      { field: 'milestone', from: { id: m.id, name: 'Deleted milestone' }, to: null },
+      { field: 'wave', from: { id: wave.id, number: 1, name: 'Ledger', removed: true }, to: null },
+    ]);
   });
 });

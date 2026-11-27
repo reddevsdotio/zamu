@@ -9,6 +9,10 @@
 // check-again day, the archived refusal (archive.ts) and the archived and checkAgain list filters,
 // the request, check-again and archive fields of tasks and rows, and setStatusFromSource for
 // moves a request makes.
+// M8: the wave of a task (waves.ts holds the lock rule): `wave` on create and update puts the task
+// in a wave of its milestone (moving it to the wave's milestone), leaving the milestone takes it
+// out, the agent-only WAVE_LOCKED refusal sits next to the finishing rule, and task and list rows
+// carry the wave with its lock, read in one batch.
 import {
   type ActivityCause,
   ASSIGNEE_AGENTS,
@@ -119,7 +123,15 @@ import {
   resolveCycleSelector,
   todayIn,
 } from './cycles';
-import { Invalid, NotFound, ProjectMirrored, parseInput, TaskChanged, TaskMirrored } from './errors';
+import {
+  Invalid,
+  NotFound,
+  ProjectMirrored,
+  parseInput,
+  TaskChanged,
+  TaskMirrored,
+  type WaveLocked,
+} from './errors';
 import {
   type BacklogSourceRow,
   backlogEditCommand,
@@ -158,6 +170,16 @@ import {
   subtaskProgressOf,
   taskKeysById,
 } from './relations';
+import {
+  findWaveState,
+  storedWaveRef,
+  taskWaveOf,
+  type WaveState,
+  waveLockApplies,
+  waveLockedError,
+  waveLockedMessage,
+  waveStates,
+} from './waves';
 
 const {
   activity,
@@ -555,6 +577,8 @@ async function toTask(db: DbOrTx, projectRow: ProjectRow, row: TaskRow, view: Ta
   const relations = await loadTaskRelations(db, projectRow, row);
   const items = await toWorkItems(db, await loadTaskItemRows(db, [row.id]), sourceMirrors(source));
   const meta = await workTextMeta(db, row);
+  // M8: the wave with its lock; one query, only for a task in a wave.
+  const waves = row.waveId && row.milestoneId ? await waveStates(db, [row.milestoneId]) : new Map();
   return Task.parse({
     id: row.id,
     key: formatTaskKey(projectRow.key, row.number, row.keySuffix),
@@ -616,6 +640,7 @@ async function toTask(db: DbOrTx, projectRow: ProjectRow, row: TaskRow, view: Ta
       criteria: items.criteria.filter((item) => item.state === 'open').length,
       done: items.doneItems.filter((item) => item.state === 'open').length,
     }),
+    wave: taskWaveOf(waves, row.waveId),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
@@ -1125,8 +1150,8 @@ export function toTaskListItems(
 /**
  * Tasks as list rows, with everything a row shows. A fixed number of queries for the whole set
  * (users, milestones, cycles, mirrors, comment counts, labels, blockers, subtask progress, parent
- * keys, M6 criteria and done item counts, M7 the newest request and the request count), whatever
- * its size.
+ * keys, M6 criteria and done item counts, M7 the newest request and the request count, M8 the
+ * waves of the rows' milestones with their locks), whatever its size.
  */
 async function toListItems(
   db: DbOrTx,
@@ -1163,9 +1188,15 @@ async function toListItems(
       ),
     () => workItemProgressOf(db, ids),
     () => requestSummariesOf(db, ids),
+    // M8: no query when no row is in a wave.
+    () =>
+      waveStates(
+        db,
+        rows.flatMap((row) => (row.task.waveId && row.task.milestoneId ? [row.task.milestoneId] : [])),
+      ),
   ] as const;
   // A transaction has one connection: run its reads one after the other.
-  const [users, refs, mirrored, comments, labels, blocked, progress, parentKeys, items, requests] =
+  const [users, refs, mirrored, comments, labels, blocked, progress, parentKeys, items, requests, waves] =
     await runReads(reads, options.inTransaction === true);
   return rows.map(({ task: row, project: projectRef, hasFinalSummary }) => ({
     id: row.id,
@@ -1197,6 +1228,7 @@ async function toListItems(
     archivedAt: row.archivedAt,
     pullRequest: requests.get(row.id)?.newest ?? null,
     pullRequestCount: requests.get(row.id)?.count ?? 0,
+    wave: taskWaveOf(waves, row.waveId),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }));
@@ -1309,6 +1341,55 @@ async function resolveCycle(
     throw invalidField('cycle', `Cycle ${row.number} is completed and takes no new tasks`);
   }
   return row;
+}
+
+/**
+ * M8: a wave of a milestone of the task's project, with its milestone. The wave row gets a key
+ * share lock, so a removal running at the same time waits for this write (or finishes first and
+ * the wave is not found). Invalid for a wave of another project or workspace.
+ */
+async function resolveWave(
+  tx: Tx,
+  projectRow: ProjectRow,
+  id: string,
+): Promise<{ id: string; milestoneId: string }> {
+  const [row] = await tx
+    .select({ id: schema.wave.id, milestoneId: schema.wave.milestoneId })
+    .from(schema.wave)
+    .innerJoin(milestone, eq(milestone.id, schema.wave.milestoneId))
+    .where(and(eq(schema.wave.id, id), eq(milestone.projectId, projectRow.id)))
+    .limit(1)
+    .for('key share', { of: schema.wave });
+  if (!row) throw invalidField('wave', `The wave is not in project ${projectRow.key}`);
+  return row;
+}
+
+/** M8: Invalid when `milestone` was sent with a wave of another milestone. */
+function assertWaveInMilestone(milestoneId: string | null | undefined, waveMilestoneId: string): void {
+  if (milestoneId !== undefined && milestoneId !== waveMilestoneId) {
+    throw invalidField('wave', 'The wave is in another milestone than the one sent');
+  }
+}
+
+/** M8: WaveLocked for `key` in the locked wave `state`, naming the milestone for the hint. */
+async function waveLocked(
+  tx: Tx,
+  projectRow: ProjectRow,
+  key: string,
+  state: WaveState,
+  options: { issues?: { path: string; message: string }[]; message?: string } = {},
+): Promise<WaveLocked> {
+  const [row] = await tx
+    .select({ name: milestone.name })
+    .from(milestone)
+    .where(eq(milestone.id, state.milestoneId))
+    .limit(1);
+  return waveLockedError(
+    key,
+    state,
+    { milestoneName: row?.name ?? state.milestoneId, projectKey: projectRow.key },
+    options,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1615,6 +1696,10 @@ function asProjectTask(row: TaskRow): ProjectTask {
  * M7: `checkAgain` sets a check-again day with its reason (dropped when the task is created Done
  * or Canceled, which also sets closed_at). A task created In progress or In review from the CLI
  * records the work branch (see workBranchFor) and links the open requests of that branch.
+ *
+ * M8: `wave` puts it in a wave of its milestone; without `milestone` the wave's milestone becomes
+ * the task's (Invalid when both are sent and differ). An agent creating it In progress or In
+ * review in a locked wave fails with WaveLocked; people are not refused.
  */
 export async function createTask(
   ctx: TaskContext,
@@ -1644,7 +1729,13 @@ export async function createTask(
       parsed.assignee === undefined && parentRow
         ? parentRow.assigneeId
         : ((await resolveAssignee(tx, actor, parsed.assignee)) ?? null);
-    const milestoneRow = (await resolveMilestone(tx, projectRow, parsed.milestone)) ?? null;
+    const waveTarget = parsed.wave ? await resolveWave(tx, projectRow, parsed.wave) : null;
+    if (waveTarget) assertWaveInMilestone(parsed.milestone, waveTarget.milestoneId);
+    const milestoneRow =
+      (await resolveMilestone(tx, projectRow, parsed.milestone ?? waveTarget?.milestoneId)) ?? null;
+    const waveState = waveTarget
+      ? findWaveState(await waveStates(tx, [waveTarget.milestoneId]), waveTarget.id)
+      : null;
     const cycleRow = (await resolveCycle(tx, ctx, projectRow, parsed.cycle)) ?? null;
     const blockers = await resolveProjectTasks(tx, projectRow, parsed.blockedBy ?? [], 'blockedBy');
     const labelRows = await findOrCreateLabels(tx, labelScope(projectRow), parsed.labels ?? []);
@@ -1656,6 +1747,10 @@ export async function createTask(
       .where(eq(project.id, projectRow.id))
       .returning({ number: sql<number>`${project.nextTaskNumber} - 1`.mapWith(Number) });
     if (!counter) throw new NotFound(`Project ${projectRow.key} not found`);
+    // M8: the lock rule, with the key the task would get (the transaction rolls back on refusal).
+    if (waveState?.locked && waveLockApplies(actor, null, parsed.status)) {
+      throw await waveLocked(tx, projectRow, formatTaskKey(projectRow.key, counter.number, null), waveState);
+    }
     const rank = await topRank(tx, projectRow.id, parsed.status);
 
     const description = parsed.description ? parsed.description : null;
@@ -1678,6 +1773,7 @@ export async function createTask(
         createdById: actor.userId,
         createdOnBehalfOfId: actor.onBehalfOfId,
         milestoneId: milestoneRow?.id ?? null,
+        waveId: waveState?.id ?? null,
         cycleId: cycleRow?.id ?? null,
         cycleAddedAt: cycleRow ? sql`now()` : null,
         rank,
@@ -1719,6 +1815,7 @@ export async function createTask(
     }
     if (assigneeId) changes.push({ field: 'assignee', from: null, to: assigneeId });
     if (milestoneRow) changes.push({ field: 'milestone', from: null, to: milestoneRow.id });
+    if (waveState) changes.push({ field: 'wave', from: null, to: storedWaveRef(waveState) });
     if (cycleRow) changes.push({ field: 'cycle', from: null, to: cycleRow.id });
     if (labelRows.length > 0) changes.push({ field: 'labels', from: [], to: storedLabels(labelRows) });
     if (dueDate !== null) changes.push({ field: 'dueDate', from: null, to: dueDate });
@@ -1807,9 +1904,10 @@ function sameNames(a: string[], b: string[]): boolean {
 /**
  * Applies `patch` to `current` (locked by the caller, with the project lock when
  * patchNeedsProjectLock) and records one task.updated row with every change. Returns the row as
- * it is now. See updateTask for the rules.
+ * it is now. See updateTask for the rules. Also used by putTasksInWave (waves.ts) with a wave
+ * patch.
  */
-async function applyTaskPatch(
+export async function applyTaskPatch(
   tx: Tx,
   ctx: TaskContext,
   actor: Actor,
@@ -1858,6 +1956,42 @@ async function applyTaskPatch(
     const milestoneId = milestoneRow?.id ?? null;
     set.milestoneId = milestoneId;
     changes.push({ field: 'milestone', from: current.milestoneId, to: milestoneId });
+  }
+  // M8: the wave. A wave moves the task to the wave's milestone (in the same row, so a mirrored
+  // task is refused below: Backlog.md owns the milestone); leaving the milestone leaves the wave.
+  let waveId = current.waveId;
+  if (patch.wave) {
+    const target = await resolveWave(tx, projectRow, patch.wave);
+    assertWaveInMilestone(patch.milestone, target.milestoneId);
+    const milestoneAfter = set.milestoneId !== undefined ? set.milestoneId : current.milestoneId;
+    if (target.milestoneId !== milestoneAfter) {
+      await resolveMilestone(tx, projectRow, target.milestoneId);
+      set.milestoneId = target.milestoneId;
+      changes.push({ field: 'milestone', from: current.milestoneId, to: target.milestoneId });
+    }
+    waveId = target.id;
+  } else if (patch.wave === null || set.milestoneId !== undefined) {
+    waveId = null;
+  }
+  const milestoneAfter = set.milestoneId !== undefined ? set.milestoneId : current.milestoneId;
+  let waves: Map<string, WaveState[]> | undefined;
+  const loadWaves = async () => {
+    waves ??= await waveStates(
+      tx,
+      [current.milestoneId, milestoneAfter].filter((id): id is string => id !== null),
+    );
+    return waves;
+  };
+  if (waveId !== current.waveId) {
+    set.waveId = waveId;
+    const states = await loadWaves();
+    const from = findWaveState(states, current.waveId);
+    const to = findWaveState(states, waveId);
+    changes.push({
+      field: 'wave',
+      from: from ? storedWaveRef(from) : null,
+      to: to ? storedWaveRef(to) : null,
+    });
   }
   if (patch.cycle !== undefined) {
     // Same cycle again is no change, even when that cycle has completed since.
@@ -1983,6 +2117,18 @@ async function applyTaskPatch(
         formatTaskKey(projectRow.key, current.number, current.keySuffix),
         set.status,
         open,
+      );
+    }
+  }
+  // M8: the lock rule, on the wave the task ends up in. Agents starting a task only.
+  if (waveId && waveLockApplies(actor, current.status, set.status)) {
+    const state = findWaveState(await loadWaves(), waveId);
+    if (state?.locked) {
+      throw await waveLocked(
+        tx,
+        projectRow,
+        formatTaskKey(projectRow.key, current.number, current.keySuffix),
+        state,
       );
     }
   }
@@ -2120,6 +2266,11 @@ async function resolveProjectTasksById(
  *   history line. Entering Done or Canceled sets closed_at, leaving them clears it, and leaving
  *   Done clears the merged-with-open-items flag. A status change to In progress or In review from
  *   the CLI records the work branch and links the open requests of that branch (workBranchFor).
+ * - M8: wave puts the task in a wave of its project's milestones and moves it to that milestone
+ *   (one row with both changes; a mirrored task is refused, Backlog.md owns the milestone); null
+ *   takes it out. Changing the milestone without a wave takes it out of its wave. An agent
+ *   starting the task (Backlog or Todo to In progress or In review) in a locked wave fails with
+ *   WaveLocked; people are never refused. Archived tasks fail with TaskArchived as above.
  */
 export async function updateTask(
   ctx: TaskContext,
@@ -2175,6 +2326,8 @@ export async function updateTask(
  *   open item; the issues name each refused task (path keys.<index>), and openItems lists the
  *   items when only one task is refused. Nothing changes then.
  * - M7: any archived task fails the request with TaskArchived, the issues naming each one.
+ * - M8: a milestone change takes each task out of its wave. An agent starting tasks in a locked
+ *   wave fails with WaveLocked, the issues naming each refused task. Nothing changes then.
  * Returns every task as a list row, in the order of the keys sent.
  */
 export async function bulkUpdateTasks(
@@ -2250,6 +2403,7 @@ export async function bulkUpdateTasks(
       .for('update');
     const taskById = new Map(lockedTasks.map((row) => [row.id, row]));
     await assertBulkMayFinish(tx, actor, hits, lockedTasks, patch.status);
+    await assertBulkMayStart(tx, actor, hits, lockedTasks, patch);
 
     // Resolve the assignee once; applyTaskPatch then compares ids.
     const assignee = await resolveAssignee(tx, actor, patch.assignee);
@@ -2315,6 +2469,57 @@ async function assertBulkMayFinish(
     [],
     { issues },
   );
+}
+
+/** M8: the lock rule for a bulk status change (see bulkUpdateTasks), in one wave query. */
+async function assertBulkMayStart(
+  tx: Tx,
+  actor: Actor,
+  hits: { project: ProjectRow; task: TaskRow }[],
+  lockedTasks: TaskRow[],
+  patch: Omit<BulkUpdateTasksInput, 'keys'>,
+): Promise<void> {
+  const starting = lockedTasks.filter(
+    (row) =>
+      row.waveId !== null &&
+      row.milestoneId !== null &&
+      waveLockApplies(actor, row.status, patch.status === row.status ? undefined : patch.status) &&
+      // A milestone change takes the task out of its wave first.
+      (patch.milestone === undefined || patch.milestone === row.milestoneId),
+  );
+  if (starting.length === 0) return;
+  const states = await waveStates(
+    tx,
+    starting.map((row) => row.milestoneId as string),
+  );
+  const lockedById = new Map(
+    starting.flatMap((row) => {
+      const state = findWaveState(states, row.waveId);
+      return state?.locked ? [[row.id, state] as const] : [];
+    }),
+  );
+  if (lockedById.size === 0) return;
+  const seen = new Set<string>();
+  const refused = hits.flatMap((hit, index) => {
+    const state = lockedById.get(hit.task.id);
+    if (!state || seen.has(hit.task.id)) return [];
+    seen.add(hit.task.id);
+    return [{ index, hit, key: formatTaskKey(hit.project.key, hit.task.number, hit.task.keySuffix), state }];
+  });
+  const [first] = refused;
+  if (!first) return;
+  const issues = refused.map((entry) => ({
+    path: `keys.${entry.index}`,
+    message: waveLockedMessage(entry.key, entry.state),
+  }));
+  throw await waveLocked(tx, first.hit.project, first.key, first.state, {
+    issues,
+    ...(refused.length > 1
+      ? {
+          message: `${refused.map((entry) => entry.key).join(', ')} are in locked waves, so no task started. Pass the gates they wait for first.`,
+        }
+      : {}),
+  });
 }
 
 /** The first field of a bulk change Backlog.md owns, for TaskMirrored; undefined for cycle only. */

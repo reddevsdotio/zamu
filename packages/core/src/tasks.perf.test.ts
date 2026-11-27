@@ -1,6 +1,8 @@
 // M5 plan risk "List performance": listTasks on a project with 5,000 tasks that carry labels,
 // blockers, subtasks and due dates (M6: and criteria and done items, counted per row). Prints the median time of each listing and fails when one
-// takes longer than a generous bound (the list fields are read for the page, not per row).
+// takes longer than a generous bound (the list fields are read for the page, not per row). M8: the
+// same listings again once every task sits in a wave of one of ten milestones, with gate results,
+// so the timings show what the one wave query per page costs.
 import { schema } from '@zamu/db';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -98,8 +100,8 @@ describe('listTasks on 5,000 tasks', () => {
     return times.sort((a, b) => a - b)[2] as number;
   }
 
-  it('lists pages with labels, blockers and progress quickly for every ordering and filter', async () => {
-    const cases: [string, Parameters<typeof listTasks>[2]][] = [
+  function listCases(): [string, Parameters<typeof listTasks>[2]][] {
+    return [
       ['list order, 50', { project: key }],
       ['list order, 200', { project: key, limit: 200 }],
       ['board order, 200', { project: key, order: 'board', limit: 200 }],
@@ -115,6 +117,20 @@ describe('listTasks on 5,000 tasks', () => {
       ['blocked=false, topLevel', { project: key, blocked: false, topLevel: true }],
       ['workspace-wide, sort=due', { sort: 'due' }],
     ];
+  }
+
+  async function timeCases(cases: [string, Parameters<typeof listTasks>[2]][]) {
+    const timings: Record<string, string> = {};
+    for (const [name, input] of cases) {
+      const ms = await median(() => listTasks(ctx, world.memberActor, input));
+      timings[name] = `${ms.toFixed(1)} ms`;
+      expect(ms, name).toBeLessThan(BOUND_MS);
+    }
+    return timings;
+  }
+
+  it('lists pages with labels, blockers and progress quickly for every ordering and filter', async () => {
+    const cases = listCases();
     const first = await listTasks(ctx, world.memberActor, { project: key, sort: 'due', limit: 200 });
     expect(first.items).toHaveLength(200);
     expect(first.items.some((item) => (item.labels?.length ?? 0) > 0)).toBe(true);
@@ -128,12 +144,41 @@ describe('listTasks on 5,000 tasks', () => {
       { project: key, sort: 'due', limit: 200, cursor: first.nextCursor ?? undefined },
     ]);
 
-    const timings: Record<string, string> = {};
-    for (const [name, input] of cases) {
-      const ms = await median(() => listTasks(ctx, world.memberActor, input));
-      timings[name] = `${ms.toFixed(1)} ms`;
-      expect(ms, name).toBeLessThan(BOUND_MS);
-    }
-    console.info(`listTasks on ${TASKS} tasks (median of 5):`, timings);
+    console.info(`listTasks on ${TASKS} tasks (median of 5):`, await timeCases(cases));
+  }, 120_000);
+
+  it('M8: lists as quickly with every task in a wave', async () => {
+    const project = await projectRow(ctx.db, world.workspaceId, key);
+    const { gateResult, milestone, task, wave } = schema;
+    // Ten milestones of six waves; W1 to W3 passed, W4 failed, W5 and W6 open (locked).
+    await ctx.db.execute(sql`
+      insert into ${milestone} (workspace_id, project_id, name, created_by_id)
+      select ${world.workspaceId}, ${project.id}, 'Milestone ' || n, ${world.owner.id}
+      from generate_series(1, 10) as n`);
+    await ctx.db.execute(sql`
+      insert into ${wave} (workspace_id, milestone_id, position, name, created_by_id)
+      select ${world.workspaceId}, m.id, p, 'Wave ' || p, ${world.owner.id}
+      from ${milestone} m cross join generate_series(1, 6) as p
+      where m.project_id = ${project.id}`);
+    await ctx.db.execute(sql`
+      insert into ${gateResult} (workspace_id, wave_id, state, note, actor_id)
+      select ${world.workspaceId}, w.id, case when w.position = 4 then 'failed' else 'passed' end, 'Checked',
+        ${world.owner.id}
+      from ${wave} w join ${milestone} m on m.id = w.milestone_id
+      where m.project_id = ${project.id} and w.position <= 4`);
+    await ctx.db.execute(sql`
+      update ${task} t set milestone_id = w.milestone_id, wave_id = w.id
+      from (
+        select w.id, w.milestone_id, row_number() over (order by m.name, w.position) - 1 as k
+        from ${wave} w join ${milestone} m on m.id = w.milestone_id
+        where m.project_id = ${project.id}
+      ) w
+      -- Statuses repeat every 6 numbers (see the seed), so spread waves across each status.
+      where t.project_id = ${project.id} and (t.number / 6) % 60 = w.k`);
+    await ctx.db.execute(sql`analyze ${task}, ${wave}, ${gateResult}, ${milestone}`);
+    const page = await listTasks(ctx, world.memberActor, { project: key, limit: 200 });
+    expect(page.items.every((item) => item.wave)).toBe(true);
+    expect(page.items.some((item) => item.wave?.locked)).toBe(true);
+    console.info(`M8 listTasks on ${TASKS} tasks in waves (median of 5):`, await timeCases(listCases()));
   }, 120_000);
 });

@@ -23,7 +23,8 @@
 // Query budget per getHome: readableProjects (plus one label lookup with the label filter), one
 // ranked query for the tab's groups (each group's uncapped total and first HOME_GROUP_ITEM_LIMIT
 // items), a fixed set of batch lookups for the rows (users, milestones, cycles, labels, blockers,
-// blocks, subtask progress, criteria and done-item counts, mirrors, M7 the linked requests), one
+// blocks, subtask progress, criteria and done-item counts, mirrors, M7 the linked requests, M8 the
+// waves of the rows' milestones with their locks, none when no row is in a wave), one
 // count query per other tab, the deadlines query and, on Agents, the cards, today's counts and
 // recent actions. No query runs per row.
 //
@@ -84,6 +85,7 @@ import { parseInput } from './errors';
 import { loadUsers, mirroredProjectIds, readableProjects, toDate, type UserRow, userRef } from './internal';
 import { mentionedUserIds } from './mentions';
 import { type RequestSummary, requestSummariesOf } from './tasks';
+import { taskWaveOf, type WaveState, waveStates } from './waves';
 
 type HomeContext = DbContext & ClockContext;
 
@@ -429,7 +431,7 @@ async function rankedRows(db: Db, params: Params, tab: HomeTab): Promise<Row[]> 
         t.rank, t.backlog_id as "backlogId", t.due_date::text as "dueDate", t.created_at as "createdAt",
         t.updated_at as "updatedAt", t.final_summary is not null as "hasFinalSummary",
         t.check_again_on::text as "checkAgainOn", t.check_again_reason as "checkAgainReason",
-        t.merged_done_at as "mergedDoneAt",
+        t.merged_done_at as "mergedDoneAt", t.wave_id as "waveId",
         p.id as "projectId", p.key as "projectKey", p.name as "projectName",
         pt.number as "parentNumber", pt.key_suffix as "parentKeySuffix",
         rv.actor_id as "reviewActorId", rv.on_behalf_of_id as "reviewOnBehalfOfId",
@@ -551,6 +553,8 @@ interface Details {
   mirrored: Set<string>;
   /** M7: the linked requests per task (newest, merged last, count), from one query. */
   requests: Map<string, RequestSummary>;
+  /** M8: the waves of the rows' milestones with their locks, from one query (waves.ts). */
+  waves: Map<string, WaveState[]>;
 }
 
 async function loadDetails(db: Db, rows: Row[], today: string): Promise<Details> {
@@ -558,7 +562,10 @@ async function loadDetails(db: Db, rows: Row[], today: string): Promise<Details>
   const milestoneIds = [...new Set(rows.map((row) => str(row.milestoneId)).filter((id) => id !== null))];
   const cycleIds = [...new Set(rows.map((row) => str(row.cycleId)).filter((id) => id !== null))];
   const none = Promise.resolve([] as Row[]);
-  const [milestones, cycles, labels, blockers, blocks, subtasks, workItems, mirrored, requests] =
+  const waveMilestoneIds = rows.flatMap((row) =>
+    row.waveId && row.milestoneId ? [String(row.milestoneId)] : [],
+  );
+  const [milestones, cycles, labels, blockers, blocks, subtasks, workItems, mirrored, requests, waves] =
     await Promise.all([
       milestoneIds.length === 0
         ? none
@@ -623,6 +630,7 @@ async function loadDetails(db: Db, rows: Row[], today: string): Promise<Details>
         rows.map((row) => String(row.projectId)),
       ),
       requestSummariesOf(db, taskIds),
+      waveStates(db, waveMilestoneIds),
     ]);
 
   const userIds = new Set<string | null>();
@@ -703,6 +711,7 @@ async function loadDetails(db: Db, rows: Row[], today: string): Promise<Details>
     workItems,
     mirrored,
     requests,
+    waves,
   };
 }
 
@@ -761,6 +770,7 @@ function listItemOf(row: Row, details: Details): z.input<typeof TaskListItem> {
     archivedAt: null,
     pullRequest: details.requests.get(taskId)?.newest ?? null,
     pullRequestCount: details.requests.get(taskId)?.count ?? 0,
+    wave: taskWaveOf(details.waves, str(row.waveId)),
     createdAt: timestamp(row.createdAt),
     updatedAt: timestamp(row.updatedAt),
   } as z.input<typeof TaskListItem>;
