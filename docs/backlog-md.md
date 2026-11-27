@@ -189,7 +189,7 @@ Up to 0.8.0 a mirror wrote the Acceptance criteria, Definition of done, Implemen
 notes and Final summary sections into the task's description, under `##` headings. The 0.9.0 migration moves
 them out of the description into the work record of every mirrored task, by the rules above. It writes no
 history lines, and the next refresh reads the same values from the files, so it changes nothing for files
-that did not change. Projects that were already imported or detached keep the moved items as their own, and
+that did not change. Projects that were already imported or owned by Zamu keep the moved items as their own, and
 they become editable.
 
 ### Upgrading from 0.6.0
@@ -197,7 +197,7 @@ they become editable.
 Before 0.7.0 these values sat only in the task's Backlog.md section. The 0.7.0 migrations copy them into the
 native fields of every existing mirror, from the data the last refresh stored. The copy writes no history
 lines, and the next refresh reads the same values from the files, so it changes nothing for files that did
-not change. Imports that were already detached get their labels as app labels.
+not change. Imports that had already finished get their labels as app labels.
 
 ## Keys and subtasks
 
@@ -239,7 +239,8 @@ The source has one of these states, shown in the project header:
 | Mirroring, with problems | Some files were skipped or read with a warning, or some values fell back.                       |
 | Last refresh failed      | `config.yml` did not parse, or the read failed. Nothing was written; the last good state stays. |
 | Paused                   | The connection is missing, rejected or unreachable, or `APP_ENCRYPTION_KEY` is missing.         |
-| Detached                 | The project was switched to Zamu (or imported) and no longer reads the files.                   |
+| Owned by Zamu            | The project was switched to Zamu and no longer reads the files.                                 |
+| Imported                 | The project was imported once and no longer reads the files.                                    |
 
 Settings > Backlog.md lists the problems of the last refresh, file by file. A task file that does not parse
 is skipped and its task keeps its last good version (a new task appears once its file parses). When two files
@@ -353,7 +354,7 @@ line saying that tasks are in Zamu, so agents stop writing task files.
 
 Afterwards Settings > Backlog.md shows "Owned by Zamu since" with the date, who switched the project, the
 export command, and the repository the project is still linked to. The project header shows the state as
-Detached.
+Owned by Zamu.
 
 An import is a mirror that switches to Zamu right after its first read, with no check.
 
@@ -400,6 +401,9 @@ missing or its prefix differs. Create one with `backlog init`, or fix the prefix
 
 What is not exported: comments (only work notes), who waived an item, the state of completed milestones,
 and cycles.
+
+Waves, gates and the plan link are not exported to Backlog.md files, and an import or a mirror creates
+none: they live in Zamu only, also in a mirrored project.
 
 The copy is as fresh as the last export. Edits made to the exported files are not read back: run the export
 again and commit the result whenever you want the copy to catch up. A project that still mirrors gets

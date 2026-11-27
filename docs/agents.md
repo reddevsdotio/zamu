@@ -168,6 +168,7 @@ zamu instructions                # overview: the work record, the rules, the exi
 zamu instructions creating       # search before creating; criteria that can be tested
 zamu instructions working        # start from the work branch, the plan, notes, Closes: lines, check-again days
 zamu instructions finishing      # the final summary, stopping at In review, the final report
+zamu instructions planning       # the plan link, waves with gates, zamu milestones show
 ```
 
 A typical loop for an agent:
@@ -203,8 +204,9 @@ Tell the agent about the exit codes so it can react without parsing text:
 Exit code 6 covers the problem codes `TASK_MIRRORED`, `MILESTONE_MIRRORED`, `PROJECT_MIRRORED`,
 `LABEL_MIRRORED`, `PROJECT_NOT_EMPTY`, `BACKLOG_PAUSED` and `BACKLOG_DETACHED`. Other conflicts, such as two
 edits racing, a blocker loop (`DEPENDENCY_LOOP`), a label name the project has (`LABEL_EXISTS`), a task
-finished with open items (`OPEN_ITEMS`) or a write to an archived task (`TASK_ARCHIVED`), stay on 1, and so
-do the refused request addresses (`REQUEST_OTHER_REPOSITORY`, `NOT_A_REQUEST`). A request the host doesn't
+finished with open items (`OPEN_ITEMS`), a task started in a locked wave (`WAVE_LOCKED`), a gate passed while
+its wave has open tasks (`GATE_TASKS_OPEN`) or a write to an archived task (`TASK_ARCHIVED`), stay on 1, and
+so do the refused request addresses (`REQUEST_OTHER_REPOSITORY`, `NOT_A_REQUEST`). A request the host doesn't
 know (`REQUEST_NOT_FOUND`) exits with 3. See [Backlog.md mirrors](#backlogmd-mirrors) and
 [Offline queue](#offline-queue).
 
@@ -262,10 +264,10 @@ move it anyway.
 
 zamu sends two headers with every request: `x-zamu-machine`, the machine name (`ZAMU_MACHINE`, else the host
 name), and `x-zamu-branch`, the git branch checked out in the current folder when there is one. The server
-stores them on history entries and notes. The web app shows them as "build-box · feat/payout-retries" under
-the History filter, and `zamu tasks show` prints them at the end of each line. Values are cut to 100
-characters. The web app sends neither header. The branch also becomes the task's work branch when the
-command starts the task (see [Pull requests](#pull-requests)).
+stores them on history entries, notes and gate results. The web app shows them as
+"build-box · feat/payout-retries" under the History filter, and `zamu tasks show` prints them at the end of
+each line. Values are cut to 100 characters. The web app sends neither header. The branch also becomes the
+task's work branch when the command starts the task (see [Pull requests](#pull-requests)).
 
 ## Pull requests
 
@@ -413,6 +415,116 @@ ends, early by hand or at midnight after its end date (in the server's `APP_TIME
 tasks move to the next cycle; the server creates one with the same length when none is planned.
 `zamu cycles end --move-to none` takes them out of cycles instead. `--milestone none` and `--cycle none`
 clear the field on `zamu tasks update` and filter tasks without one on `zamu tasks list`.
+
+## Plans, waves and gates
+
+A milestone can link to its plan and run its tasks in waves, one after the other. Each wave ends at a
+gate: the checks that must pass before the next wave starts. A wave is locked until every gate before it
+has passed. Zamu holds the link, the waves and the gate results; the plan itself stays where it was
+written, in the repository or a wiki. People see the same plan on the milestone page (see
+[guide.md](guide.md#milestones-in-waves)). `zamu instructions planning` prints the steps for an agent.
+
+A planning agent sets the milestone up after writing the plan:
+
+```sh
+zamu milestones update "Payouts v2" --project PAY --plan plans/payouts-v2.html
+zamu waves add "Payouts v2" "Data and contracts" --gate "Migrations apply; contract tests pass"
+zamu waves add "Payouts v2" "Screens" --gate - < gate.md
+zamu waves put "Payouts v2" W1 PAY-160 PAY-161 PAY-162
+zamu waves put "Payouts v2" W2 PAY-170 PAY-171
+zamu tasks update PAY-172 --wave Screens
+zamu milestones show "Payouts v2"
+```
+
+- The plan link is a web address (`https://wiki.northwind.dev/plans/refunds`), which the app opens in a
+  new tab, or a file path (`plans/payouts-v2.html`), which it shows as a path. One line, up to 2,000
+  characters. `--no-plan` removes it.
+- Waves are numbered from 1 in their order (W1, W2). `--position N` adds one in between or moves one
+  (`zamu waves update`), and the others renumber. `zamu waves remove` removes a wave with its gate results;
+  its tasks stay in the milestone, in no wave. Names are up to 100 characters and unique in the milestone,
+  ignoring case. A gate description is Markdown, up to 4,000 characters.
+- A wave is named by its number (`3` or `W3`) or its name, ignoring case; the milestone by id, or by name
+  with `--project` (or the folder's project).
+- `zamu waves put` takes up to 100 tasks, all or nothing; `none` as the wave takes them out. A task is in
+  at most one wave, of its own milestone: a task of another milestone moves to this one with it (exit 6 in
+  a project that mirrors Backlog.md, where the files own the milestone), and moving a task to another
+  milestone takes it out of its wave. Each change is a line in the task's history.
+
+A dispatching agent reads the plan with one command and picks a task of the current wave:
+
+```text
+$ zamu milestones show "Payouts v2" --project PAY
+Payouts v2  PAY · Active · target 2026-12-27 (30 days left) · 11 of 20 done
+Plan  plans/payouts-v2.html
+
+W1 · Data and contracts  3 of 3 done · gate passed
+  Gate: Migrations apply on a fresh database and on a copy of last week's data. Contract tests pass.
+  Passed by claude-dev for Ana Ruiz, 2026-11-23 09:26: Ran the migrations on a fresh database ...
+  PAY-25  Done         claude-dev  Backfill payout history from the old ledger
+  ...
+W3 · Screens  4 of 6 done · gate open · current
+  Gate: Every payout screen works in light and dark at 1440, 1280 and 1024, with no hydration warnings.
+  PAY-35  Todo         Unassigned  Keyboard shortcuts on the payout list
+  PAY-34  In progress  claude-dev  Payout history export as CSV
+  ...
+W4 · End-to-end tests  0 of 3 done · gate open · locked until W3 passes
+  ...
+Not in a wave  2 tasks · no gate
+  ...
+Next: W3 has 2 open tasks: PAY-35, PAY-34. When they are done, run the gate's checks and record the result: zamu waves pass "Payouts v2" W3 --note "what was checked" --project PAY
+```
+
+`--json` prints `zamu.v1.milestone-plan`. `zamu tasks show` prints a task's wave and lock
+(`W4 · End-to-end tests · locked until W3 passes`), `zamu tasks list` has a WAVE column, and
+`zamu milestones list` a WAVES column (`W3 of 5 · gate open`).
+
+When every task of a wave is Done or Canceled, the agent runs the checks the gate describes and records the
+result with a note that says what was checked:
+
+```sh
+zamu waves pass "Payouts v2" W3 --note "Ran the payout suite; checked both themes at 1440, 1280 and 1024"
+zamu waves fail "Payouts v2" W3 --note - < what-failed.md
+```
+
+A note is required, up to 10,000 characters of Markdown. A pass while a task of the wave is still open is
+refused with `409 GATE_TASKS_OPEN` (exit 1), which lists the open keys:
+
+```text
+$ zamu waves pass "Payouts v2" W3 --note "Ran the payout suite" --project PAY
+zamu: W3 · Screens has 2 open tasks: PAY-35, PAY-34. Finish or cancel them before passing its gate.
+  A fail can be recorded at any time.
+```
+
+Hidden tasks don't count, and archived ones count by their status. A fail is accepted at any time and
+reopens no task: log each fix as a task in the same wave, then record the gate again. Results are kept, the
+latest is the gate's state, and each result records the agent, the person it acts for, the machine and the
+branch. A gate that passed stays passed when a task is added to its wave or reopened later; the plan shows
+those tasks as open.
+
+**The lock.** An agent that starts a task (Backlog or Todo to In progress or In review, or creates one in
+those statuses) in a locked wave gets `409 WAVE_LOCKED` and exit code 1:
+
+```text
+$ zamu tasks update PAY-36 --status in_progress
+zamu: PAY-36 is in W4 · End-to-end tests, which is locked until W3 · Screens passes. Wait for the gate of W3 to pass, or ask a person to start it.
+  The waves and their gates: zamu milestones show "Payouts v2" --project PAY
+  Don't take PAY-36 out of its wave to get around the lock.
+```
+
+Work on the wave it waits for instead. Taking a task out of its wave, or putting it in another, to get
+past the lock is possible, but it is a line in the task's history with the agent's name, and it breaks the
+order the plan set for a reason. The rule applies to agents only: a person may start the task (the web app
+warns first, zamu prints `Warning: PAY-36 is in W4, which is locked until W3 passes.` on stderr), and moves
+by a merged pull request or a Backlog.md refresh are never refused. In bulk changes each refused task is
+listed.
+
+None of the `zamu waves` writes waits in the offline queue: they need the server's answer. `zamu tasks
+update --wave` does, once zamu has seen the milestone's waves on this machine (`zamu milestones show`), and
+the server applies the lock rule when the queued write is sent.
+
+Anyone with write access to the project changes waves and records gates, agents included, also on a
+Completed milestone. Waves need the project's milestones turned on. In a project that mirrors Backlog.md,
+waves, gates and the plan link live in Zamu only; `zamu backlog export` leaves them out.
 
 ## Labels, due dates, blockers and subtasks
 
@@ -629,6 +741,10 @@ breaking change ships as `zamu.v2`. The Zod schemas live in `packages/contracts`
 | `zamu.v1.milestones.list`   | `{ items: Milestone[] }` with progress counts                                          |
 | `zamu.v1.milestones.create` | `Milestone`                                                                            |
 | `zamu.v1.milestones.update` | `Milestone`                                                                            |
+| `zamu.v1.milestone-plan`    | `{ milestone, planUrl, waves: Wave[], notInWave }` (milestones show, waves put)        |
+| `zamu.v1.wave`              | `Wave`, from `waves add` and `waves update`                                            |
+| `zamu.v1.wave-removed`      | `{ milestoneId, removed: { id, number, name }, tasks }`: the tasks now in no wave      |
+| `zamu.v1.gate-result`       | `{ result, wave }`: the result recorded and the wave after it                          |
 | `zamu.v1.cycles.list`       | `{ items: Cycle[] }` with state, days left and counts                                  |
 | `zamu.v1.cycles.create`     | `Cycle`                                                                                |
 | `zamu.v1.cycles.current`    | `Cycle`, or `null` when no cycle is running                                            |
@@ -665,7 +781,10 @@ with `how` `branch`, `description` or `hand`), `checkAgain` (`{ on, reason }` or
 `archivedAt`, `archivedBy` and `mergedOpen` (`{ at, openCriteria, openDoneItems }` or null). List rows carry
 `checkAgain`, `archivedAt`, `pullRequest` (the newest, `{ provider, number, title, url, state }`) and
 `pullRequestCount`. Activity entries made without a person carry `system`: the git host, Zamu (the nightly
-archive) or Backlog.md, and `cause` says why (a request event, or the archive setting).
+archive) or Backlog.md, and `cause` says why (a request event, or the archive setting). Since 0.12.0 tasks
+and list rows carry `wave` (`{ id, number, name, locked, lockedUntil }` or null, `lockedUntil` being
+`{ number, name }` of the wave it waits for), milestones carry `planUrl` and `waves` (`{ count, current,
+currentState, allPassed }` or null), and history has a `wave` change.
 
 `zamu tasks list --project PAY --json`:
 

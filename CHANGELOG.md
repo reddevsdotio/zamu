@@ -1,5 +1,62 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- A milestone links to its plan: a web address, which opens in a new tab, or a file path such as
+  `plans/payouts-v2.html`, with Copy. "+ Add a link to the plan" on the milestone page, or
+  `zamu milestones update --plan`.
+- Waves and gates on the milestone page. A milestone's tasks run in ordered waves (W1, W2 ...), each with a
+  progress bar and a gate at its end that says what must be checked. Pass and Fail (or G on the wave)
+  record a result with a required note; Pass stays disabled while a task of the wave is open, and Fail
+  reopens no task. The latest result shows with who recorded it, for whom and when; "Record again" adds
+  another. A failed gate puts a line at the top of the page with "Go to the gate"; when every gate has
+  passed, a line says so. Tasks outside the waves sit under "Not in a wave". With more than six waves, the
+  passed ones from W1 fold into one line, and long waves and long notes are clipped with "Show all" and
+  "Show the whole note". See [docs/guide.md](docs/guide.md#milestones-in-waves).
+- Editing waves: "+ Add a wave" (Shift+N), rename, move up or down or drag, and remove, whose tasks go to
+  "Not in a wave". Tasks move between waves by drag or Alt+↑ and Alt+↓. The task view has a Wave field
+  under Milestone, and the history records wave changes.
+- The lock: a wave is locked until every gate before it has passed. The server refuses an agent that starts
+  a task in a locked wave (`409 WAVE_LOCKED`, naming the gate it waits for). A person gets a warning first,
+  "W4 is still locked", wherever they start the task, and Start anyway (⌘Enter) goes ahead. Moves by pull
+  requests and Backlog.md refreshes are never refused.
+- The milestone list shows where each plan stands under its name: "Wave 3 of 5 · gate open", "Gate failed
+  in wave 8 of 12", "All 4 gates passed · 1 task open" or "No waves".
+- CLI: `zamu milestones show <milestone>` prints the plan in one go (the plan link, each wave with its
+  gate, latest result, lock and tasks, the tasks in no wave, and a `Next:` line), `--plan` and `--no-plan`
+  on `zamu milestones update`, `zamu waves add|update|remove|put|pass|fail`, and `--wave`/`--no-wave` on
+  `zamu tasks update`. `zamu tasks show` prints the wave and its lock, and `zamu tasks list` and
+  `zamu milestones list` gain a wave column. A person who starts a task in a locked wave gets a warning on
+  stderr. See [docs/agents.md](docs/agents.md#plans-waves-and-gates).
+- `zamu instructions planning`: how a planning agent links the plan, adds the waves with their gates, puts
+  the tasks in them and checks the result with `zamu milestones show`.
+- API: `GET /milestones/{id}/plan`, `POST /milestones/{milestone}/waves`, `PATCH` and `DELETE
+  /waves/{id}`, `POST /milestones/{milestone}/wave-tasks` and `POST /waves/{id}/gate`; `planUrl` on
+  `PATCH /milestones/{id}`; `wave` on task create and update. Milestones carry `planUrl` and a `waves`
+  summary, tasks and list rows carry `wave`, and history has a `wave` change. New problem codes:
+  `409 WAVE_LOCKED` and `409 GATE_TASKS_OPEN`. See
+  [docs/api.md](docs/api.md#milestones-waves-and-gates-0120).
+- The dev seed plans four of Reddevs' `PAY` milestones in waves: "Payouts v2" (five waves, W3 current),
+  one with a failed gate, one with every gate passed, and "Refunds rework" with 12 waves.
+
+### Changed
+
+- `zamu instructions working` tells agents to check a task's wave before starting it, and to run a wave's
+  gate checks and record the result once its tasks are done, logging fixes for a failed gate as tasks in the
+  same wave.
+
+### Fixed
+
+- `zamu backlog export` waits up to 2 minutes for the server instead of 5 seconds, so a large project or a
+  slow connection no longer fails as "the server didn't answer". When it does run out of time, it says the
+  server may still be working. Every other request, the writes the offline queue takes included, keeps the
+  5-second limit.
+- A project switched from a Backlog.md mirror says "Owned by Zamu" wherever its Backlog.md state shows: the
+  settings, the settings menu, the setup page and the history ("switched Payments to Zamu"). It said
+  "Detached" in places. A finished import still says "Imported".
+
 ## 0.11.0
 
 Pull requests on tasks, the archive and check-again days. A project links its repository, requests link to

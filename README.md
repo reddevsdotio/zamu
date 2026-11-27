@@ -30,6 +30,10 @@ What works today:
   filters as chips, and changes to many tasks at once.
 - Milestones with a target date and progress, and numbered cycles. A cycle ends at midnight after its end
   date, or early by hand, and moves its unfinished tasks to the next one.
+- Waves and gates: a milestone links to its plan and runs its tasks in ordered waves, each ending at a gate
+  that someone passes or fails with a note. A wave stays locked until the gates before it pass: the server
+  refuses an agent that starts a task there, and warns a person. The milestone page shows where the plan
+  stands, and `zamu milestones show` prints it for the agent that dispatches the work.
 - Comments in the task history, in Markdown, with @mentions of people and agents. The history shows
   comments, work notes and changes in one list, with filters for each.
 - A work record on every task: acceptance criteria, a definition of done, a plan, work notes and a final
@@ -172,6 +176,11 @@ and the git settings the Backlog.md specs need (`e2e/stack.ts`).
   the merge, the merged-with-open-criteria flag and Home group, a link by hand with its preview and the
   other-repository refusal, closing on merge off, a request closed without merging, a bad signature on the
   status line and Check now catching up with the webhook off.
+- `waves.spec.ts`: an agent's `zamu` sets up a milestone with a plan link, three waves and their gates;
+  `zamu milestones show` prints it; the agent is refused a task in a locked wave while a person gets the
+  warning and starts it anyway; Pass waits for the wave's tasks and the agent passes W1; a gate failed from
+  the web app shows the stop line; Alt+↓ and Alt+↑ move a task between waves; the milestone list's status
+  line; the page in the dark theme.
 - `upgrade.spec.ts`: starts a second stack (`zamu-e2e-upgrade`, port 3101) on release 0.1.1 and adds data,
   switches it to M2.1 (0.3.0) and adds more, then to 0.6.0, where it mirrors a Backlog.md repository from its
   own Forgejo container and creates an agent key, then to the new image. It checks that every task key and
@@ -184,11 +193,13 @@ and the git settings the Backlog.md specs need (`e2e/stack.ts`).
   redirects an old task link to `/w/<slug>/p/...`. Then it moves to 0.10.0 when that release exists and
   finishes a task there, and the new image leaves archiving off on every existing project (a new one gets 14
   days), fills in when each finished task was finished, and opens the Repository page of a project that had
-  a repository. The older images come from `E2E_M1_IMAGE`, `E2E_M2_1_IMAGE`, `E2E_0_6_IMAGE`,
-  `E2E_0_8_IMAGE`, `E2E_0_9_IMAGE` and `E2E_0_10_IMAGE` (pulled when missing), or are built once from git as
+  a repository. Then it moves to 0.11.0 when that release exists and adds a milestone with tasks, and the new
+  image keeps every milestone's tasks and progress with no waves, no plan link and no new history lines. The
+  older images come from `E2E_M1_IMAGE`, `E2E_M2_1_IMAGE`, `E2E_0_6_IMAGE`, `E2E_0_8_IMAGE`,
+  `E2E_0_9_IMAGE`, `E2E_0_10_IMAGE` and `E2E_0_11_IMAGE` (pulled when missing), or are built once from git as
   `zamu:m1-0.1.1`, `zamu:m2.1-<ref>`, `zamu:release-0.6.0` and `zamu:release-<ref>`, which takes a few
-  minutes each the first time. The 0.8.0, 0.9.0 and 0.10.0 steps build from the tags `0.8.0`, `0.9.0` and
-  `0.10.0`, or from the refs in `E2E_0_8_REF`, `E2E_0_9_REF` and `E2E_0_10_REF` (for example
+  minutes each the first time. The 0.8.0 to 0.11.0 steps build from the tags `0.8.0`, `0.9.0`, `0.10.0` and
+  `0.11.0`, or from the refs in `E2E_0_8_REF`, `E2E_0_9_REF`, `E2E_0_10_REF` and `E2E_0_11_REF` (for example
   `0.8.0-rc.1`); with neither the tag nor one of the variables, a step is skipped with a message.
 - `workspaces.spec.ts`: a second workspace with the same project key, created from the switcher; switching
   with the switcher and the palette, two tabs on two workspaces, an invitation that opens its workspace,

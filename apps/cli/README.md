@@ -136,6 +136,7 @@ zamu instructions                # overview: the work record, the rules, the exi
 zamu instructions creating       # search first, then a task with testable criteria
 zamu instructions working        # the plan, a note after each step, checking what is proven
 zamu instructions finishing      # the final summary, In review, the final report
+zamu instructions planning       # the plan link, waves with gates, zamu milestones show
 ```
 
 `zamu agents` writes a short block into the repository's `AGENTS.md` (or `CLAUDE.md` when only that
@@ -233,6 +234,17 @@ zamu milestones create --project PAY "Webhooks v2" --target 2026-11-14 --descrip
 zamu milestones update "webhooks v2" --project PAY --target none --status completed
 zamu milestones update <milestone-id> --name "Webhooks v3"
 
+zamu milestones show "Payouts v2"                 # the plan: waves, gates, locks, tasks and what comes next
+zamu milestones update "Payouts v2" --plan plans/payouts-v2.html   # or a web address; --no-plan removes it
+zamu waves add "Payouts v2" Ledger --gate "Entries balance for every payout in the staging run"
+zamu waves add "Payouts v2" "Payout screens" --gate - < gate.md
+zamu waves update "Payouts v2" W3 --name "Screens" --position 2
+zamu waves remove "Payouts v2" W4                 # its tasks stay in the milestone, in no wave
+zamu waves put "Payouts v2" W3 PAY-170 PAY-171    # none as the wave takes them out
+zamu waves pass "Payouts v2" W3 --note "Checked both themes at 1440, 1280 and 1024"
+zamu waves fail "Payouts v2" W3 --note - < what-failed.md
+zamu tasks update PAY-174 --wave W4               # or 4, the name, or --no-wave
+
 zamu cycles list --project PAY
 zamu cycles create --project PAY --starts 2026-10-26 --ends 2026-11-08 --name "Checkout rewrite"
 zamu cycles create --project PAY                  # the day after the last cycle, same length
@@ -286,6 +298,42 @@ zamu queue drop 3b77132b                          # remove one so it is never se
 - `zamu cycles end` ends the current cycle unless you pass a number. Unfinished tasks move to
   `--move-to` (a cycle number, or `none`), else the next upcoming cycle, else a new cycle of the same
   length.
+
+### Waves and gates
+
+A milestone's tasks can run in waves, one after the other. Each wave ends at a gate: checks that must
+pass before the next wave starts. A wave is locked until every gate before it has passed.
+- `zamu milestones show <milestone>` is the one command a dispatching agent reads: the milestone with its
+  status, target and progress, the plan link, each wave with its number, name, progress, gate state (the
+  latest result's first note line and who recorded it), lock and tasks (key, status, assignee, title),
+  the tasks in no wave, and a last line that says what comes next (`Next: W3 has 2 open tasks: PAY-173,
+  PAY-174. When they are done, run the gate's checks and record the result: zamu waves pass ...`).
+- The milestone is an id, or its name with `--project` (or the folder's project). A wave is its number
+  (`3` or `W3`) or its name, ignoring case. An unknown wave exits 1 and lists the milestone's waves.
+- `zamu milestones update --plan <url-or-path>` links the plan: a web address opens in the app, a file
+  path shows as a path. `--no-plan` removes it.
+- `zamu waves add` adds a wave at the end, or at `--position N` (the waves from there move down);
+  `zamu waves update` changes `--name`, `--gate` (`""` clears it) or `--position`; `zamu waves remove`
+  removes it with its gate results, and its tasks stay in the milestone in no wave. `--gate -` reads the
+  description from stdin.
+- `zamu waves put <milestone> <wave> KEY...` puts up to 100 tasks in a wave, all or nothing. Tasks of
+  another milestone move to this one (in a project that mirrors Backlog.md, exit 6). `none` as the wave
+  takes them out of their wave.
+- `zamu tasks update KEY --wave <wave>` puts one task in a wave of its milestone, or of `--milestone`
+  when given; the task's milestone becomes the wave's. `--no-wave` (or `--wave none`) takes it out.
+  `zamu tasks show` prints the wave and its lock (`W4 · Rollout · locked until W3 passes`), and
+  `zamu tasks list` a WAVE column.
+- `zamu waves pass` and `zamu waves fail` record a gate result. `--note` is required and says what was
+  checked; `--note -` reads it from stdin. A pass while a task of the wave is neither Done nor Canceled
+  fails with `GATE_TASKS_OPEN` (exit 1) and lists the open tasks. A fail is accepted at any time.
+- An agent that starts a task (Backlog or Todo to In progress or In review) in a locked wave gets
+  `WAVE_LOCKED` (exit 1) with the wave it waits for and the command that shows the plan. A person may
+  start it; zamu prints `Warning: PAY-174 is in W4, which is locked until W3 passes.` on stderr after the
+  change.
+- None of the `zamu waves` writes waits in the offline queue. `zamu tasks update --wave` does: zamu looks
+  the wave up in the plans it has seen on this machine (`waves.json` next to the queue, from
+  `zamu milestones show` and `zamu waves put`), and the server applies the lock rule when the write is
+  sent.
 
 ### Labels, due dates, subtasks and blockers
 
@@ -448,6 +496,7 @@ Every request has 5 seconds to connect and answer. When the server doesn't answe
 restarting or unreachable), some writes on a task that already exists wait in a queue instead of failing:
 - `--check-ac`, `--uncheck-ac`, `--waive-ac`, `--unwaive-ac` and the same four with `-dod`;
 - `--status`, `--check-again` and `--no-check-again`;
+- `--wave` and `--no-wave`, when zamu has seen the milestone's waves on this machine (`zamu milestones show`);
 - `zamu notes add`, `--append-notes` and `zamu comments add`;
 - `zamu tasks archive`, `zamu tasks restore`, `zamu pr link` (not with `--dry-run`) and `zamu pr unlink`.
 
@@ -594,6 +643,13 @@ Every command takes `--json` and prints one versioned result:
 | `zamu milestones list`   | `zamu.v1.milestones.list`   |
 | `zamu milestones create` | `zamu.v1.milestones.create` |
 | `zamu milestones update` | `zamu.v1.milestones.update` |
+| `zamu milestones show`   | `zamu.v1.milestone-plan`    |
+| `zamu waves add`         | `zamu.v1.wave`              |
+| `zamu waves update`      | `zamu.v1.wave`              |
+| `zamu waves remove`      | `zamu.v1.wave-removed`      |
+| `zamu waves put`         | `zamu.v1.milestone-plan`    |
+| `zamu waves pass`        | `zamu.v1.gate-result`       |
+| `zamu waves fail`        | `zamu.v1.gate-result`       |
 | `zamu cycles list`       | `zamu.v1.cycles.list`       |
 | `zamu cycles create`     | `zamu.v1.cycles.create`     |
 | `zamu cycles current`    | `zamu.v1.cycles.current`    |
@@ -621,8 +677,8 @@ indented at a terminal.
 With `--json`, failures print `zamu.v1.error` on stdout: an RFC 9457 problem with `code`, `status`,
 `detail`, and `requestId` and `issues` when the server sent them (`field`, `file`, `backlogId` and `hint`
 for the Backlog.md mirror errors, `loop` for `DEPENDENCY_LOOP`, `openItems` for `OPEN_ITEMS`, `repository`
-for `REQUEST_OTHER_REPOSITORY`). The exit
-code is still non-zero.
+for `REQUEST_OTHER_REPOSITORY`, `waveLock` and `hint` for `WAVE_LOCKED`, `openKeys` for `GATE_TASKS_OPEN`).
+The exit code is still non-zero.
 
 `zamu.v1.projects.delete` is `{ "deleted": "PAY" }`. `zamu.v1.labels.delete` is the label as it was and
 the number of tasks it was on:
@@ -650,21 +706,28 @@ activity entries `cause` and `system` (who acted when no person did: the git hos
 `current` marks the login commands use here and `source` says how it was picked (`env` when `ZAMU_KEY` is
 set, null when the clone matches several logins).
 
+`zamu.v1.milestone-plan` is `{ "milestone", "planUrl", "waves", "notInWave" }`: each wave has its `number`,
+`name`, `gate` (`description`, `state`, the latest `result`), `current`, `locked`, `lockedUntil`, `progress`,
+`canPass`, `openKeys` and `tasks`. `zamu.v1.wave-removed` is `{ "milestoneId", "removed": { "id", "number",
+"name" }, "tasks": ["PAY-180"] }` and `zamu.v1.gate-result` is `{ "result", "wave" }`. From M8 tasks carry
+`wave` (`id`, `number`, `name`, `locked`, `lockedUntil`), and milestones `planUrl` and `waves` (the
+summary: `count`, `current`, `currentState`, `allPassed`).
+
 `zamu tasks update` with `--append-notes` alone prints `zamu.v1.notes.add` (the note); with other flags it
 prints `zamu.v1.tasks.update`. `zamu.v1.agents` adds `replacedBacklogBlock`.
 
 ## Exit codes
 
-| Code | Meaning                                                                                                                                                 |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | OK                                                                                                                                                      |
-| 1    | Usage: bad arguments, unknown milestone names, input the server rejected (400, 409, 422), `OPEN_ITEMS` included, or a clone that matches several logins |
-| 2    | Auth: not logged in, or the key was refused (401)                                                                                                       |
-| 3    | Not found (404)                                                                                                                                         |
-| 4    | Forbidden: the key's scope or access does not allow it, owners and admins only, or the key is for another workspace (403)                               |
-| 5    | Server: unreachable (and nothing queued), 5xx, or a response this version does not understand                                                           |
-| 6    | Backlog.md: the change belongs in Backlog.md, or the mirror is paused or detached (409)                                                                 |
-| 7    | Queued: the server didn't answer, so the write waits in the offline queue for the next command                                                          |
+| Code | Meaning                                                                                                                                                                                      |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | OK                                                                                                                                                                                           |
+| 1    | Usage: bad arguments, unknown milestone names, input the server rejected (400, 409, 422), `OPEN_ITEMS`, `WAVE_LOCKED` and `GATE_TASKS_OPEN` included, or a clone that matches several logins |
+| 2    | Auth: not logged in, or the key was refused (401)                                                                                                                                            |
+| 3    | Not found (404)                                                                                                                                                                              |
+| 4    | Forbidden: the key's scope or access does not allow it, owners and admins only, or the key is for another workspace (403)                                                                    |
+| 5    | Server: unreachable (and nothing queued), 5xx, or a response this version does not understand                                                                                                |
+| 6    | Backlog.md: the change belongs in Backlog.md, or the mirror is paused or detached (409)                                                                                                      |
+| 7    | Queued: the server didn't answer, so the write waits in the offline queue for the next command                                                                                               |
 
 ## Development
 

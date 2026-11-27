@@ -76,8 +76,9 @@ pnpm e2e                      # Playwright against a fresh Docker Compose stack
 - `node apps/cli/scripts/npm-package.ts --version 0.0.1 --check` builds the folder npm gets (the bundle with
   that version), installs it into an empty directory and runs `zamu --version` there. On `X.Y.Z` tags the
   release workflow publishes it and updates the Homebrew tap.
-- The upgrade spec builds older releases from git tags. Its 0.8.0 step runs only when the tag `0.8.0`
-  exists, or `E2E_0_8_IMAGE` or `E2E_0_8_REF` points at a build; otherwise it is skipped with a message.
+- The upgrade spec builds older releases from git tags. Each step from 0.8.0 to 0.11.0 runs only when its
+  tag exists (`0.8.0` to `0.11.0`), or `E2E_0_<minor>_IMAGE` or `E2E_0_<minor>_REF` points at a build;
+  otherwise it is skipped with a message.
 
 ## Code conventions
 
@@ -101,6 +102,12 @@ pnpm e2e                      # Playwright against a fresh Docker Compose stack
   `assertTaskWritable` from `packages/core/src/archive.ts` (409 `TASK_ARCHIVED`). Lists, boards, Home, the
   dashboard, counts and pickers leave out rows with `archived_at` set unless the caller asks for them;
   milestone, cycle and subtask progress keep counting them.
+- Waves and gates live in `packages/core/src/waves.ts`, on the `wave` and `gate_result` tables and
+  `task.wave_id`. The lock rule is computed once, in `waveStates`; the plan, task rows, milestone summaries
+  and the refusal all read it. The agent-only `WAVE_LOCKED` refusal sits in `tasks.ts` next to
+  `OPEN_ITEMS`, and moves from `setStatusFromSource` are never refused. A task's wave changes go through
+  `applyTaskPatch`, and changing its milestone clears its wave. Wave writes that touch tasks lock the task
+  rows (id order) before the milestone row.
 - Backlog.md has one owner at a time. A mirrored project reads its files and refuses writes to what they
   own; a project owned by Zamu (imported, or switched in its settings) can be written back out as a copy with
   `zamu backlog export`. The server never writes to a repository.

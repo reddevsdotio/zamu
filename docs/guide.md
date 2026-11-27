@@ -2,8 +2,8 @@
 
 This page covers the web app: workspaces, the sidebar, Home, the list and the board, the task view and the
 peek, the work record, pull requests on tasks, the archive, check-again days, the command palette, the four
-task fields (labels, due dates, blockers and subtasks) and Task defaults. The keys are in
-[keyboard.md](keyboard.md).
+task fields (labels, due dates, blockers and subtasks), milestones in waves with gates, and Task defaults. The
+keys are in [keyboard.md](keyboard.md).
 
 ## Workspaces
 
@@ -177,8 +177,9 @@ A task opens as a full page at `/w/acme/p/PAY/PAY-142`. On the left, from the to
 summary when there is one, the Markdown description, the pull requests, the acceptance criteria, the
 definition of done, the plan, the Subtasks and Blocked by boxes, then the activity and the comment box (M).
 The properties are on the right: status, priority, assignee, Criteria and Done items, Pull request, Check
-again, labels, due date, parent, milestone and cycle, each with its picker. Criteria and Done items show their
-counts, and a click moves to the list. The work record has its own section below.
+again, labels, due date, parent, milestone, wave and cycle, each with its picker. Criteria and Done items show
+their counts, and a click moves to the list. The work record has its own section below. The wave shows only
+when the milestone has waves (see [Milestones in waves](#milestones-in-waves)).
 
 E edits the title and D the description. J and K go to the next and previous task of the list or board you
 opened it from ("12 of 40 in List"). Esc goes back there, with the task still under the cursor. Copy link
@@ -401,6 +402,69 @@ subtask, or pick an existing task. A new subtask takes the parent's assignee.
 The parent shows its progress as done of total, with canceled subtasks left out. In the list, subtasks can
 nest under their parent. On the board they are hidden by default: the parent card reads "5 subtasks · 2
 done" and expands in place to list them. Turn on "Show subtasks as cards" in Display to see them as cards.
+
+## Milestones in waves
+
+A milestone can run in waves: ordered groups of its tasks, each ending at a gate. The gate says what must be
+checked before the next wave starts, such as "Every payout screen works in light and dark". Agents usually
+set the waves up from the CLI after writing the plan (see [agents.md](agents.md#plans-waves-and-gates)); the
+milestone page shows where the plan stands and lets people change it.
+
+**The header** shows the tasks, done and waves counts, and the link to the plan: a web address opens in a
+new tab, anything else is a file path. Copy copies it. "+ Add a link to the plan" sets one.
+
+**Waves** are numbered from 1 in their order: W1, W2, W3. Each header shows the number, the name, a progress
+bar with "4 of 6", and the gate's state: Gate open, Gate passed, Gate failed, or a lock with what it waits
+for ("Locked until W3 passes"). The current wave, the first one whose gate has not passed, has its number in
+the accent colour and starts open; passed and locked waves start collapsed. ← and → collapse and expand the
+focused wave. When a milestone has more than six waves, the passed waves from W1 fold into one line, such as
+"7 waves, all passed". A wave with many tasks shows the first few and "24 more tasks in this wave · Show
+all". With waves, the page groups by wave; Display still offers the status grouping, and filters apply
+inside the waves.
+
+Tasks in no wave sit under "Not in a wave" at the end: "No gate. These never hold a wave up." A milestone
+without waves looks as before, with "+ Add waves" to start.
+
+**The gate** sits at the end of its wave with its description, Fail and Pass, and the latest result: the
+note, who recorded it (with the person an agent acts for) and when. Pass stays disabled while a task of the
+wave is open, with the reason ("Pass unlocks when the 2 open tasks are done"); hidden tasks don't count, and
+archived ones count by their status. Fail works at any time and reopens no task: log the fix as a task in
+the same wave. A long note is clipped, with "Show the whole note".
+
+To record a result, press Pass or Fail, or G while the wave or its gate has focus. Pick Passed or Failed,
+write the note (it is required: say what was checked) and press ⌘Enter; Esc cancels. "Record again" records
+a new result later, either way. Every result is kept, and the latest is the gate's state; a gate never goes
+back to Open. A pass that comes before new work stays a pass: a task added to a passed wave, or reopened in
+it, shows as "1 task open" next to the passed pill.
+
+When a gate fails, a line across the top of the page names the wave and offers "Go to the gate". When every
+gate has passed, a line says so and counts any task still open.
+
+**The lock.** A wave is locked until every gate before it has passed. Locked tasks carry a lock glyph. An
+agent that starts a task in a locked wave is refused (`WAVE_LOCKED`). A person is warned instead: moving
+such a task to In progress or In review, from the task view, the list, the board, the peek, the palette or
+a status key, opens "W4 is still locked" with what it waits for. Start anyway (⌘Enter) makes the change;
+Cancel leaves the task as it was. Moves made by a merged pull request or a Backlog.md refresh are never
+refused.
+
+**Changing waves.** "+ Add a wave", or Shift+N, adds a wave at the end with the next number. The menu on a
+wave header renames it, moves it up or down, and removes it; dragging the header's grip reorders. Removing
+a wave asks first and moves its tasks to "Not in a wave"; the waves after it renumber. Edit the gate
+description in the gate box. Drag a task to another wave, or press Alt+↑ and Alt+↓ to move the focused task
+to the previous or next wave ("Moving PAY-173 to W4"); past the last wave it goes to "Not in a wave". The
+task view's Wave field picks among the milestone's waves, and the task's history records each wave change
+("W3 · Screens", or "a removed wave").
+
+A task is in at most one wave, of its own milestone. Putting it in a wave of another milestone moves it to
+that milestone; moving it to another milestone, or out of its milestone, takes it out of its wave. Anyone
+who can change the project's tasks can change waves and record gates, agents included, also on a Completed
+milestone.
+
+**The milestone list** shows one line under each name: "Wave 3 of 5 · gate open", "Gate failed in wave 8 of
+12", "All 4 gates passed" (with "· 1 task open" when a task of the milestone is still open), or "No waves".
+
+In a project that mirrors Backlog.md, waves, gates and the plan link live in Zamu only and are never written
+to the files. A refresh that changes a task's milestone takes it out of its wave.
 
 ## Projects that mirror Backlog.md
 
