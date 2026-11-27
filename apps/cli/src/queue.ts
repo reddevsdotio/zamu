@@ -2,7 +2,8 @@
 // within client.ts's 5 seconds), a few writes on an existing task are stored in
 // $XDG_STATE_HOME/zamu/queue.json and sent at the start of the next command that reaches the server:
 // checking, unchecking, waiving and unwaiving items, a status change, a check-again day, a work note
-// and a comment, and (M7) archiving, restoring, and linking or unlinking a request. They either apply
+// and a comment, (M7) archiving, restoring, and linking or unlinking a request, and (M8) putting the
+// task in a wave or taking it out (the wave id comes from the plans zamu remembers, waves-memory.ts). They either apply
 // whatever else happened to the task meanwhile, or (the status change) carry the status zamu last saw
 // as a precondition. Everything else fails as before, so nothing that depends on the
 // task's current shape is ever sent blind.
@@ -38,6 +39,7 @@ import { CliError, toCliError, usageError } from './errors';
 import { FileLockedError, LOCK_STALE_MS, stateDir, withLock, writeAtomically } from './files';
 import { formatTime, statusLabel } from './format';
 import type { CliIo } from './io';
+import { rememberedWaves, rememberWaves } from './waves-memory';
 
 export { LOCK_STALE_MS, stateDir, withLock };
 /** Another zamu process held the queue's lock for longer than a command waits. */
@@ -278,8 +280,11 @@ const ITEM_OPERATIONS = {
 
 const REFERENCE_FIELDS = new Set(['key', 'project']);
 
-/** Update fields that queue besides the item operations and the status (M7: the check-again day). */
-const QUEUEABLE_FIELDS = new Set(['status', 'checkAgain']);
+/**
+ * Update fields that queue besides the item operations and the status (M7: the check-again day; M8:
+ * the wave, which the server checks against the lock rule when the write is sent).
+ */
+const QUEUEABLE_FIELDS = new Set(['status', 'checkAgain', 'wave']);
 
 /** The procedures that are queueable whatever their input (M7): they work on tasks that exist. */
 const TASK_WRITES = new Set<string>([
@@ -333,8 +338,15 @@ function inputKeys(input: Record<string, unknown>): string[] {
   return Array.isArray(input.keys) ? input.keys.filter((key): key is string => typeof key === 'string') : [];
 }
 
-/** One line for zamu queue: "check criteria 1, 2, move to In review", "note "Migration written"". */
-export function summarize(procedure: CliQueueProcedure, input: Record<string, unknown>): string {
+/**
+ * One line for zamu queue: "check criteria 1, 2, move to In review", "note "Migration written"",
+ * "put in W3 · Payout screens". `waveLabel` names the wave of a --wave change, when zamu knows it.
+ */
+export function summarize(
+  procedure: CliQueueProcedure,
+  input: Record<string, unknown>,
+  waveLabel?: string,
+): string {
   if (procedure === 'comments.create') {
     const body = typeof input.body === 'string' ? input.body : '';
     return `${input.kind === 'note' ? 'note' : 'comment'} "${excerpt(body)}"`;
@@ -356,14 +368,17 @@ export function summarize(procedure: CliQueueProcedure, input: Record<string, un
     const { on } = input.checkAgain as { on?: unknown };
     parts.push(`check again ${String(on ?? '')}`);
   }
+  if (input.wave === null) parts.push('take out of its wave');
+  else if (typeof input.wave === 'string') parts.push(`put in ${waveLabel ?? 'a wave'}`);
   return parts.join(', ');
 }
 
 /**
  * Whether a write can wait for the server: a note or comment; an update of an existing task that
  * only checks, unchecks, waives or unwaives items, changes the status or sets the check-again day;
- * and (M7) archiving, restoring, linking or unlinking a request, but not a dry run. Otherwise the
- * flags that keep it from being queued.
+ * and (M7) archiving, restoring, linking or unlinking a request, but not a dry run. M8: an update
+ * may also put the task in a wave or take it out of one. Otherwise the flags that keep it from being
+ * queued.
  */
 export function queueability(procedure: string, input: unknown): Queueability | null {
   if (procedure !== 'tasks.update' && procedure !== 'comments.create' && !TASK_WRITES.has(procedure)) {
@@ -511,6 +526,10 @@ async function append(
         earlier?.data ?? (await rememberedStatus(io, statusBucket(url, workspaceId), taskKey, project));
       if (lastSeenStatus === null) throw new NoKnownStatus();
     }
+    const waveLabel =
+      typeof input.wave === 'string'
+        ? await rememberedWaveLabel(io, statusBucket(url, workspaceId), input.wave)
+        : undefined;
     const entry = CliQueueEntry.parse({
       id: newId(entries),
       queuedAt: new Date(io.now?.() ?? Date.now()).toISOString(),
@@ -522,11 +541,21 @@ async function append(
       procedure,
       input,
       lastSeenStatus,
-      summary: summarize(procedure, input),
+      summary: summarize(procedure, input, waveLabel),
     });
     await writeQueue(io, [...entries, entry]);
     return entry;
   });
+}
+
+/** "W3 · Payout screens" for a remembered wave id. */
+async function rememberedWaveLabel(io: CliIo, bucket: string, id: string): Promise<string | undefined> {
+  const { milestones } = await rememberedWaves(io, bucket);
+  for (const milestone of Object.values(milestones)) {
+    const wave = milestone.waves.find((candidate) => candidate.id === id);
+    if (wave) return `W${wave.number} · ${wave.name}`;
+  }
+  return undefined;
 }
 
 /**
@@ -550,7 +579,7 @@ function notQueuedHint(flags: string[]): string {
   return (
     `Nothing was queued: ${named}. Run the command again once the server answers. Checks, waivers, ` +
     'status changes, check-again days, notes and comments on their own are queued, and so are ' +
-    'archiving, restoring and linking or unlinking a request.'
+    'archiving, restoring, linking or unlinking a request, and putting a task in a wave.'
   );
 }
 
@@ -746,6 +775,7 @@ function queueingClient(client: ApiClient, session: QueueSession): ApiClient {
     try {
       const result = await callProcedure(client, path, args);
       await rememberStatuses(session.io, bucket, seenTasks(procedure, result));
+      await rememberWaves(session.io, bucket, procedure, result);
       return result;
     } catch (error) {
       if (isNetworkFailure(error)) {

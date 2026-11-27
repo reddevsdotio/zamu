@@ -1295,7 +1295,10 @@ describe('output conventions', () => {
     const help = await zamu(['--help']);
     expect(help.code).toBe(0);
     expect(help.stdout).toContain(
-      'Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task with open items;\nTASK_ARCHIVED: restore the task first), 2 auth, 3 not found, 4 forbidden, 5 server (unreachable, and\nnothing queued), 6 Backlog.md conflict, 7 queued',
+      'Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task with open items;\n' +
+        'TASK_ARCHIVED: restore the task first; WAVE_LOCKED: an agent started a task in a locked wave;\n' +
+        "GATE_TASKS_OPEN: a gate can't pass while its wave has open tasks), 2 auth, 3 not found, 4 forbidden,\n" +
+        '5 server (unreachable, and nothing queued), 6 Backlog.md conflict, 7 queued',
     );
     const version = await zamu(['--version']);
     expect(version.code).toBe(0);

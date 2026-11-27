@@ -779,7 +779,7 @@ describe('zamu instructions', () => {
     const overview = await zamu(['instructions']);
     expect(overview.code, overview.stderr).toBe(0);
     expect(overview.stdout).toBe(INSTRUCTIONS.overview);
-    for (const topic of ['overview', 'creating', 'working', 'finishing'] as const) {
+    for (const topic of ['overview', 'creating', 'working', 'finishing', 'planning'] as const) {
       const json = parsed(await zamu(['instructions', topic, '--json']), 'instructions');
       expect(json).toEqual({ topic, text: INSTRUCTIONS[topic] });
     }
@@ -787,7 +787,7 @@ describe('zamu instructions', () => {
     const unknown = await zamu(['instructions', 'reviewing']);
     expect(unknown.code).toBe(1);
     expect(unknown.stderr).toBe(
-      'zamu: No guide named "reviewing".\n  Guides: overview, creating, working, finishing\n',
+      'zamu: No guide named "reviewing".\n  Guides: overview, creating, working, finishing, planning\n',
     );
   });
 

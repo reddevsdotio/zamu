@@ -9,6 +9,9 @@ import {
   CYCLE_STATE_LABELS,
   type CycleState,
   type EntrySource,
+  formatWaveNumber,
+  GATE_STATE_LABELS,
+  type GateState,
   GIT_ACTOR_NAMES,
   type GitProvider,
   type Me,
@@ -24,8 +27,10 @@ import {
   type PullRequestState,
   TASK_STATUS_LABELS,
   type TaskStatus,
+  type TaskWave,
   type TimelineItem,
   type UserRef,
+  type WaveNumberRef,
   type WorkItem,
   type WorkTextMeta,
   ZAMU_ACTOR_NAME,
@@ -320,7 +325,51 @@ export function changeSentence(change: ActivityChange): string {
       return change.from
         ? `unlinked ${requestRef(change.from.provider, change.from.number)} "${change.from.title}"`
         : 'unlinked a request';
+    case 'wave': {
+      const name = (wave: NonNullable<typeof change.to>) =>
+        wave.removed ? 'a removed wave' : waveLabel(wave);
+      if (change.to)
+        return change.from
+          ? `moved it from ${name(change.from)} to ${name(change.to)}`
+          : `put it in ${name(change.to)}`;
+      return change.from ? `took it out of ${name(change.from)}` : 'took it out of its wave';
+    }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Waves and gates (M8)
+// ---------------------------------------------------------------------------
+
+/** "W3 · Payout screens". */
+export function waveLabel(wave: WaveNumberRef): string {
+  return `${formatWaveNumber(wave.number)} · ${wave.name}`;
+}
+
+export const gateStateLabel = (state: GateState) => GATE_STATE_LABELS[state];
+
+/**
+ * How a locked wave reads: "locked until W3 passes" for the wave right after the gate it waits for,
+ * "locked" for the ones after that (as the milestone page shows them). Empty when unlocked.
+ */
+export function waveLockText(wave: Pick<TaskWave, 'number' | 'locked' | 'lockedUntil'>): string {
+  if (!wave.locked) return '';
+  const until = wave.lockedUntil;
+  return until && until.number === wave.number - 1
+    ? `locked until ${formatWaveNumber(until.number)} passes`
+    : until
+      ? `locked (${formatWaveNumber(until.number)} has not passed)`
+      : 'locked';
+}
+
+/** The first line of a note with text, for one-line summaries. */
+export function firstLine(text: string): string {
+  return (
+    text
+      .split('\n')
+      .map((line) => line.trim())
+      .find(Boolean) ?? ''
+  );
 }
 
 // ---------------------------------------------------------------------------

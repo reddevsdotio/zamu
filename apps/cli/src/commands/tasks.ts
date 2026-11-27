@@ -20,11 +20,12 @@ import {
   type TimelineCounts,
   type TimelineItem,
   UpdateTaskInput,
+  WaveId,
   type WorkItem,
 } from '@zamu/contracts';
 import type { ApiClient } from '../client';
 import { type CommandContext, emit } from '../context';
-import { usageError } from '../errors';
+import { CliError, EXIT, usageError } from '../errors';
 import {
   assigneeLabel,
   checkAgainLabel,
@@ -45,10 +46,14 @@ import {
   statusLabel,
   table,
   timelineText,
+  waveLabel,
+  waveLockText,
   workTextByline,
 } from '../format';
+import { refPrefix } from '../mirrored';
 import { requireProject, resolveProject } from '../project';
-import { queueBehind } from '../queue';
+import { queueBehind, statusBucket } from '../queue';
+import { rememberedWaves } from '../waves-memory';
 import { resolveLabelIds } from './labels';
 import { noteSummary, postNote } from './notes';
 import {
@@ -63,6 +68,7 @@ import {
   taskRef,
   withTaskRef,
 } from './shared';
+import { findWave } from './waves';
 import {
   type CreateWorkOptions,
   checkStdinFlags,
@@ -89,10 +95,20 @@ function cycleField(cycle: NonNullable<Task['cycle']>): string {
   return `${cycleLabel(cycle)} (${cycleStateLabel(cycle.state)}, ${cycle.startsOn} to ${cycle.endsOn})`;
 }
 
-/** Milestone and cycle lines, only for what the task has. */
-function planningFields(task: Pick<Task, 'milestone' | 'cycle'>): [string, string][] {
+/** M8: "W4 · Rollout · locked until W3 passes". */
+function waveField(context: CommandContext, wave: NonNullable<Task['wave']>): string {
+  const lock = waveLockText(wave);
+  return lock ? `${waveLabel(wave)} · ${context.style.warn(lock)}` : waveLabel(wave);
+}
+
+/** Milestone, wave (M8) and cycle lines, only for what the task has. */
+function planningFields(
+  context: CommandContext,
+  task: Pick<Task, 'milestone' | 'cycle' | 'wave'>,
+): [string, string][] {
   const entries: [string, string][] = [];
   if (task.milestone) entries.push(['Milestone', milestoneField(task.milestone)]);
+  if (task.wave) entries.push(['Wave', waveField(context, task.wave)]);
   if (task.cycle) entries.push(['Cycle', cycleField(task.cycle)]);
   return entries;
 }
@@ -138,7 +154,7 @@ function taskSummary(context: CommandContext, verb: string, task: Task): string 
       ['Priority', style.priority(task.priority, priorityLabel(task.priority))],
       ['Assignee', assigneeLabel(task.assignee)],
       ...checkAgainEntries(context, task),
-      ...planningFields(task),
+      ...planningFields(context, task),
       ...fieldEntries(task),
       ...(task.blockedBy?.length ? [['Blocked by', relatedKeys(task.blockedBy)] as [string, string]] : []),
       ...(progress && progress.total > 0
@@ -392,6 +408,12 @@ export async function listTasks(context: CommandContext, options: ListOptions): 
         ...(withMilestone
           ? [{ header: 'MILESTONE', value: (t: (typeof data.items)[number]) => t.milestone?.name ?? '' }]
           : []),
+        // M8: the wave, with its lock.
+        ...optional(
+          'WAVE',
+          (t) => (t.wave ? `W${t.wave.number}${t.wave.locked ? ' locked' : ''}` : ''),
+          (t, cell) => (t.wave?.locked ? style.warn(cell) : cell),
+        ),
         ...(withCycle
           ? [
               {
@@ -523,7 +545,7 @@ export async function showTask(
           ['Priority', style.priority(t.priority, priorityLabel(t.priority))],
           ['Assignee', assigneeLabel(t.assignee)],
           ...checkAgainEntries(context, t),
-          ...planningFields(t),
+          ...planningFields(context, t),
           ...fieldEntries(t),
           ...subtaskEntries(t),
           ...relatedEntries('Blocked by', t.blockedBy ?? []),
@@ -644,6 +666,91 @@ export interface UpdateOptions extends UpdateWorkOptions {
   checkAgain?: WaiveToken[];
   /** --append-notes: a work note written after the update; repeated ones join into one note. */
   appendNotes?: string[];
+  /** M8: --wave <number, W3, name or id>; --no-wave (false) takes the task out of its wave. */
+  wave?: string | false;
+}
+
+/** The statuses that start a task, for the locked-wave warning (M8). */
+const STARTED = new Set(['in_progress', 'in_review']);
+
+/** A network failure with the reason nothing was queued, under the message and in the detail. */
+function notQueued(error: CliError, why: string): CliError {
+  const detail = [error.problem.detail ?? error.message, why].join(' ');
+  return new CliError({ ...error.problem, detail }, error.exitCode, [...error.hints, why], error.message);
+}
+
+/**
+ * The wave id of --wave <ref> from what zamu remembers (waves-memory.ts), for when the server doesn't
+ * answer: the milestone from --milestone or the task's last seen one, the wave by id, number or
+ * name. Null when zamu hasn't seen it.
+ */
+async function rememberedWaveId(
+  context: CommandContext,
+  ref: TaskRef,
+  value: string,
+  milestoneOption: string | undefined,
+): Promise<string | null> {
+  const memory = await rememberedWaves(context.io, statusBucket(context.url ?? '', context.workspaceId));
+  let milestoneId: string | null | undefined;
+  if (milestoneOption === undefined) milestoneId = memory.tasks[ref.key.trim().toUpperCase()]?.milestone;
+  else if (MilestoneId.safeParse(milestoneOption.trim()).success) milestoneId = milestoneOption.trim();
+  else {
+    const project = (ref.project ?? refPrefix(ref.key)).toUpperCase();
+    const name = milestoneOption.trim().toLowerCase();
+    milestoneId = Object.entries(memory.milestones).find(
+      ([, milestone]) => milestone.project === project && milestone.name.trim().toLowerCase() === name,
+    )?.[0];
+  }
+  const milestone = milestoneId ? memory.milestones[milestoneId] : undefined;
+  if (!milestone) return null;
+  try {
+    return findWave(milestone.waves, value, milestone.name).id;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * --wave <ref> as a wave id: looked up among the waves of --milestone, else of the task's milestone.
+ * Returns the task's app key too (the command may name a Backlog.md id). When the server doesn't
+ * answer, the waves zamu remembers stand in, so the update can still be queued.
+ */
+async function resolveTaskWave(
+  context: CommandContext,
+  client: ApiClient,
+  ref: TaskRef,
+  value: string,
+  milestoneOption: string | undefined,
+): Promise<{ id: string; target: TaskRef }> {
+  try {
+    const current = await withTaskRef(context, ref, (r) => client.tasks.get(parseInput(GetTaskInput, r)));
+    const target: TaskRef = { key: current.key };
+    context.target = { ...context.target, task: target };
+    let milestoneId: string;
+    if (milestoneOption !== undefined) {
+      milestoneId = await resolveMilestone(client, current.project.key, milestoneOption);
+    } else if (current.milestone) {
+      milestoneId = current.milestone.id;
+    } else {
+      throw usageError(
+        `${current.key} has no milestone, so --wave ${value} names no wave. Add --milestone <name> to ` +
+          'look the wave up in that milestone.',
+      );
+    }
+    const plan = await client.milestones.plan({ id: milestoneId });
+    return { id: findWave(plan.waves, value, plan.milestone.name).id, target };
+  } catch (error) {
+    if (!(error instanceof CliError) || error.exitCode !== EXIT.server) throw error;
+    const id = await rememberedWaveId(context, ref, value, milestoneOption);
+    if (id) return { id, target: ref };
+    const key = ref.key.trim().toUpperCase();
+    throw notQueued(
+      error,
+      `Nothing was queued: zamu hasn't seen the waves of ${key}'s milestone on this machine, so ` +
+        `--wave ${value} couldn't be looked up. Run zamu milestones show <milestone> once the server ` +
+        'answers, or pass the wave id.',
+    );
+  }
 }
 
 export async function updateTask(
@@ -660,6 +767,15 @@ export async function updateTask(
     options.waiveAc ?? options.waiveDod ?? options.reason ?? options.checkAgain ?? [],
   );
   const milestoneNone = options.milestone !== undefined && isNone(options.milestone);
+  // M8: --no-wave and --wave none take the task out of its wave; an id needs no lookup.
+  const waveOut = options.wave === false || (typeof options.wave === 'string' && isNone(options.wave));
+  const waveRef = typeof options.wave === 'string' && !waveOut ? options.wave.trim() : undefined;
+  const waveId = waveRef && WaveId.safeParse(waveRef).success ? waveRef : undefined;
+  if (milestoneNone && waveRef) {
+    throw usageError(
+      'A task in a wave is in its milestone. Use either --milestone none or --wave, not both.',
+    );
+  }
   const ref = await taskRef(context, key, options.project);
   const work = await updateWorkFields(options, waives, read);
   const notes = options.appendNotes?.length
@@ -681,6 +797,8 @@ export async function updateTask(
     ...(options.blockedBy?.length ? { addBlockers: options.blockedBy } : {}),
     ...(options.unblock?.length ? { removeBlockers: options.unblock } : {}),
     ...(waives.checkAgain !== undefined ? { checkAgain: waives.checkAgain } : {}),
+    ...(waveOut ? { wave: null } : {}),
+    ...(waveId ? { wave: waveId } : {}),
     ...work,
   };
   if (typeof draft.status === 'string') context.target = { ...context.target, status: draft.status };
@@ -688,6 +806,7 @@ export async function updateTask(
   const stub = {
     ...(options.assignee !== undefined ? { assignee: ASSIGNEE_ME } : {}),
     ...(options.milestone !== undefined ? { milestone: null } : {}),
+    ...(waveRef && !waveId ? { wave: null } : {}),
   };
 
   // Only --append-notes: the note is the whole command.
@@ -711,7 +830,13 @@ export async function updateTask(
   // Backlog.md id does not name its project). Its app key then addresses the update.
   let target: TaskRef = ref;
   let milestone: string | undefined;
-  if (options.milestone !== undefined && !milestoneNone) {
+  let wave: string | undefined;
+  if (waveRef && !waveId) {
+    // The wave decides the milestone: --milestone only says where to look the wave up.
+    const resolved = await resolveTaskWave(context, client, ref, waveRef, options.milestone);
+    wave = resolved.id;
+    target = resolved.target;
+  } else if (options.milestone !== undefined && !milestoneNone) {
     const value = options.milestone;
     if (MilestoneId.safeParse(value.trim()).success) milestone = value.trim();
     else {
@@ -729,6 +854,7 @@ export async function updateTask(
         project: r.project,
         ...(assignee ? { assignee } : {}),
         ...(milestone ? { milestone } : {}),
+        ...(wave ? { wave } : {}),
       }),
     ),
   ).catch((error: unknown) =>
@@ -746,6 +872,11 @@ export async function updateTask(
       note ? `\nAdded note ${context.style.bold(note.id)}\n` : '',
     ].join(''),
   );
+  // M8: a person may start a task in a locked wave (an agent is refused with WAVE_LOCKED): say so.
+  if (typeof draft.status === 'string' && STARTED.has(draft.status) && task.wave?.locked) {
+    const until = task.wave.lockedUntil ? ` until W${task.wave.lockedUntil.number} passes` : '';
+    context.io.stderr(`Warning: ${task.key} is in W${task.wave.number}, which is locked${until}.\n`);
+  }
 }
 
 // ---------------------------------------------------------------------------

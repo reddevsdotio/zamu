@@ -12,13 +12,14 @@ import { showDashboard } from './commands/dashboard';
 import { instructions } from './commands/instructions';
 import { createLabel, deleteLabel, listLabels, updateLabel } from './commands/labels';
 import { link } from './commands/link';
-import { createMilestone, listMilestones, updateMilestone } from './commands/milestones';
+import { createMilestone, listMilestones, showMilestone, updateMilestone } from './commands/milestones';
 import { addNote } from './commands/notes';
 import { linkPullRequest, unlinkPullRequest } from './commands/pr';
 import { deleteProject, listProjects, showProject } from './commands/projects';
 import { dropQueueEntry, showQueue } from './commands/queue';
 import { collectKeys, collectList } from './commands/shared';
 import { archiveTasks, createTask, listTasks, restoreTasks, showTask, updateTask } from './commands/tasks';
+import { addWave, putTasksInWave, recordGate, removeWave, updateWave } from './commands/waves';
 import { collectNumbers, collectTexts, waiveCollector } from './commands/work';
 import { type CommandContext, createContext, reportError } from './context';
 import { EXIT, toCliError, usageError } from './errors';
@@ -44,6 +45,9 @@ const TASK_KEY_HELP = 'e.g. PAY-142, a subtask key like PAY-786.1, or a Backlog.
 const ITEM_NUMBER_HELP = 'number from zamu tasks show; repeatable or comma-separated';
 const TASK_PROJECT_HELP =
   "project to look a Backlog.md id up in (default: ZAMU_PROJECT, .zamu.json or this clone's linked project)";
+const MILESTONE_ARG_HELP = 'milestone id, or its name (case-insensitive) with --project';
+const MILESTONE_PROJECT_HELP = "project to find the milestone name in (default: this clone's)";
+const WAVE_ARG_HELP = 'wave number (3 or W3) or name (case-insensitive)';
 
 /** True when --json appears before a `--` separator. */
 function wantsJson(argv: readonly string[]): boolean {
@@ -111,16 +115,21 @@ merge into the default branch moves them to Done when the project closes on merg
 Archive: archived tasks are left out of lists and refuse every write until zamu tasks restore. A task
 can wait until a day: zamu tasks update KEY --check-again YYYY-MM-DD --reason "...".
 
+Waves: a milestone's tasks can run in waves, each with a gate. A wave stays locked until every gate
+before it has passed: agents can't start its tasks, people get a warning. zamu milestones show lists
+the waves, their gates and tasks, and what comes next; zamu waves records gate results.
+
 Offline queue: when the server doesn't answer within 5 seconds, writes on an existing task are
 queued in $XDG_STATE_HOME/zamu/queue.json (~/.local/state/zamu): checking, unchecking, waiving and
-unwaiving items, a status change, a check-again day, a note, a comment, archiving, restoring, and
-linking or unlinking a request. The next command that reaches the server sends them. zamu queue lists
-them; zamu queue drop ID removes one.
+unwaiving items, a status change, a check-again day, a wave change, a note, a comment, archiving,
+restoring, and linking or unlinking a request. The next command that reaches the server sends them.
+zamu queue lists them; zamu queue drop ID removes one.
 
 Exit codes: 0 ok, 1 usage or rejected input (OPEN_ITEMS: an agent moved a task with open items;
-TASK_ARCHIVED: restore the task first), 2 auth, 3 not found, 4 forbidden, 5 server (unreachable, and
-nothing queued), 6 Backlog.md conflict, 7 queued (the server didn't answer; the write waits in the
-offline queue).`,
+TASK_ARCHIVED: restore the task first; WAVE_LOCKED: an agent started a task in a locked wave;
+GATE_TASKS_OPEN: a gate can't pass while its wave has open tasks), 2 auth, 3 not found, 4 forbidden,
+5 server (unreachable, and nothing queued), 6 Backlog.md conflict, 7 queued (the server didn't answer;
+the write waits in the offline queue).`,
     );
 
   const leaf = (command: Command) => command.option('--json', 'print the versioned JSON result (zamu.v1.*)');
@@ -184,7 +193,7 @@ offline queue).`,
     program
       .command('instructions')
       .description('print how to work on tasks with zamu: the overview, or a guide for one step')
-      .argument('[topic]', 'overview (default), creating, working or finishing'),
+      .argument('[topic]', 'overview (default), creating, working, finishing or planning'),
   ).action((topic: string | undefined) => instructions(context, topic));
 
   leaf(
@@ -312,7 +321,8 @@ offline queue).`,
     tasks
       .command('update')
       .description(
-        'change a task; send only what changes (mirrored tasks: only --cycle, the rest changes in Backlog.md)',
+        'change a task; send only what changes (mirrored tasks: only --cycle, and --wave within the ' +
+          'milestone; the rest changes in Backlog.md)',
       )
       .argument('<TASK-KEY>', TASK_KEY_HELP)
       .option('--project <KEY>', TASK_PROJECT_HELP)
@@ -322,7 +332,17 @@ offline queue).`,
       .option('--unassign', 'remove the assignee')
       .option('--title <title>', 'new title')
       .option('--description <text>', 'new Markdown description; "-" reads it from stdin')
-      .option('--milestone <name>', "milestone of the task's project, by name or id; none clears it")
+      .option(
+        '--milestone <name>',
+        "milestone of the task's project, by name or id; none clears it (and takes it out of its wave); " +
+          'with --wave, the milestone to look the wave up in',
+      )
+      .option(
+        '--wave <wave>',
+        "put it in a wave of its milestone (or --milestone's): number (3 or W3), name or id; " +
+          "the task's milestone becomes the wave's",
+      )
+      .option('--no-wave', 'take it out of its wave (it stays in the milestone)')
       .option('--cycle <cycle>', 'cycle number, current or next; none clears it')
       .option('--label <name>', `add a label: ${LABEL_HELP}`, collectKeys)
       .option('--remove-label <name>', 'take a label off; repeatable or comma-separated', collectKeys)
@@ -508,13 +528,26 @@ offline queue).`,
       .argument('<comment-id>', 'id from zamu comments list or zamu tasks show'),
   ).action((id: string) => deleteComment(context, id));
 
-  const milestones = program.command('milestones').description('list, create and update milestones');
+  const milestones = program
+    .command('milestones')
+    .description('list, show, create and update milestones, and set their plan link');
   leaf(
     milestones
       .command('list')
       .description('list the milestones of a project with progress')
       .option('--project <KEY>', PROJECT_HELP),
   ).action((options) => listMilestones(context, options));
+
+  leaf(
+    milestones
+      .command('show')
+      .description(
+        'show the plan of a milestone: the plan link, each wave with its progress, gate (the latest ' +
+          'result and who recorded it), lock and tasks, the tasks in no wave, and what comes next',
+      )
+      .argument('<id-or-name>', MILESTONE_ARG_HELP)
+      .option('--project <KEY>', MILESTONE_PROJECT_HELP),
+  ).action((idOrName: string, options) => showMilestone(context, idOrName, options));
 
   leaf(
     milestones
@@ -530,13 +563,99 @@ offline queue).`,
     milestones
       .command('update')
       .description('change a milestone; send only what changes')
-      .argument('<id-or-name>', 'milestone id, or its name (case-insensitive) with --project')
-      .option('--project <KEY>', "project to find the milestone name in (default: this clone's)")
+      .argument('<id-or-name>', MILESTONE_ARG_HELP)
+      .option('--project <KEY>', MILESTONE_PROJECT_HELP)
       .option('--name <name>', 'new name')
       .option('--target <date>', 'target date, YYYY-MM-DD; none clears it')
       .option('--status <status>', `${MILESTONE_STATUS_HELP}; leaving completed reopens it as active`)
-      .option('--description <text>', 'Markdown description; "-" reads it from stdin, "" clears it'),
+      .option('--description <text>', 'Markdown description; "-" reads it from stdin, "" clears it')
+      .option(
+        '--plan <url-or-path>',
+        'where the plan lives: a web address (https://...) or a file path, one line',
+      )
+      .option('--no-plan', 'remove the plan link'),
   ).action((idOrName: string, options) => updateMilestone(context, idOrName, options));
+
+  const waves = program
+    .command('waves')
+    .description(
+      "add, change, remove and fill a milestone's waves, and record their gates; zamu milestones show " +
+        'lists them (none of these writes waits in the offline queue)',
+    );
+  leaf(
+    waves
+      .command('add')
+      .description(
+        'add a wave at the end of the milestone, or at --position (the waves from there move down)',
+      )
+      .argument('<milestone>', MILESTONE_ARG_HELP)
+      .argument('<name...>', 'wave name, up to 100 characters, unique in the milestone ignoring case')
+      .option('--project <KEY>', MILESTONE_PROJECT_HELP)
+      .option('--gate <text>', 'what the gate checks, Markdown; "-" reads it from stdin')
+      .option('--position <n>', 'wave number to take, from 1 (default: after the last)'),
+  ).action((milestone: string, name: string[], options) => addWave(context, milestone, name, options));
+
+  leaf(
+    waves
+      .command('update')
+      .description('rename a wave, change what its gate checks, or move it; send only what changes')
+      .argument('<milestone>', MILESTONE_ARG_HELP)
+      .argument('<wave>', WAVE_ARG_HELP)
+      .option('--project <KEY>', MILESTONE_PROJECT_HELP)
+      .option('--name <name>', 'new name')
+      .option('--gate <text>', 'what the gate checks, Markdown; "-" reads it from stdin, "" clears it')
+      .option('--position <n>', 'wave number to move it to, from 1 (the others renumber)'),
+  ).action((milestone: string, wave: string, options) => updateWave(context, milestone, wave, options));
+
+  leaf(
+    waves
+      .command('remove')
+      .description('remove a wave and its gate results; its tasks stay in the milestone, in no wave')
+      .argument('<milestone>', MILESTONE_ARG_HELP)
+      .argument('<wave>', WAVE_ARG_HELP)
+      .option('--project <KEY>', MILESTONE_PROJECT_HELP),
+  ).action((milestone: string, wave: string, options) => removeWave(context, milestone, wave, options));
+
+  leaf(
+    waves
+      .command('put')
+      .description(
+        'put tasks in a wave, all or nothing (tasks of another milestone move to this one); none as the ' +
+          'wave takes them out of their wave',
+      )
+      .argument('<milestone>', MILESTONE_ARG_HELP)
+      .argument('<wave>', `${WAVE_ARG_HELP}, or none`)
+      .argument('<TASK-KEY...>', 'task keys, e.g. PAY-12 PAY-13 or PAY-12,PAY-13 (up to 100)')
+      .option('--project <KEY>', MILESTONE_PROJECT_HELP),
+  ).action((milestone: string, wave: string, keys: string[], options) =>
+    putTasksInWave(context, milestone, wave, keys, options),
+  );
+
+  for (const [name, state, description] of [
+    [
+      'pass',
+      'passed',
+      "record that a wave's gate passed, with a note that says what was checked; every task of the " +
+        'wave must be done or canceled (GATE_TASKS_OPEN otherwise); the next wave unlocks',
+    ],
+    [
+      'fail',
+      'failed',
+      "record that a wave's gate failed, with a note that says what failed; the waves after it stay locked",
+    ],
+  ] as const) {
+    leaf(
+      waves
+        .command(name)
+        .description(description)
+        .argument('<milestone>', MILESTONE_ARG_HELP)
+        .argument('<wave>', WAVE_ARG_HELP)
+        .requiredOption('--note <text>', 'what was checked, Markdown; "-" reads it from stdin')
+        .option('--project <KEY>', MILESTONE_PROJECT_HELP),
+    ).action((milestone: string, wave: string, options: { note: string; project?: string }) =>
+      recordGate(context, state, milestone, wave, options),
+    );
+  }
 
   const cycles = program.command('cycles').description('list, create, show and end cycles');
   leaf(

@@ -1,6 +1,8 @@
-// zamu milestones list | create | update.
+// zamu milestones list | show | create | update. From M8 a milestone has a plan link and waves:
+// zamu milestones show prints the plan a dispatching agent works from, and update sets the link.
 import {
   CreateMilestoneInput,
+  formatWaveNumber,
   ListMilestonesInput,
   MilestoneId,
   type MilestoneWithProgress,
@@ -9,7 +11,16 @@ import {
 import { type CommandContext, emit } from '../context';
 import { fields, milestoneStatusLabel, progressLabel, table } from '../format';
 import { requireProject, resolveProject } from '../project';
-import { isNone, normalizeChoice, parseInput, readText, resolveMilestone } from './shared';
+import {
+  isNone,
+  normalizeChoice,
+  parseInput,
+  projectFlag,
+  readText,
+  resolveMilestone,
+  shellWord,
+} from './shared';
+import { loadPlan, nextStep, notInWaveBlock, rowWidths, waveBlock } from './waves';
 
 function days(count: number): string {
   return count === 1 ? '1 day' : `${count} days`;
@@ -28,14 +39,30 @@ function targetLabel(milestone: MilestoneWithProgress, { long }: { long: boolean
   return milestone.daysLeft === 0 ? `${date} (today)` : `${date} (${days(milestone.daysLeft)} left)`;
 }
 
+/**
+ * M8: the wave status as the milestone list shows it: "W3 of 5 · gate open", "W8 of 12 · gate failed",
+ * "all 4 passed". Empty without waves.
+ */
+function wavesLabel(milestone: MilestoneWithProgress): string {
+  const waves = milestone.waves;
+  if (!waves) return '';
+  if (waves.allPassed || waves.current === null) {
+    return waves.count === 1 ? 'gate passed' : `all ${waves.count} passed`;
+  }
+  return `${formatWaveNumber(waves.current)} of ${waves.count} · gate ${waves.currentState ?? 'open'}`;
+}
+
 function milestoneSummary(context: CommandContext, verb: string, milestone: MilestoneWithProgress): string {
   const { style } = context;
   const head = `${verb} milestone ${style.bold(milestone.name)} in ${milestone.project.key}`;
+  const waves = wavesLabel(milestone);
   return `${head}\n${fields(
     [
       ['Status', milestoneStatusLabel(milestone.status)],
       ['Target', targetLabel(milestone, { long: true })],
       ['Progress', progressLabel(milestone.progress)],
+      ...(milestone.planUrl ? [['Plan', milestone.planUrl] as [string, string]] : []),
+      ...(waves ? [['Waves', waves] as [string, string]] : []),
       ['Id', milestone.id],
     ],
     style,
@@ -61,6 +88,8 @@ export async function listMilestones(context: CommandContext, options: { project
         { header: 'DONE', value: (m) => progressLabel(m.progress) },
         { header: 'IN PROGRESS', value: (m) => String(m.progress.inProgress) },
         { header: 'OPEN', value: (m) => String(m.progress.open) },
+        // M8: the wave column shows only when a milestone has waves.
+        ...(data.items.some((m) => m.waves) ? [{ header: 'WAVES', value: wavesLabel }] : []),
         { header: 'NAME', value: (m) => m.name, style: (_m, cell) => style.bold(cell) },
       ],
       style,
@@ -109,6 +138,8 @@ export interface UpdateMilestoneOptions {
   target?: string;
   status?: string;
   description?: string;
+  /** M8: --plan <url-or-path> sets the plan link, --no-plan (false) clears it. */
+  plan?: string | false;
 }
 
 export async function updateMilestone(
@@ -124,6 +155,7 @@ export async function updateMilestone(
     ...(options.status !== undefined ? { status: normalizeChoice(options.status) } : {}),
     // An empty description clears it.
     ...(description !== undefined ? { description: description.trim() ? description : null } : {}),
+    ...(options.plan !== undefined ? { planUrl: options.plan === false ? null : options.plan } : {}),
   };
   // A placeholder id lets the field rules run before the name is looked up.
   const placeholder = '00000000-0000-7000-8000-000000000000';
@@ -138,4 +170,45 @@ export async function updateMilestone(
   const input = parseInput(UpdateMilestoneInput, { id, ...changes });
   const milestone = await client.milestones.update(input);
   emit(context, 'milestones.update', milestone, (data) => milestoneSummary(context, 'Updated', data));
+}
+
+// ---------------------------------------------------------------------------
+// zamu milestones show (M8)
+// ---------------------------------------------------------------------------
+
+/**
+ * zamu milestones show <milestone>: the one command a dispatching agent reads. The milestone line,
+ * the plan link, each wave with its gate (the latest result and who recorded it), lock and tasks,
+ * the tasks in no wave, and a last line that says what comes next.
+ */
+export async function showMilestone(
+  context: CommandContext,
+  idOrName: string,
+  options: { project?: string },
+): Promise<void> {
+  const client = await context.client();
+  const plan = await loadPlan(context, client, idOrName, options.project);
+  emit(context, 'milestone-plan', plan, (data) => {
+    const { style } = context;
+    const m = data.milestone;
+    const flag = projectFlag(options.project);
+    const counted = m.progress.total - m.progress.canceled;
+    const head = [
+      m.project.key,
+      milestoneStatusLabel(m.status),
+      ...(m.targetDate ? [`target ${targetLabel(m, { long: true })}`] : []),
+      `${m.progress.done} of ${counted} done`,
+    ].join(' · ');
+    const plan = data.planUrl
+      ? data.planUrl
+      : style.dim(`none. Add it: zamu milestones update ${shellWord(idOrName)} --plan <url-or-path>${flag}`);
+    const widths = rowWidths([...data.waves.flatMap((wave) => wave.tasks), ...data.notInWave]);
+    const blocks = [
+      `${style.bold(m.name)}  ${head}\n${style.dim('Plan')}  ${plan}\n`,
+      ...data.waves.map((wave) => waveBlock(style, wave, widths)),
+      ...(data.notInWave.length ? [notInWaveBlock(style, data.notInWave, widths)] : []),
+      `${nextStep(data, idOrName, flag)}\n`,
+    ];
+    return blocks.join('\n');
+  });
 }
