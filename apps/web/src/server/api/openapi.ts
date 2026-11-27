@@ -1,7 +1,15 @@
 // The OpenAPI 3.1 document of /api/v1, generated from the contract and served at /api/v1/openapi.json.
 import { OpenAPIGenerator } from '@orpc/openapi';
 import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4';
-import { contract, Problem, Task } from '@zamu/contracts';
+import {
+  contract,
+  MilestonePlan,
+  MilestoneWithProgress,
+  Problem,
+  Task,
+  TaskListItem,
+  Wave,
+} from '@zamu/contracts';
 
 export const OPENAPI_PATH = '/api/v1/openapi.json';
 
@@ -37,10 +45,15 @@ export function generateOpenApiDocument(): Promise<OpenAPIDocument> {
     },
     security: [{ apiKey: [] }, { session: [] }],
     // Shared components. Problem carries a Task (TASK_CHANGED), so inlining it in every error
-    // response of every operation would repeat the Task schema about 150 times.
+    // response of every operation would repeat the Task schema about 150 times. M8: task rows, the
+    // milestone, its plan and a wave are shared too, as several routes return each of them.
     commonSchemas: {
       Problem: { schema: Problem, strategy: 'output' },
       Task: { schema: Task, strategy: 'output' },
+      TaskListItem: { schema: TaskListItem, strategy: 'output' },
+      MilestoneWithProgress: { schema: MilestoneWithProgress, strategy: 'output' },
+      Wave: { schema: Wave, strategy: 'output' },
+      MilestonePlan: { schema: MilestonePlan, strategy: 'output' },
     },
     // Every error status shares the Problem body instead of oRPC's default error shape.
     customErrorResponseBodySchema: PROBLEM_REF,

@@ -147,6 +147,9 @@ describe('OpenAPI document', () => {
       '/api/v1/me',
       '/api/v1/members',
       '/api/v1/milestones/{id}',
+      '/api/v1/milestones/{id}/plan',
+      '/api/v1/milestones/{milestone}/wave-tasks',
+      '/api/v1/milestones/{milestone}/waves',
       '/api/v1/projects',
       '/api/v1/projects/{project}',
       '/api/v1/projects/{project}/archive-preview',
@@ -170,10 +173,12 @@ describe('OpenAPI document', () => {
       '/api/v1/tasks/{key}/pull-requests',
       '/api/v1/tasks/{key}/pull-requests/{number}',
       '/api/v1/tasks/{key}/timeline',
+      '/api/v1/waves/{id}',
+      '/api/v1/waves/{id}/gate',
     ]);
     // Every operation has an id, a summary and a tag; ids are unique.
     const operations = Object.values(result.body.paths).flatMap((item) => Object.values(item as object));
-    expect(operations).toHaveLength(48);
+    expect(operations).toHaveLength(54);
     const ids = operations.map((op: { operationId: string }) => op.operationId);
     expect(new Set(ids).size).toBe(ids.length);
     for (const op of operations) {
