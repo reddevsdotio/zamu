@@ -7,6 +7,8 @@ export interface SegmentedItem<K extends string = string> {
   label: string;
   /** Optional leading glyph. */
   icon?: ReactNode;
+  /** This segment can't be picked (the Passed segment while a wave has open tasks). */
+  isDisabled?: boolean;
 }
 
 export interface SegmentedControlProps<K extends string = string> {
@@ -55,6 +57,7 @@ export function SegmentedControl<K extends string = string>({
         <ToggleButton
           key={item.id}
           id={item.id}
+          isDisabled={item.isDisabled}
           className={({ isSelected }) =>
             cn(
               'inline-flex h-6.5 cursor-pointer items-center justify-center gap-1.5 rounded-[calc(var(--radius-md)-2px)] px-2.75 text-sm font-medium outline-none select-none',

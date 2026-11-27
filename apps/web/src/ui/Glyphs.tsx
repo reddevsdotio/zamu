@@ -237,6 +237,20 @@ export function AlertGlyph({ className }: GlyphProps) {
   );
 }
 
+/** 10×10 outlined square turned on its corner (m8.css .ico-gate): the gate at the end of a wave. */
+export function GateGlyph({ className }: GlyphProps) {
+  return (
+    <span
+      aria-hidden
+      data-glyph="gate"
+      className={cn(
+        'inline-block size-2.5 shrink-0 rotate-45 rounded-[2px] border-[1.5px] border-current',
+        className,
+      )}
+    />
+  );
+}
+
 /**
  * Frame for an SVG glyph that may carry meaning: role="img" with the label, or hidden when `label` is unset
  * (the name is visible next to it). The SVG inside is always aria-hidden.
