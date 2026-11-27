@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.12.0
+
+Waves and gates on milestones. A milestone links to its plan and runs its tasks in ordered waves, each ending
+at a gate that someone passes or fails with a note; a wave stays locked until the gates before it pass, and
+`zamu milestones show` gives the agent that dispatches the work the whole plan.
 
 ### Added
 
@@ -56,6 +60,14 @@
 - A project switched from a Backlog.md mirror says "Owned by Zamu" wherever its Backlog.md state shows: the
   settings, the settings menu, the setup page and the history ("switched Payments to Zamu"). It said
   "Detached" in places. A finished import still says "Imported".
+- In the dialog for moving several tasks with open items, ⌘Enter moves them, as the dialog says. It pressed
+  Cancel when focus was on that button.
+
+### Upgrading
+
+Back up the database, then upgrade as usual. The migration adds the `wave` and `gate_result` tables, a plan
+link column on milestones and a wave column on tasks. It changes no existing row: every milestone starts
+with no waves and no plan link, and no history lines are written. No new settings.
 
 ## 0.11.0
 
