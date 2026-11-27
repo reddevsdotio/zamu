@@ -33,6 +33,7 @@ import {
 import { formatDateRange, formatDay } from './format';
 import { FromTheFile } from './MirroredTask';
 import { projectOfKey } from './TaskPageRelations';
+import { WaveRow } from './WaveRow';
 
 // The task view's properties (screens.css .props, frames 051, 053, 054): a row per field with its value
 // or a placeholder ("Set priority"). A row opens its picker (the same as the field's key, shown on
@@ -42,6 +43,7 @@ import { projectOfKey } from './TaskPageRelations';
 // to the list, like ⇧X. M7 (frames 051, 052, 063, 087, 095 to 097): the flag line of a merge with open
 // items at the top, "Pull request" (the request that matters most, its state, "+3"), "Check again" with
 // the day and the reason (⇧W), and an archived task whose rows show their values and change nothing.
+// M8: "Wave" under Milestone when the milestone has waves ("W3 · Screens", with the lock).
 
 /** The lock tooltip of a field Backlog.md owns (frame 054). */
 export const LOCKED_FIELD_TEXT = 'Set in Backlog.md. Edit the file to change it.';
@@ -539,6 +541,9 @@ export function TaskProperties({
             ),
           )
         : null}
+      {planning.usesMilestones && task.milestone && (task.wave || (milestone?.waves?.count ?? 0) > 0) ? (
+        <WaveRow task={task} archived={archived} />
+      ) : null}
       {planning.usesCycles
         ? row(
             'cycle',

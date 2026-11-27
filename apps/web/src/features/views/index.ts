@@ -10,6 +10,7 @@ export {
   type DisplayButtonProps,
   DisplayOptionsPanel,
   type DisplayOptionsPanelProps,
+  type PageGrouping,
 } from './DisplayOptions';
 export {
   BOARD_STATUS_ORDER,

@@ -8,9 +8,10 @@ import { Markdown } from '~/features/tasks/Markdown';
 import { clearedFilter, DisplayButton, FilterButton, FilterChips } from '~/features/views';
 import { useApi, useWorkspaceSlug } from '~/lib/workspace';
 import { workspacePath } from '~/lib/workspace-paths';
-import { Button, EmptyState, Skeleton, SourceBadge, useHotkeys } from '~/ui';
+import { Button, EmptyState, PlanLink, PlusGlyph, Skeleton, SourceBadge, useHotkeys } from '~/ui';
 import { formatDay } from './dates';
 import { EditMilestoneDialog } from './MilestoneDialogHost';
+import { PlanLinkDialog } from './PlanLinkDialog';
 import { PlanningHeader } from './PlanningHeader';
 import { PlanningTaskTable } from './PlanningTaskTable';
 import {
@@ -26,20 +27,29 @@ import {
   splitOf,
   useServerToday,
 } from './parts';
-import { milestoneQuery } from './queries';
+import { milestonePlanQuery, milestoneQuery } from './queries';
 import { planningGroupChoices, usePlanningTasks } from './usePlanningTasks';
+import { WavePlan, WavesError, WavesSkeleton } from './WavePlan';
 
 // /p/HBR/milestones/<id> (frame 108): kind and source, serif title, description, the numbers, the
 // segmented bar with its legend, then the milestone's tasks in the list rows. Filter and Display work
 // as in the list (the filter lives in the URL: ?status=todo&assignee=me&label=…). Edit opens the
 // milestone dialog in native projects; mirrored milestones change in their Backlog.md file.
+//
+// M8 (frames 103 to 126): the plan link under the numbers ("+ Add a link to the plan" without one),
+// "waves" as the third number, and the tasks grouped by wave (WavePlan) when the milestone has waves:
+// Display's grouping gains "Wave", picked by default then. Without waves the page is as before, with
+// "+ Add waves" on the first group header (frame 117). Shift+N adds a wave.
 
 export interface MilestonePageProps {
   projectKey: string;
   milestoneId: string;
 }
 
-/** "30 tasks  18 done  11 days left" (or "4 days late", or no third number without a target). */
+/**
+ * "30 tasks  18 done  11 days left" (or "4 days late", or no third number without a target). With waves
+ * (M8) the third number is the waves: "21 tasks  12 done  5 waves".
+ */
 export function milestoneStats(milestone: MilestoneWithProgress): StatItem[] {
   const { progress } = milestone;
   const counted = progress.total - progress.canceled;
@@ -47,6 +57,11 @@ export function milestoneStats(milestone: MilestoneWithProgress): StatItem[] {
     { value: counted, label: counted === 1 ? 'task' : 'tasks' },
     { value: progress.done, label: 'done' },
   ];
+  const waves = milestone.waves?.count ?? 0;
+  if (waves > 0) {
+    items.push({ value: waves, label: waves === 1 ? 'wave' : 'waves' });
+    return items;
+  }
   const days = milestone.daysLeft;
   if (milestone.status !== 'completed' && days != null) {
     items.push(
@@ -81,8 +96,10 @@ export function MilestonePage({ projectKey, milestoneId }: MilestonePageProps) {
   const milestone = useQuery(milestoneQuery(api, milestoneId));
   const today = useServerToday(projectKey);
   const [editing, setEditing] = useState(false);
+  const [linking, setLinking] = useState(false);
   const view = usePlanningTasks(projectKey, { milestone: milestoneId });
   const { project, filter, setFilter, fields, display, tasks, all } = view;
+  const plan = useQuery(milestonePlanQuery(api, milestoneId));
 
   const data = milestone.data;
   const mirrored = isMirrored(project);
@@ -90,7 +107,18 @@ export function MilestonePage({ projectKey, milestoneId }: MilestonePageProps) {
   const newTask = () => quickCreate?.open(projectKey);
   const toBoard = () =>
     void navigate({ href: workspacePath(workspace, `/p/${projectKey}?view=board&milestone=${milestoneId}`) });
-  useHotkeys({ v: toBoard });
+
+  // Grouped by wave by default once the milestone has waves; the person's pick in Display wins.
+  const [waveChoice, setWaveChoice] = useState<boolean | null>(null);
+  const [adding, setAdding] = useState(false);
+  const hasWaves = (plan.data?.waves.length ?? data?.waves?.count ?? 0) > 0;
+  const byWave = waveChoice ?? hasWaves;
+  const addWaves = () => {
+    setWaveChoice(true);
+    setAdding(true);
+  };
+  useHotkeys({ v: toBoard, 'Shift+n': addWaves });
+  const planUrl = plan.data?.planUrl ?? data?.planUrl ?? null;
 
   const newTaskButton = (
     <Button kbd="C" aria-keyshortcuts="c" onPress={newTask}>
@@ -149,6 +177,7 @@ export function MilestonePage({ projectKey, milestoneId }: MilestonePageProps) {
             projectKey={projectKey}
             view="list"
             groupChoices={planningGroupChoices('milestone')}
+            pageGrouping={{ id: 'wave', label: 'Wave', active: byWave, onChange: setWaveChoice }}
             onLayoutChange={(layout) => {
               if (layout === 'board') toBoard();
             }}
@@ -188,10 +217,21 @@ export function MilestonePage({ projectKey, milestoneId }: MilestonePageProps) {
                     <span className="text-fg-3">No description.</span>
                   )}
                 </div>
-                <Stats items={milestoneStats(data)} />
+                <div className="flex shrink-0 flex-col items-end gap-2.5">
+                  <Stats items={milestoneStats(data)} />
+                  <PlanLink
+                    value={planUrl}
+                    onAdd={() => setLinking(true)}
+                    onEdit={() => setLinking(true)}
+                    className="max-w-90"
+                  />
+                </div>
               </div>
               <StatusBar split={split} label="Milestone progress" className="mt-1.5" />
-              <StatusLegend split={split} end={<LegendEnd text={target} view={view} />} />
+              <StatusLegend
+                split={split}
+                end={<LegendEnd text={target} view={byWave ? ALL_SHOWN : view} />}
+              />
             </>
           ) : (
             <div aria-busy="true" className="flex flex-col gap-3">
@@ -202,7 +242,34 @@ export function MilestonePage({ projectKey, milestoneId }: MilestonePageProps) {
             </div>
           )}
         </PageHead>
-        {tasks.isError && !tasks.data ? (
+        {byWave ? (
+          plan.data ? (
+            tasks.isError && !tasks.data ? (
+              <LoadError
+                what="the tasks"
+                error={tasks.error}
+                onRetry={() => void tasks.refetch()}
+                isRetrying={tasks.isFetching}
+              />
+            ) : (
+              <WavePlan
+                projectKey={projectKey}
+                milestoneId={milestoneId}
+                plan={plan.data}
+                rows={tasks.data?.items ?? []}
+                display={display}
+                from="Milestone"
+                isLoadingRows={tasks.isPending}
+                adding={adding}
+                onAddingChange={setAdding}
+              />
+            )
+          ) : plan.isError ? (
+            <WavesError onRetry={() => void plan.refetch()} isRetrying={plan.isFetching} />
+          ) : (
+            <WavesSkeleton />
+          )
+        ) : tasks.isError && !tasks.data ? (
           <LoadError
             what="the tasks"
             error={tasks.error}
@@ -218,6 +285,17 @@ export function MilestonePage({ projectKey, milestoneId }: MilestonePageProps) {
             from="Milestone"
             hide="milestone"
             isLoading={tasks.isPending}
+            firstGroupEnd={
+              <button
+                type="button"
+                onClick={addWaves}
+                aria-keyshortcuts="Shift+N"
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm text-sm font-medium text-accent-text outline-none hover:underline focus-visible:focus-ring"
+              >
+                <PlusGlyph className="h-2.25 w-2.25" />
+                Add waves
+              </button>
+            }
             renderEmptyState={() => (
               <EmptyTasks
                 text={
@@ -243,6 +321,15 @@ export function MilestonePage({ projectKey, milestoneId }: MilestonePageProps) {
           />
         )}
       </div>
+      {data ? (
+        <PlanLinkDialog
+          key={linking ? 'open' : 'closed'}
+          milestoneId={milestoneId}
+          value={planUrl}
+          isOpen={linking}
+          onClose={() => setLinking(false)}
+        />
+      ) : null}
       {data && today ? (
         <EditMilestoneDialog
           projectKey={projectKey}
@@ -255,6 +342,9 @@ export function MilestonePage({ projectKey, milestoneId }: MilestonePageProps) {
     </Frame>
   );
 }
+
+/** The legend's end on a page grouped by wave: every task shows, so there is nothing to hide. */
+const ALL_SHOWN = { hiddenClosed: 0, showClosed: false, setShowClosed: () => {} };
 
 function Frame({ children }: { children: ReactNode }) {
   return (

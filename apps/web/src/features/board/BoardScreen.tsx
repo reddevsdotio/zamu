@@ -29,7 +29,14 @@ import {
 import { useSearchText } from '~/features/project-header/useSearchText';
 import { usePageSearchRef } from '~/features/shell/page-search';
 import { useOptionalQuickCreate } from '~/features/shell/quick-create';
-import { confirmFinishing, finishingRequest, useFieldChange, useTaskFieldKeys } from '~/features/task-fields';
+import {
+  confirmFinishing,
+  confirmStarting,
+  finishingRequest,
+  startingRequest,
+  useFieldChange,
+  useTaskFieldKeys,
+} from '~/features/task-fields';
 import { toCycleRef, toMilestoneRef } from '~/features/task-fields/planning';
 import { showFieldToast } from '~/features/task-fields/toast';
 import { useNow } from '~/features/tasks/clock';
@@ -573,13 +580,17 @@ export function BoardScreen({ projectKey, search }: BoardScreenProps) {
           sendPosition: manual,
           via,
         });
-      // Into In review or Done with open items: the card stays until the person answers the warning.
-      if (finishingRequest(api, queryClient, [card], to)) {
-        void confirmFinishing(api, queryClient, [card], to).then((ok) => {
+      // Into In review or Done with open items, or started in a locked wave (M8): the card stays until
+      // the person answers the warning.
+      if (startingRequest(api, queryClient, [card], to) || finishingRequest(api, queryClient, [card], to)) {
+        void (async () => {
+          const ok =
+            (await confirmStarting(api, queryClient, [card], to)) &&
+            (await confirmFinishing(api, queryClient, [card], to));
           // The dialog hands focus back in a frame after it closes (to a card still in the old column,
           // as this one moved): the card takes the keyboard once that has happened.
           if (ok && move()) afterFrames(4, () => focusCard(card.key, { afterRender: false }));
-        });
+        })();
       } else if (move()) onMoved();
       return;
     }

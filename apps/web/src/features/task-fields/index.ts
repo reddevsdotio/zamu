@@ -1,6 +1,7 @@
 // Field pickers and mutations (M5-09): wired pickers for one task or a selection, the change toast
 // with Undo, the finishing warning before In review and Done (M6), and the task keys with their
 // palette commands. M7 adds the check-again picker (Shift+W) and refuses changes to archived tasks.
+// M8 adds the start guard: the question before starting a task in a locked wave.
 // Screens import from here.
 
 export { AssigneeMenu, type AssigneeMenuProps, AssigneePicker, toAssigneeRef } from './AssigneePicker';
@@ -77,6 +78,7 @@ export {
   toMilestoneRef,
   useProjectPlanning,
 } from './planning';
+export { manyStartingText, StartGuardHost } from './StartGuardHost';
 export {
   type FieldPickerProps,
   PRIORITY_ORDER,
@@ -89,6 +91,16 @@ export {
 } from './StatusPicker';
 export { inheritNote, SubtaskMenu, type SubtaskMenuProps, SubtaskPicker } from './SubtaskPicker';
 export { commonValue, FieldPopover, type PickerAnchorProps, ReadOnlyLine } from './shared';
+export {
+  confirmStarting,
+  registerStartingHost,
+  type StartingRequest,
+  settleStarting,
+  startingRequest,
+  startsInLockedWave,
+  useStartGuard,
+  useStartingRequest,
+} from './starting';
 export {
   ARCHIVED_TEXT,
   contextOf,

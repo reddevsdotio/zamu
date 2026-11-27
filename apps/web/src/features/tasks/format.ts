@@ -1,4 +1,4 @@
-import type { Activity, ActivityChange, Priority, TaskStatus } from '@zamu/contracts';
+import type { Activity, ActivityChange, ActivityWaveRef, Priority, TaskStatus } from '@zamu/contracts';
 import { PRIORITY_LABELS, requestRef, STATUS_LABELS } from '~/ui';
 
 // Display helpers for the task screens: short times, activity sentences and Markdown checkbox lists.
@@ -200,6 +200,11 @@ function listChange(
 const labelNoun = (count: number) => (count === 1 ? 'the label' : 'the labels');
 const blockerNoun = (count: number) => (count === 1 ? 'blocker' : 'blockers');
 
+/** "W3 · Screens", or "a removed wave" once it is gone (M8). */
+export function waveName(wave: ActivityWaveRef): string {
+  return wave.removed ? 'a removed wave' : `W${wave.number} · ${wave.name}`;
+}
+
 /** One field change as the task view's history says it (frames 051, 057): "moved this to In progress". */
 function describeChange(change: ActivityChange): string {
   switch (change.field) {
@@ -257,6 +262,14 @@ function describeChange(change: ActivityChange): string {
         : change.from
           ? 'changed why it waits'
           : `set check again to ${formatCalendarDay(change.to.on)}`;
+    // M8
+    case 'wave':
+      if (change.to) {
+        return change.from && !change.from.removed
+          ? `moved this from ${waveName(change.from)} to ${waveName(change.to)}`
+          : `put this in ${waveName(change.to)}`;
+      }
+      return change.from ? `took this out of ${waveName(change.from)}` : 'took this out of its wave';
     case 'pullRequest': {
       const request = change.to ?? change.from;
       const ref = request ? requestRef(request.provider, request.number) : 'a pull request';
@@ -286,7 +299,8 @@ type WorkChange = Exclude<
       | 'parent'
       | 'workBranch'
       | 'checkAgain'
-      | 'pullRequest';
+      | 'pullRequest'
+      | 'wave';
   }
 >;
 

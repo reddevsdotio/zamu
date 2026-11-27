@@ -8,6 +8,7 @@ import type {
   LabelWithUsage,
   Me,
   Member,
+  MilestonePlan,
   MilestoneWithProgress,
   ProjectActivity,
   ProjectBacklogSummary,
@@ -21,9 +22,11 @@ import type {
   TaskListPage,
   TaskOwnedField,
   TaskStatus,
+  TaskWave,
   Timeline,
   TimelineFilter,
   TimelineItem,
+  Wave,
   WorkItem,
 } from '@zamu/contracts';
 import { isOpenStatus, PRIORITIES, TASK_STATUSES } from '@zamu/contracts';
@@ -401,6 +404,8 @@ export function createFakeApi({
     comments: [] as Input[],
     bulk: [] as Input[],
     labels: [] as Input[],
+    /** M8: wave and gate writes, each with its `op`. */
+    waves: [] as Input[],
     /** M7 */
     archive: [] as Input[],
     restore: [] as Input[],
@@ -583,6 +588,28 @@ export function createFakeApi({
   };
   const asList = (value: unknown) => (value == null ? undefined : Array.isArray(value) ? value : [value]);
 
+  // M8: plans by milestone id (tests set them) and the waves tasks can be put in, by id.
+  const plans = new Map<string, MilestonePlan>();
+  const waveRefs = new Map<string, TaskWave>();
+  const applyWave = (task: Task, input: Input) => {
+    if (input.wave === undefined) {
+      if (input.milestone !== undefined) task.wave = null;
+      return;
+    }
+    task.wave = input.wave === null ? null : (waveRefs.get(String(input.wave)) ?? task.wave ?? null);
+  };
+  const planOf = (id: unknown): MilestonePlan => {
+    const plan = plans.get(String(id));
+    if (!plan) throw new ORPCError('NOT_FOUND', { message: 'Milestone not found' });
+    return plan;
+  };
+  const waveOf = (id: unknown) => {
+    for (const plan of plans.values()) {
+      const wave = plan.waves.find((item) => item.id === id);
+      if (wave) return { plan, wave };
+    }
+    throw new ORPCError('NOT_FOUND', { message: 'Wave not found' });
+  };
   const failIfAsked = () => {
     const error = control.failNext;
     if (!error) return;
@@ -996,6 +1023,7 @@ export function createFakeApi({
         }
         applyWorkRecord(task, input);
         applyFields(task, input);
+        applyWave(task, input);
         task.updatedAt = new Date().toISOString();
         return structuredClone(full(task));
       },
@@ -1295,6 +1323,73 @@ export function createFakeApi({
     },
     milestones: {
       list: async (): Promise<{ items: MilestoneWithProgress[] }> => structuredClone({ items: milestones }),
+      get: async (input: Input): Promise<MilestoneWithProgress> => {
+        const found = milestones.find((item) => item.id === input.id);
+        if (!found) throw new ORPCError('NOT_FOUND', { message: 'Milestone not found' });
+        return structuredClone(found);
+      },
+      plan: async (input: Input): Promise<MilestonePlan> => structuredClone(planOf(input.id)),
+      update: async (input: Input): Promise<MilestoneWithProgress> => {
+        calls.waves.push({ op: 'milestone', ...input });
+        failIfAsked();
+        const found = milestones.find((item) => item.id === input.id);
+        if (!found) throw new ORPCError('NOT_FOUND', { message: 'Milestone not found' });
+        if (input.planUrl !== undefined) found.planUrl = input.planUrl as string | null;
+        const plan = plans.get(found.id);
+        if (plan) plan.planUrl = found.planUrl ?? null;
+        return structuredClone(found);
+      },
+    },
+    waves: {
+      create: async (input: Input): Promise<Wave> => {
+        calls.waves.push({ op: 'create', ...input });
+        failIfAsked();
+        const plan = planOf(input.milestone);
+        const wave: Wave = {
+          id: `90000000-0000-4000-8000-${String(plan.waves.length + 100).padStart(12, '0')}`,
+          milestoneId: plan.milestone.id,
+          number: plan.waves.length + 1,
+          name: String(input.name),
+          gate: { description: null, state: 'open', result: null },
+          current: false,
+          locked: plan.waves.length > 0,
+          lockedUntil: null,
+          progress: { total: 0, done: 0, canceled: 0, open: 0 },
+          canPass: true,
+          openKeys: [],
+          tasks: [],
+        };
+        plan.waves.push(wave);
+        return structuredClone(wave);
+      },
+      update: async (input: Input): Promise<Wave> => {
+        calls.waves.push({ op: 'update', ...input });
+        failIfAsked();
+        const { wave } = waveOf(input.id);
+        if (typeof input.name === 'string') wave.name = input.name;
+        if (input.gateDescription !== undefined)
+          wave.gate.description = input.gateDescription as string | null;
+        return structuredClone(wave);
+      },
+      delete: async (input: Input): Promise<void> => {
+        calls.waves.push({ op: 'delete', ...input });
+        failIfAsked();
+        const { plan, wave } = waveOf(input.id);
+        plan.waves = plan.waves.filter((item) => item !== wave);
+      },
+      putTasks: async (input: Input): Promise<MilestonePlan> => {
+        calls.waves.push({ op: 'putTasks', ...input });
+        failIfAsked();
+        const plan = planOf(input.milestone);
+        for (const key of input.keys as string[]) applyWave(find(key), { wave: input.wave });
+        return structuredClone(plan);
+      },
+      recordGate: async (input: Input): Promise<Wave> => {
+        calls.waves.push({ op: 'recordGate', ...input });
+        failIfAsked();
+        const { wave } = waveOf(input.id);
+        return structuredClone(wave);
+      },
     },
     backlog: {
       /** Only the history: the task screens read nothing else from the source status. */
@@ -1381,6 +1476,9 @@ export function createFakeApi({
     activity,
     comments,
     milestones,
+    /** M8: plans by milestone id, and the waves a task can be put in by id. */
+    plans,
+    waveRefs,
     cycles,
     mirror,
     labels,

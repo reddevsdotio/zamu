@@ -1,7 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import type { TaskListItem, TaskStatus } from '@zamu/contracts';
-import { type MouseEvent, type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+import {
+  type HTMLAttributes,
+  type MouseEvent,
+  type ReactNode,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Link } from 'react-aria-components';
 import { togglePeek, usePeek } from '~/features/peek/store';
 import { useTaskFieldKeys } from '~/features/task-fields';
@@ -66,6 +74,8 @@ export interface PlanningTaskTableProps {
   context?: Omit<GroupContext, 'statuses' | 'viewerId' | 'showEmptyGroups'>;
   isLoading?: boolean;
   renderEmptyState?: () => ReactNode;
+  /** M8: drawn at the end of the first group's header ("+ Add waves", frame 117). */
+  firstGroupEnd?: ReactNode;
 }
 
 /** The grouping a planning page uses: the page's own field falls back to status. */
@@ -87,7 +97,7 @@ export function visibleKeys(
 }
 
 /** Not a key press for the list: focus is on a control that handles Enter and Space itself. */
-function isControl(target: EventTarget | null): boolean {
+export function isControl(target: EventTarget | null): boolean {
   return (
     target instanceof Element && target.closest('a, button, input, textarea, select, [role="button"]') != null
   );
@@ -102,6 +112,7 @@ export function PlanningTaskTable({
   context,
   isLoading,
   renderEmptyState,
+  firstGroupEnd,
   ...props
 }: PlanningTaskTableProps) {
   const workspaceId = useWorkspaceId();
@@ -212,7 +223,7 @@ export function PlanningTaskTable({
   return (
     <section aria-label={props['aria-label']} className="pb-6">
       {fieldKeys.pickers}
-      {groups.map((group) => {
+      {groups.map((group, index) => {
         const isOpen = !collapsed.has(group.key);
         return (
           <section key={group.key} aria-label={`${group.label}, ${group.tasks.length}`}>
@@ -222,6 +233,7 @@ export function PlanningTaskTable({
                 count={group.tasks.length}
                 expanded={isOpen}
                 onToggle={() => toggleGroup(group.key)}
+                {...(index === 0 && firstGroupEnd ? { end: firstGroupEnd } : {})}
                 glyph={
                   group.value.field === 'status' ? (
                     <StatusGlyph status={group.value.status} decorative />
@@ -269,7 +281,7 @@ export function PlanningTaskTable({
   );
 }
 
-interface TaskRowProps {
+export interface TaskRowProps {
   task: TaskListItem;
   projectKey: string;
   display: DisplayOptions;
@@ -283,9 +295,16 @@ interface TaskRowProps {
   rowRef: (element: HTMLLIElement | null) => void;
   onClick: (event: MouseEvent<HTMLLIElement>) => void;
   onLinkPress: () => void;
+  /** M8: the lock of a task in a locked wave, before the assignee. */
+  lockMark?: ReactNode;
+  /** M8: drag props of a row in a wave. */
+  rowProps?: HTMLAttributes<HTMLLIElement>;
+  /** M8: the row is being dragged or moved with Alt+↑ / Alt+↓. */
+  isMoving?: boolean;
 }
 
-function TaskRow({
+/** One task row (margin.css .row); the wave page (M8) adds the lock and drag props. */
+export function TaskRow({
   task,
   projectKey,
   display,
@@ -299,6 +318,9 @@ function TaskRow({
   rowRef,
   onClick,
   onLinkPress,
+  lockMark,
+  rowProps,
+  isMoving = false,
 }: TaskRowProps) {
   const workspace = useWorkspaceSlug();
   const shows = (property: Parameters<typeof showsProperty>[1]) =>
@@ -308,15 +330,18 @@ function TaskRow({
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the title link and the list keys are the keyboard path
     <li
+      {...rowProps}
       ref={rowRef}
       data-key={task.key}
       data-focused={isFocused || undefined}
       data-selected={isSelected || undefined}
+      data-moving={isMoving || undefined}
       onClick={onClick}
       className={cn(
         'relative flex h-9.5 cursor-pointer items-center gap-2.5 pr-4.5 pl-4 whitespace-nowrap',
         isFocused || isSelected ? 'bg-accent-soft' : 'hover:bg-surface-hover',
         isFocused && 'shadow-[inset_2px_0_0_var(--accent)]',
+        isMoving && 'z-1 rounded-md bg-surface shadow-lift',
       )}
     >
       {display.properties.priority ? <PriorityGlyph priority={task.priority} context="compact" /> : null}
@@ -363,6 +388,7 @@ function TaskRow({
           </span>
         ) : null}
         {shows('created') ? <span className="text-xs text-fg-3 tabular-nums">{created}</span> : null}
+        {lockMark}
         {avatarSlot ? (
           shows('assignee') && task.assignee ? (
             <Avatar name={task.assignee.name} kind={task.assignee.kind} size={18} />

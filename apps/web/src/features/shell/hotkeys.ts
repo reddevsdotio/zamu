@@ -35,10 +35,14 @@ export const GO_TO_WINDOW_MS = 1_000;
 const OVERLAY_SELECTOR =
   '[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="menu"], [role="listbox"]';
 
+/** Where G records a gate (M8): a wave header or a gate box marks itself with data-gate-key. */
+const GATE_KEY_SELECTOR = '[data-gate-key]';
+
 /**
  * Two-key "go to" shortcuts: G then a letter, for example G then H for Home. The second key is taken in
  * the capture phase, so page shortcuts on the same letter (M focuses the comment composer) do not also
- * fire. Ignored while typing, inside dialogs and menus, and with modifier keys.
+ * fire. Ignored while typing, inside dialogs and menus, and with modifier keys. G does not start a
+ * chord while a wave header or a gate has focus: there it records the gate result.
  */
 export function useGoToHotkeys(targets: Readonly<Record<string, (() => void) | undefined>>): void {
   const targetsRef = useRef(targets);
@@ -65,7 +69,9 @@ export function useGoToHotkeys(targets: Readonly<Record<string, (() => void) | u
         go();
         return;
       }
-      armedAt = key === 'g' && !event.shiftKey && !event.defaultPrevented ? Date.now() : 0;
+      // M8: G on a wave header or a gate records the gate result instead (milestone page).
+      const onGate = target instanceof Element && target.closest(GATE_KEY_SELECTOR) != null;
+      armedAt = key === 'g' && !event.shiftKey && !event.defaultPrevented && !onGate ? Date.now() : 0;
     };
     document.addEventListener('keydown', onKeyDown, true);
     return () => document.removeEventListener('keydown', onKeyDown, true);

@@ -9,7 +9,7 @@ import { createRefusalText, isMirrored } from '~/features/project-header/mirror'
 import { DeletedProjectToast } from '~/features/project-settings/DeleteProjectDialog';
 import { NewProjectDialogHost } from '~/features/projects/NewProjectDialogHost';
 import { meQuery, projectsQuery } from '~/features/projects/queries';
-import { TaskFieldToast } from '~/features/task-fields';
+import { StartGuardHost, TaskFieldToast } from '~/features/task-fields';
 import { rememberProjectView } from '~/features/tasks/list-memory';
 import { QuickCreateDialog } from '~/features/tasks/QuickCreateDialog';
 import { ThemeErrorToast, useThemeChoice } from '~/features/theme/ThemeChoice';
@@ -97,6 +97,7 @@ export function AppShell({ user, children }: AppShellProps) {
               <PeekHost />
               <ArchiveKeys />
               <FinishingHost />
+              <StartGuardHost />
               <NewProjectDialogHost />
               <FromBacklogHost />
               <NewWorkspaceDialogHost />

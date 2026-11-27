@@ -27,6 +27,7 @@ import {
   type TaskListItem,
   type TaskListPage,
   type TaskStatus,
+  type TaskWave,
   type UpdateTaskInput,
 } from '@zamu/contracts';
 import type { z } from 'zod';
@@ -167,6 +168,11 @@ export interface TaskPatch {
   removeBlockers?: string[];
   /** M7: the day to look at the task again with its reason, or null to clear it. One task at a time. */
   checkAgain?: CheckAgain | null;
+  /**
+   * M8: the wave of the task's milestone (sent as its id), or null to take it out. A milestone change
+   * without a wave takes the task out of its wave, as the server does.
+   */
+  wave?: TaskWave | null;
 }
 
 /** The fields POST /tasks/bulk can change (native projects only). */
@@ -252,6 +258,10 @@ export function applyTaskPatch<T extends CachedTask>(item: T, patch: TaskPatch, 
   if (touchesLabels(patch)) next.labels = patchedLabels(item.labels ?? [], patch);
   if (patch.dueDate !== undefined) next.dueDate = patch.dueDate;
   if (patch.checkAgain !== undefined) next.checkAgain = patch.checkAgain;
+  if (patch.wave !== undefined) next.wave = patch.wave;
+  else if (patch.milestone !== undefined && (patch.milestone?.id ?? null) !== (item.milestone?.id ?? null)) {
+    next.wave = null;
+  }
   if (patch.parent !== undefined) {
     if (isFullTask(next)) next.parent = patch.parent;
     else next.parentKey = patch.parent?.key ?? null;
@@ -285,6 +295,9 @@ export function inversePatch(before: CachedTask, patch: TaskPatch): TaskPatch {
   if (patch.cycle !== undefined) inverse.cycle = before.cycle;
   if (patch.dueDate !== undefined) inverse.dueDate = before.dueDate ?? null;
   if (patch.checkAgain !== undefined) inverse.checkAgain = before.checkAgain ?? null;
+  if (patch.wave !== undefined) inverse.wave = before.wave ?? null;
+  // Undoing a milestone change puts the task back in the wave it left.
+  else if (patch.milestone !== undefined && before.wave) inverse.wave = before.wave;
   const labels = before.labels ?? [];
   const has = (name: string) => labels.some((label) => lower(label.name) === lower(name));
   if (patch.labels) inverse.labels = [...labels];
@@ -337,6 +350,7 @@ export function isNoopPatch(item: CachedTask, patch: TaskPatch): boolean {
     names(after.labels) === names(item.labels) &&
     (after.dueDate ?? null) === (item.dueDate ?? null) &&
     sameCheckAgain(after.checkAgain, item.checkAgain) &&
+    id(after.wave) === id(item.wave) &&
     parent(after) === parent(item) &&
     blockers(after) === blockers(item) &&
     // Rows don't list their blockers: a blocker change on a row always goes to the server.
@@ -411,6 +425,7 @@ export function toUpdateInput({ key, patch, ifUpdatedAt }: UpdateTaskVariables) 
     ...(patch.checkAgain !== undefined
       ? { checkAgain: patch.checkAgain ? { on: patch.checkAgain.on, reason: patch.checkAgain.reason } : null }
       : {}),
+    ...(patch.wave !== undefined ? { wave: patch.wave?.id ?? null } : {}),
     ...(ifUpdatedAt ? { ifUpdatedAt } : {}),
   } satisfies z.input<typeof UpdateTaskInput>;
 }
