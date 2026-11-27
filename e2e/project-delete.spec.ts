@@ -68,7 +68,7 @@ test('seed two projects with tasks, an agent key for both and a person key', asy
   const agentLogin = agentCli.run(['login', '--key', agentKey, '--url', baseURL, '--json']);
   expect(agentLogin.code, agentLogin.stdout + agentLogin.stderr).toBe(0);
 
-  // Settings > My keys: the default scope is the whole workspace, read and write.
+  // Settings > Your API keys: the default scope is the whole workspace, read and write.
   await page.goto(w('/settings/my-keys'));
   await settle(page);
   await page.getByRole('button', { name: 'New key' }).first().click();
