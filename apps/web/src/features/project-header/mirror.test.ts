@@ -6,12 +6,15 @@ import { removedText } from '~/features/tasks/TaskTable';
 import {
   createRefusalText,
   describeProblems,
+  detachedText,
   isDetached,
   isMirrored,
   milestoneRefusalText,
   parentKeyOf,
   repositoryShort,
+  SOURCE_TITLES,
   sourceDotState,
+  sourceTitle,
   statusRefusalText,
   triggerText,
 } from './mirror';
@@ -44,6 +47,14 @@ describe('mirror rules', () => {
       true,
     );
     expect(isDetached({ backlog: summary() })).toBe(false);
+  });
+
+  it('names a switched project "Owned by Zamu" and a finished import "Imported" (PM-33)', () => {
+    expect(sourceTitle(summary({ state: 'detached', mode: 'mirror' }))).toBe('Owned by Zamu');
+    expect(sourceTitle(summary({ state: 'detached', mode: 'import' }))).toBe('Imported');
+    expect(sourceTitle(summary({ state: 'healthy', mode: 'mirror' }))).toBe('Mirroring');
+    expect(Object.values(SOURCE_TITLES)).not.toContain('Detached');
+    expect(detachedText('Payments')).toBe('Payments is owned by Zamu now. Everything is editable here.');
   });
 
   it('maps states to the dot and triggers to words', () => {

@@ -122,8 +122,8 @@ export function ReadStep({ status, projectName, settingsHref, webhookHref, expec
   if (phase === 'detached') {
     return (
       <DetailBox tone="ok">
-        <b className="font-semibold">{projectName} is detached from Backlog.md.</b> Its tasks are editable
-        here; the history is in <TextLink href={settingsHref}>Settings → Backlog.md</TextLink>.
+        <b className="font-semibold">{projectName} is owned by Zamu.</b> Its tasks are editable here; the
+        history is in <TextLink href={settingsHref}>Settings → Backlog.md</TextLink>.
       </DetailBox>
     );
   }

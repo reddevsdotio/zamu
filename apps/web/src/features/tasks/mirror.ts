@@ -113,7 +113,7 @@ export function projectRowsForTask(
 
 /**
  * "imported this from backlog/tasks/hbr-71.md" (with the task's file), "imported this with 411 others",
- * "detached Payments from Backlog.md. Every field is editable now."
+ * "switched Payments to Zamu. Every field is editable now."
  */
 export function describeProjectEntry(
   entry: ProjectActivity,
@@ -121,7 +121,7 @@ export function describeProjectEntry(
   file?: string | null,
 ): string {
   if (entry.type === 'project.backlog_detached') {
-    return `detached ${projectName} from Backlog.md. Every field is editable now.`;
+    return `switched ${projectName} to Zamu. Every field is editable now.`;
   }
   if (file) return `imported this from ${file}`;
   const others = (entry.details.tasks ?? 1) - 1;

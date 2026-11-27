@@ -37,8 +37,15 @@ export const SOURCE_TITLES: Record<ProjectBacklogSummary['state'], string> = {
   warnings: 'Mirroring, with problems',
   failed: 'Last refresh failed',
   paused: 'Paused',
-  detached: 'Detached',
+  detached: 'Owned by Zamu',
 };
+
+/** The source popover's title, with "Imported" for an import that finished (PM-33). */
+export function sourceTitle(summary: Pick<ProjectBacklogSummary, 'state' | 'mode'>): string {
+  return summary.state === 'detached' && summary.mode === 'import'
+    ? 'Imported'
+    : SOURCE_TITLES[summary.state];
+}
 
 /** "by webhook" in "3m ago by webhook, commit a1b2c3d". */
 export function triggerText(trigger: BacklogTrigger | null | undefined): string {
@@ -149,9 +156,9 @@ export function statusRefusalText(taskKey: string, statusLabel: string): string 
   return `${taskKey} stays in ${statusLabel}: its status comes from Backlog.md.`;
 }
 
-/** Toast once a project is detached. */
+/** Toast once a project is owned by Zamu (switched, or an import that finished). */
 export function detachedText(projectName: string): string {
-  return `${projectName} is detached from Backlog.md. Everything is editable here now.`;
+  return `${projectName} is owned by Zamu now. Everything is editable here.`;
 }
 
 /** "PAY-786" for "PAY-786.1", "PAY-786.1" for "PAY-786.1.2"; null for keys without a suffix. */

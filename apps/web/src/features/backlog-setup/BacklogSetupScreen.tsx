@@ -527,8 +527,8 @@ function EditMappings({ project }: { project: ProjectWithCounts }) {
   else if (detached) {
     body = (
       <DetailBox tone="ok">
-        <b className="font-semibold">{project.name} is detached from Backlog.md.</b> Its tasks are edited here
-        now, so there is nothing to map. The history is in{' '}
+        <b className="font-semibold">{project.name} is owned by Zamu.</b> Its tasks are edited here now, so
+        there is nothing to map. The history is in{' '}
         <TextLink href={settingsHref}>Settings → Backlog.md</TextLink>.
       </DetailBox>
     );

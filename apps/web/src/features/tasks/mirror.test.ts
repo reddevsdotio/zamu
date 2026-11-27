@@ -64,7 +64,7 @@ describe('history sentences', () => {
       describeProjectEntry(entry('project.backlog_imported', 412), 'Payments', 'backlog/tasks/hbr-71.md'),
     ).toBe('imported this from backlog/tasks/hbr-71.md');
     expect(describeProjectEntry(entry('project.backlog_detached'), 'Payments')).toBe(
-      'detached Payments from Backlog.md. Every field is editable now.',
+      'switched Payments to Zamu. Every field is editable now.',
     );
   });
 });

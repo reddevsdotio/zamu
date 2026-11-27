@@ -63,10 +63,19 @@ describe('source state', () => {
         <SourceStatusDot state="warnings" />
         <SourceStatusDot state="failed" />
         <SourceStatusDot state="paused" />
-        <SourceStatusDot state="detached" label="Detached on Oct 23" />
+        <SourceStatusDot state="detached" />
+        <SourceStatusDot state="detached" label="Imported" />
       </>,
     );
-    for (const name of ['Healthy', 'Refreshing', 'Problems', 'Failed', 'Paused', 'Detached on Oct 23']) {
+    for (const name of [
+      'Healthy',
+      'Refreshing',
+      'Problems',
+      'Failed',
+      'Paused',
+      'Owned by Zamu',
+      'Imported',
+    ]) {
       expect(screen.getByRole('img', { name })).toBeInTheDocument();
     }
   });

@@ -14,7 +14,9 @@ export const SOURCE_DOT_LABELS: Record<SourceDotState, string> = {
   warnings: 'Problems',
   failed: 'Failed',
   paused: 'Paused',
-  detached: 'Detached',
+  // PM-33: the switch replaced Detach, so a source that no longer reads the files is owned by Zamu.
+  // An import that finished passes its own label ("Imported").
+  detached: 'Owned by Zamu',
 };
 
 const DOT_CLASS: Record<SourceDotState, string> = {

@@ -90,7 +90,16 @@ export function ProjectSettingsLayout({ projectKey, children }: { projectKey: st
                       item(
                         'backlog',
                         mirrored ? 'Backlog.md sync' : 'Backlog.md',
-                        backlog ? <SourceStatusDot state={sourceDot(backlog.state)} /> : undefined,
+                        backlog ? (
+                          <SourceStatusDot
+                            state={sourceDot(backlog.state)}
+                            label={
+                              backlog.state === 'detached' && backlog.mode === 'import'
+                                ? 'Imported'
+                                : undefined
+                            }
+                          />
+                        ) : undefined,
                       ),
                     ]
                   : []),

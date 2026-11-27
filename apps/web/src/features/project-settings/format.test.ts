@@ -45,7 +45,14 @@ describe('project settings format', () => {
         sourceStatus({ state: 'detached', mode: 'import', detachedAt: '2026-10-23T10:00:00Z' }),
         NOW,
       ),
-    ).toEqual({ title: 'Imported', note: 'detached Oct 23' });
+    ).toEqual({ title: 'Imported', note: 'imported Oct 23' });
+    // PM-33: a mirror switched to Zamu is owned by Zamu, never "Detached".
+    expect(
+      statusHeading(
+        sourceStatus({ state: 'detached', mode: 'mirror', detachedAt: '2026-10-23T10:00:00Z' }),
+        NOW,
+      ),
+    ).toEqual({ title: 'Owned by Zamu', note: 'since Oct 23' });
     // Server render: no times.
     expect(statusHeading(sourceStatus({ state: 'failed' }), null).note).toBe('');
   });
@@ -117,7 +124,8 @@ describe('project settings format', () => {
   it('writes the facts', () => {
     const status = sourceStatus();
     expect(modeText(status)).toBe('Mirror · follows the default branch');
-    expect(modeText({ mode: 'import', state: 'detached' })).toBe('Imported once, then detached');
+    expect(modeText({ mode: 'import', state: 'detached' })).toBe('Imported once');
+    expect(modeText({ mode: 'mirror', state: 'detached' })).toBe('Mirrored, then switched to Zamu');
     expect(readText(status, NOW)).toBe('3m ago, by webhook, commit');
     expect(nextCheckText(status, NOW)).toBe('Hourly, next in 57m');
     expect(webhookText(status.webhookLastAt, NOW)).toBe('Last notification 3m ago');
