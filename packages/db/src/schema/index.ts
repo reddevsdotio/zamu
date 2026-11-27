@@ -3,4 +3,5 @@ export * from './app';
 export * from './auth';
 export * from './backlog';
 export * from './pull-requests';
+export * from './waves';
 export * from './workspaces';

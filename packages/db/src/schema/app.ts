@@ -5,8 +5,9 @@
 // record (acceptance criteria and done items in task_item, plan and final summary on task, notes as
 // comments of kind note, and the machine and branch a CLI change came from), and M7 (the work branch,
 // when a task closed, archiving, the merged-with-open-items flag, check-again days, the archive
-// setting of a project, and the cause of activity rows a git host or a job wrote). Repository links
-// and pull requests live in ./pull-requests.
+// setting of a project, and the cause of activity rows a git host or a job wrote), and M8 (the plan
+// link of a milestone and the wave of a task). Repository links and pull requests live in
+// ./pull-requests; waves and gate results in ./waves.
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -28,6 +29,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { organization, user } from './auth';
+import { wave } from './waves';
 
 export const TASK_STATUSES = ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'canceled'] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -134,6 +136,9 @@ export type LabelSource = (typeof LABEL_SOURCES)[number];
 export const MILESTONE_STATUSES = ['planned', 'active', 'completed'] as const;
 export type MilestoneStatus = (typeof MILESTONE_STATUSES)[number];
 
+/** M8: longest milestone plan link (a URL or a file path), in characters. */
+export const PLAN_URL_MAX_LENGTH = 2_000;
+
 /** Longest cycle in days, both ends included. */
 export const MAX_CYCLE_DAYS = 56;
 
@@ -220,6 +225,11 @@ export const milestone = pgTable(
     backlogId: text('backlog_id'),
     /** M3: set while the milestone's file is gone from the default branch. */
     hiddenAt: timestamp('hidden_at', { withTimezone: true }),
+    /**
+     * M8: where the plan for the milestone lives: a web address or a file path, as typed (one line).
+     * Not a Backlog.md field, so mirrored milestones may have one too. Null when none.
+     */
+    planUrl: text('plan_url'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -229,6 +239,10 @@ export const milestone = pgTable(
     // 0.6.0: the dashboard project rows' next milestone (open milestones of a project by date).
     index('milestone_projectId_status_targetDate_idx').on(table.projectId, table.status, table.targetDate),
     check('milestone_name_check', sql`char_length(${table.name}) between 1 and 100`),
+    check(
+      'milestone_plan_url_check',
+      sql`char_length(${table.planUrl}) between 1 and ${sql.raw(String(PLAN_URL_MAX_LENGTH))} and ${table.planUrl} !~ '[\\r\\n]'`,
+    ),
   ],
 );
 
@@ -348,6 +362,11 @@ export const task = pgTable(
     /** M7: the day to look at the task again, with its reason. Both set or both null. */
     checkAgainOn: date('check_again_on', { mode: 'string' }),
     checkAgainReason: text('check_again_reason'),
+    /**
+     * M8: the wave of the task's milestone it belongs to; null when in no wave. Core keeps it inside
+     * the task's milestone (leaving the milestone clears it). Removing the wave clears it.
+     */
+    waveId: uuid('wave_id').references((): AnyPgColumn => wave.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -389,6 +408,8 @@ export const task = pgTable(
       .where(sql`${table.workBranch} is not null`),
     // M7: the Archived filter.
     index('task_projectId_archived_idx').on(table.projectId).where(sql`${table.archivedAt} is not null`),
+    // M8: the tasks of a wave.
+    index('task_waveId_idx').on(table.waveId).where(sql`${table.waveId} is not null`),
     check(
       'task_work_branch_check',
       sql`char_length(${table.workBranch}) between 1 and ${sql.raw(String(WORK_BRANCH_MAX_LENGTH))}`,

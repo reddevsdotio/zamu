@@ -1,0 +1,951 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "7ae57eb7-d409-4804-a04e-c7672168e756",
+  "prevIds": ["7a2956b5-4d77-418d-9e34-0a98de87260d"],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "public", "gate_result"],
+      "writes": [
+        "s|tbl|public.gate_result",
+        "n|tbl|public.gate_result",
+        "e|tbl|public.gate_result",
+        "n|rel|public.gate_result",
+        "n|type|public.gate_result",
+        "n|rel|public.gate_result_pkey"
+      ],
+      "reads": ["n|sch|public"]
+    },
+    {
+      "statementType": "create_table",
+      "statementTarget": ["table", "public", "wave"],
+      "writes": [
+        "s|tbl|public.wave",
+        "n|tbl|public.wave",
+        "e|tbl|public.wave",
+        "n|rel|public.wave",
+        "n|type|public.wave",
+        "n|rel|public.wave_pkey"
+      ],
+      "reads": ["n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "milestone", "plan_url"],
+      "writes": [
+        "s|col|public.milestone.plan_url",
+        "n|col|public.milestone.plan_url",
+        "e|col|public.milestone.plan_url"
+      ],
+      "reads": ["n|tbl|public.milestone", "n|sch|public"]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": ["column", "public", "task", "wave_id"],
+      "writes": ["s|col|public.task.wave_id", "n|col|public.task.wave_id", "e|col|public.task.wave_id"],
+      "reads": ["n|tbl|public.task", "n|sch|public"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "task", "task_waveId_idx"],
+      "writes": [
+        "s|idx|public.task_waveId_idx",
+        "n|idx|public.task_waveId_idx",
+        "e|idx|public.task_waveId_idx",
+        "n|rel|public.task_waveId_idx"
+      ],
+      "reads": ["n|tbl|public.task", "n|sch|public", "n|col|public.task.wave_id"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "gate_result", "gate_result_waveId_createdAt_idx"],
+      "writes": [
+        "s|idx|public.gate_result_waveId_createdAt_idx",
+        "n|idx|public.gate_result_waveId_createdAt_idx",
+        "e|idx|public.gate_result_waveId_createdAt_idx",
+        "n|rel|public.gate_result_waveId_createdAt_idx"
+      ],
+      "reads": [
+        "n|tbl|public.gate_result",
+        "n|sch|public",
+        "n|col|public.gate_result.wave_id",
+        "n|col|public.gate_result.created_at"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "wave", "wave_milestoneId_name_unique"],
+      "writes": [
+        "s|idx|public.wave_milestoneId_name_unique",
+        "n|idx|public.wave_milestoneId_name_unique",
+        "e|idx|public.wave_milestoneId_name_unique",
+        "n|rel|public.wave_milestoneId_name_unique"
+      ],
+      "reads": ["n|tbl|public.wave", "n|sch|public", "n|col|public.wave.milestone_id"]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": ["index", "public", "wave", "wave_milestoneId_position_idx"],
+      "writes": [
+        "s|idx|public.wave_milestoneId_position_idx",
+        "n|idx|public.wave_milestoneId_position_idx",
+        "e|idx|public.wave_milestoneId_position_idx",
+        "n|rel|public.wave_milestoneId_position_idx"
+      ],
+      "reads": [
+        "n|tbl|public.wave",
+        "n|sch|public",
+        "n|col|public.wave.milestone_id",
+        "n|col|public.wave.position"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "task"],
+      "writes": [
+        "s|fk|public.task.task_wave_id_wave_id_fkey",
+        "n|fk|public.task.task_wave_id_wave_id_fkey",
+        "e|fk|public.task.task_wave_id_wave_id_fkey",
+        "n|con|public.task.task_wave_id_wave_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.task",
+        "n|sch|public",
+        "n|tbl|public.wave",
+        "n|sch|public",
+        "n|col|public.task.wave_id",
+        "n|col|public.wave.id",
+        "e|uniqueness|public.wave.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "gate_result"],
+      "writes": [
+        "s|fk|public.gate_result.gate_result_workspace_id_organization_id_fkey",
+        "n|fk|public.gate_result.gate_result_workspace_id_organization_id_fkey",
+        "e|fk|public.gate_result.gate_result_workspace_id_organization_id_fkey",
+        "n|con|public.gate_result.gate_result_workspace_id_organization_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.gate_result",
+        "n|sch|public",
+        "n|tbl|public.organization",
+        "n|sch|public",
+        "n|col|public.gate_result.workspace_id",
+        "n|col|public.organization.id",
+        "e|uniqueness|public.organization.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "gate_result"],
+      "writes": [
+        "s|fk|public.gate_result.gate_result_wave_id_wave_id_fkey",
+        "n|fk|public.gate_result.gate_result_wave_id_wave_id_fkey",
+        "e|fk|public.gate_result.gate_result_wave_id_wave_id_fkey",
+        "n|con|public.gate_result.gate_result_wave_id_wave_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.gate_result",
+        "n|sch|public",
+        "n|tbl|public.wave",
+        "n|sch|public",
+        "n|col|public.gate_result.wave_id",
+        "n|col|public.wave.id",
+        "e|uniqueness|public.wave.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "gate_result"],
+      "writes": [
+        "s|fk|public.gate_result.gate_result_actor_id_user_id_fkey",
+        "n|fk|public.gate_result.gate_result_actor_id_user_id_fkey",
+        "e|fk|public.gate_result.gate_result_actor_id_user_id_fkey",
+        "n|con|public.gate_result.gate_result_actor_id_user_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.gate_result",
+        "n|sch|public",
+        "n|tbl|public.user",
+        "n|sch|public",
+        "n|col|public.gate_result.actor_id",
+        "n|col|public.user.id",
+        "e|uniqueness|public.user.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "gate_result"],
+      "writes": [
+        "s|fk|public.gate_result.gate_result_on_behalf_of_id_user_id_fkey",
+        "n|fk|public.gate_result.gate_result_on_behalf_of_id_user_id_fkey",
+        "e|fk|public.gate_result.gate_result_on_behalf_of_id_user_id_fkey",
+        "n|con|public.gate_result.gate_result_on_behalf_of_id_user_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.gate_result",
+        "n|sch|public",
+        "n|tbl|public.user",
+        "n|sch|public",
+        "n|col|public.gate_result.on_behalf_of_id",
+        "n|col|public.user.id",
+        "e|uniqueness|public.user.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "wave"],
+      "writes": [
+        "s|fk|public.wave.wave_workspace_id_organization_id_fkey",
+        "n|fk|public.wave.wave_workspace_id_organization_id_fkey",
+        "e|fk|public.wave.wave_workspace_id_organization_id_fkey",
+        "n|con|public.wave.wave_workspace_id_organization_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.wave",
+        "n|sch|public",
+        "n|tbl|public.organization",
+        "n|sch|public",
+        "n|col|public.wave.workspace_id",
+        "n|col|public.organization.id",
+        "e|uniqueness|public.organization.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "wave"],
+      "writes": [
+        "s|fk|public.wave.wave_milestone_id_milestone_id_fkey",
+        "n|fk|public.wave.wave_milestone_id_milestone_id_fkey",
+        "e|fk|public.wave.wave_milestone_id_milestone_id_fkey",
+        "n|con|public.wave.wave_milestone_id_milestone_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.wave",
+        "n|sch|public",
+        "n|tbl|public.milestone",
+        "n|sch|public",
+        "n|col|public.wave.milestone_id",
+        "n|col|public.milestone.id",
+        "e|uniqueness|public.milestone.id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": ["table", "public", "wave"],
+      "writes": [
+        "s|fk|public.wave.wave_created_by_id_user_id_fkey",
+        "n|fk|public.wave.wave_created_by_id_user_id_fkey",
+        "e|fk|public.wave.wave_created_by_id_user_id_fkey",
+        "n|con|public.wave.wave_created_by_id_user_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.wave",
+        "n|sch|public",
+        "n|tbl|public.user",
+        "n|sch|public",
+        "n|col|public.wave.created_by_id",
+        "n|col|public.user.id",
+        "e|uniqueness|public.user.id"
+      ]
+    },
+    {
+      "statementType": "add_check",
+      "statementTarget": ["table", "public", "milestone"],
+      "writes": [
+        "s|ck|public.milestone.milestone_plan_url_check",
+        "n|ck|public.milestone.milestone_plan_url_check",
+        "e|ck|public.milestone.milestone_plan_url_check",
+        "n|con|public.milestone.milestone_plan_url_check"
+      ],
+      "reads": ["n|tbl|public.milestone", "n|sch|public", "n|col|public.milestone.plan_url"]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "gate_result",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "wave",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "milestone",
+        "name": "plan_url",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "wave_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "uuidv7()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "workspace_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "wave_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "state",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "note",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "actor_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "on_behalf_of_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "machine",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "branch",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "uuidv7()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "workspace_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "milestone_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "position",
+        "type": "integer",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "name",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "gate_description",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "created_by_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "task_waveId_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "wave_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": "\"wave_id\" is not null",
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "gate_result_waveId_createdAt_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "wave_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "created_at",
+            "isExpression": false,
+            "asc": false,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "wave_milestoneId_name_unique",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "milestone_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "lower(\"name\")",
+            "isExpression": true,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": true,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "wave_milestoneId_position_idx",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "milestone_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          },
+          {
+            "value": "position",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "task",
+        "name": "task_wave_id_wave_id_fkey",
+        "nameExplicit": false,
+        "columns": ["wave_id"],
+        "schemaTo": "public",
+        "tableTo": "wave",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "SET NULL",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "gate_result_workspace_id_organization_id_fkey",
+        "nameExplicit": false,
+        "columns": ["workspace_id"],
+        "schemaTo": "public",
+        "tableTo": "organization",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "gate_result_wave_id_wave_id_fkey",
+        "nameExplicit": false,
+        "columns": ["wave_id"],
+        "schemaTo": "public",
+        "tableTo": "wave",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "gate_result_actor_id_user_id_fkey",
+        "nameExplicit": false,
+        "columns": ["actor_id"],
+        "schemaTo": "public",
+        "tableTo": "user",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "RESTRICT",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "gate_result_on_behalf_of_id_user_id_fkey",
+        "nameExplicit": false,
+        "columns": ["on_behalf_of_id"],
+        "schemaTo": "public",
+        "tableTo": "user",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "RESTRICT",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "wave_workspace_id_organization_id_fkey",
+        "nameExplicit": false,
+        "columns": ["workspace_id"],
+        "schemaTo": "public",
+        "tableTo": "organization",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "wave_milestone_id_milestone_id_fkey",
+        "nameExplicit": false,
+        "columns": ["milestone_id"],
+        "schemaTo": "public",
+        "tableTo": "milestone",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "wave_created_by_id_user_id_fkey",
+        "nameExplicit": false,
+        "columns": ["created_by_id"],
+        "schemaTo": "public",
+        "tableTo": "user",
+        "columnsTo": ["id"],
+        "onUpdate": "NO ACTION",
+        "onDelete": "RESTRICT",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "gate_result_pkey",
+        "columns": ["id"],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "wave_pkey",
+        "columns": ["id"],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "milestone",
+        "name": "milestone_plan_url_check",
+        "value": "char_length(\"plan_url\") between 1 and 2000 and \"plan_url\" !~ '[\\r\\n]'",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "gate_result_state_check",
+        "value": "\"state\" in ('passed', 'failed')",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "gate_result",
+        "name": "gate_result_note_check",
+        "value": "char_length(\"note\") between 1 and 10000",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "wave_position_check",
+        "value": "\"position\" >= 1",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "wave_name_check",
+        "value": "char_length(\"name\") between 1 and 100 and \"name\" !~ '[\\r\\n]'",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "wave",
+        "name": "wave_gate_description_check",
+        "value": "char_length(\"gate_description\") <= 4000",
+        "entityType": "checks"
+      }
+    }
+  ]
+}
