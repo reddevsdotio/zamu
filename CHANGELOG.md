@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- An official Helm chart for Kubernetes: `helm repo add reddevs https://charts.reddevs.io`, then
+  `helm install zamu reddevs/zamu`. It runs migrations as a hook Job, can generate and keep the secrets, and
+  can run a Postgres pod for trials. Each release updates it. See
+  [docs/self-hosting.md](docs/self-hosting.md#kubernetes).
+
 ## 0.12.0
 
 Waves and gates on milestones. A milestone links to its plan and runs its tasks in ordered waves, each ending

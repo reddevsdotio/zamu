@@ -13,13 +13,15 @@ The other sections are optional:
 | [Ports](#ports)                                                  | You put the server behind HTTPS or a reverse proxy.                          |
 | [Single sign-on (OIDC)](#single-sign-on-oidc)                    | People should sign in through an OpenID Connect provider.                    |
 | [Git connections and Backlog.md](#git-connections-and-backlogmd) | Projects link pull requests or read Backlog.md task files from a repository. |
+| [Kubernetes](#kubernetes)                                        | You run Zamu on a Kubernetes cluster with the Helm chart.                    |
 | [Container user](#container-user)                                | You mount files into the containers, or run the image on Kubernetes.         |
 | [The CLI in the image](#the-cli-in-the-image)                    | You want to check an API key from the server.                                |
 
 ## Requirements
 
 - Docker Engine with the Compose plugin. `docker compose version` prints v2 or later.
-- Git, to get the source. There is no published image yet, so compose builds the image from the checkout.
+- Git, to get the source. Compose builds the image from the checkout. Each release is also published as
+  `ghcr.io/reddevsdotio/zamu`, which the [Kubernetes](#kubernetes) chart runs.
 - About 1.5 GB of disk for the image and its build cache, plus room for your data.
 - A free TCP port for the web app. That is 3000 unless you change `PORT`.
 
@@ -233,7 +235,8 @@ The upgrade adds three indexes that the dashboard's agent and Everyone queries r
 
 Run the migration before the new `web` serves traffic. Otherwise the dashboard is slow on large workspaces
 until the migration runs. Compose does this already, because `migrate` finishes before `web` and `worker`
-start. On Kubernetes, run the migrate job before you roll out `web` and `worker`.
+start. On Kubernetes, run the migrate job before you roll out `web` and `worker`. The Helm chart does this
+for you, see [Kubernetes](#kubernetes).
 
 ### From 0.6 to 0.7 (M5)
 
@@ -649,6 +652,130 @@ Without a working webhook, the server still reads the git host every hour:
 | ------------- | ----------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------- |
 | Mirrors       | At 15 minutes past the hour, the server reads the default branch. | Refresh now                        | The webhook dialog in Settings > Backlog.md shows when the last notification arrived. |
 | Pull requests | At 45 minutes past the hour, the server checks them.              | Check now in Settings > Repository | Settings > Repository shows how the last delivery went.                               |
+
+## Kubernetes
+
+The `zamu` Helm chart runs the image on a cluster: a Deployment for `web`, one for `worker`, and a Job for
+`migrate`. The [chart's README](https://github.com/reddevsdotio/helm-charts/tree/main/charts/zamu) lists
+every value. Each chart version runs the Zamu release in its `appVersion` unless you set `image.tag`.
+
+Add the chart repository:
+
+```sh
+helm repo add reddevs https://charts.reddevs.io
+helm repo update
+```
+
+### Try it out
+
+With `postgres.enabled`, the chart also runs a Postgres pod, so you need nothing else:
+
+```sh
+helm install zamu reddevs/zamu \
+  --namespace zamu --create-namespace \
+  --set publicUrl=https://zamu.example.com \
+  --set postgres.enabled=true
+```
+
+`publicUrl` is required. It is the URL people open Zamu on, and sign-in fails on any other address. Point an
+ingress or a route at it as shown below, or install with `--set publicUrl=http://localhost:3000` and run
+`kubectl --namespace zamu port-forward svc/zamu 3000:3000`. Then create the admin account as in
+[First run](#first-run).
+
+The built-in Postgres is for trials: one pod, one volume and no backups. Use your own database for data you
+want to keep.
+
+### Production
+
+Run Postgres 18 yourself, or use a managed one, and put the secrets in a Secret you manage. The chart reads
+these keys from it:
+
+| Key                  | Required | Meaning                                                                          |
+| -------------------- | -------- | -------------------------------------------------------------------------------- |
+| `DATABASE_URL`       | yes      | `postgres://user:password@host:5432/zamu?sslmode=require`                        |
+| `BETTER_AUTH_SECRET` | yes      | Signs sessions. 32 characters or more.                                           |
+| `APP_ENCRYPTION_KEY` | no       | Encrypts git tokens. Without it, git connections and Backlog.md mirrors are off. |
+| `OIDC_CLIENT_SECRET` | with SSO | Client secret from the OpenID Connect provider.                                  |
+
+```sh
+kubectl create namespace zamu
+kubectl --namespace zamu create secret generic zamu-secrets \
+  --from-literal=DATABASE_URL='postgres://zamu:PASSWORD@db.example.com:5432/zamu?sslmode=require' \
+  --from-literal=BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
+  --from-literal=APP_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+```
+
+Write a values file. This one uses an Ingress with a certificate from cert-manager:
+
+```yaml
+# values.yaml
+publicUrl: https://zamu.example.com
+existingSecret:
+  name: zamu-secrets
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  hosts:
+    - host: zamu.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: zamu-tls
+      hosts:
+        - zamu.example.com
+```
+
+With the Gateway API, replace `ingress` with an HTTPRoute on your gateway:
+
+```yaml
+gatewayApi:
+  enabled: true
+  httpRoute:
+    hostnames:
+      - zamu.example.com
+    parentRefs:
+      - name: my-gateway
+        namespace: gateway-system
+        sectionName: https
+```
+
+Install it:
+
+```sh
+helm install zamu reddevs/zamu --namespace zamu --values values.yaml
+```
+
+The variables in [Configure](#configure) and [Single sign-on (OIDC)](#single-sign-on-oidc) have values of
+their own, such as `timeZone`, `workspaceCreation` and `oidc.issuer`. The chart's README maps each value to
+its variable.
+
+### Migrations and secrets
+
+- Migrations run as a Helm hook Job before every install and upgrade. With the built-in Postgres, the first
+  one runs after the install instead, once the database pod exists. If the Job fails, Helm stops and `web`
+  and `worker` keep running the version they had. `kubectl --namespace zamu get jobs` lists the Job,
+  and its logs say why.
+- Without `existingSecret`, the chart keeps a Secret of its own. If you do not set `secrets.betterAuthSecret`
+  and `secrets.encryptionKey`, it generates `BETTER_AUTH_SECRET` and `APP_ENCRYPTION_KEY` on the first
+  install and keeps them across upgrades. `helm uninstall` leaves that Secret in place, so a new install in
+  the same namespace finds the same keys.
+- The chart generates them only when `helm install` or `helm upgrade` talks to the cluster. Under
+  `helm template` or Argo CD, set them yourself or use `existingSecret`.
+- Back up `APP_ENCRYPTION_KEY` with the database, whether you or the chart made it. Without it, a restored
+  database cannot read its git tokens. See [APP_ENCRYPTION_KEY](#app_encryption_key).
+
+### Upgrade with Helm
+
+Read the notes under [Upgrades](#upgrades) for the release you move to, back up the database, then:
+
+```sh
+helm repo update
+helm search repo reddevs/zamu --versions    # chart versions and the Zamu release each runs
+helm upgrade zamu reddevs/zamu --namespace zamu --values values.yaml
+```
 
 ## Container user
 

@@ -49,6 +49,7 @@ An agent is a member of the workspace with its own scoped API key, and every cha
 ### For whoever runs it
 
 - One Docker image and a compose file. Postgres is the only stateful service.
+- A Helm chart for Kubernetes: `helm install zamu reddevs/zamu` from https://charts.reddevs.io.
 - Several workspaces on one server, each with its own projects, members, agents and keys.
 - Sign-in with email and password or OpenID Connect, and invitations by link.
 
@@ -105,7 +106,7 @@ You need Docker with the Compose plugin.
    Then set `ZAMU_URL` and `ZAMU_KEY` as described in [docs/agents.md](docs/agents.md).
 
 For a real deployment, read [docs/self-hosting.md](docs/self-hosting.md) first. It covers configuration,
-backups and upgrades.
+backups and upgrades, and [installing on Kubernetes](docs/self-hosting.md#kubernetes) with the Helm chart.
 
 ## Docs
 
@@ -118,7 +119,7 @@ backups and upgrades.
 | [REST API](docs/api.md)                | Authentication, workspaces, errors and the routes                    |
 | [Repositories](docs/repositories.md)   | Linking a repository, webhooks, how pull requests move tasks         |
 | [Backlog.md](docs/backlog-md.md)       | Mirrors and imports, mappings, the switch to Zamu, the export        |
-| [Self-hosting](docs/self-hosting.md)   | Configuration, first run, ports, backups and upgrades                |
+| [Self-hosting](docs/self-hosting.md)   | Configuration, first run, Kubernetes, ports, backups and upgrades    |
 | [Architecture](docs/architecture.md)   | How the pieces fit together                                          |
 
 ## Contributing

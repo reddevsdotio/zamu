@@ -3,12 +3,16 @@
 # - publish-cli publishes the CLI to npm as @reddevs/zamu with trusted publishing (OIDC, no token), unless that
 #   version is already on npm: the first publish of the package is made by hand, and a re-run skips it;
 # - update-tap writes Formula/zamu.rb in reddevsdotio/homebrew-tap for the version npm has, with the
-#   HOMEBREW_TAP_TOKEN secret (a token that can push to that repository).
+#   HOMEBREW_TAP_TOKEN secret (a token that can push to that repository);
+# - publish-chart opens a pull request in reddevsdotio/helm-charts that points charts/zamu at the image just
+#   pushed, with the HELM_CHARTS_TOKEN secret, and turns on auto-merge: the chart is published once its checks
+#   pass. It never moves the chart back to an older version.
 # Deploying an instance is up to whoever runs it; this workflow deploys nothing.
 #
 # workflow_dispatch builds and pushes an existing tag by hand, for example the first push that creates the ghcr
 # package. It moves :latest only for an X.Y.Z tag. For an X.Y.Z tag it also runs publish-cli and update-tap,
-# which is how a failed tap update is retried: npm already has the version, so only the tap is written.
+# which is how a failed tap update is retried: npm already has the version, so only the tap is written. A re-run
+# of publish-chart reuses the branch and pull request of the first run.
 name: Release
 
 on:
@@ -34,6 +38,7 @@ env:
   # npm with trusted publishing (11.5.1 or later) that runs on Node 24.
   NPM_VERSION: 11.21.3
   TAP_REPOSITORY: reddevsdotio/homebrew-tap
+  CHARTS_REPOSITORY: reddevsdotio/helm-charts
 
 jobs:
   # Resolves the tag (the pushed one, or the dispatch input) and checks its format before anything runs.
@@ -295,5 +300,104 @@ jobs:
           tap=$(curl -fsSL "https://raw.githubusercontent.com/${TAP_REPOSITORY}/HEAD/Formula/zamu.rb" 2>/dev/null \
             | sed -nE 's|^  url ".*-([0-9]+\.[0-9]+\.[0-9]+)\.tgz"$|\1|p' || true)
           message="npm has ${PACKAGE}@${TAG}, but the tap was not updated: it has ${tap:+zamu }${tap:-no formula}. Fix the cause, then run this workflow by hand (workflow_dispatch) with the tag ${TAG}: publish-cli skips and only the tap is written"
+          echo "::error::${message}"
+          echo "${message}." >> "$GITHUB_STEP_SUMMARY"
+
+  # Opens a pull request in the helm-charts repository that points charts/zamu at the image release-image just
+  # pushed (apps/cli/scripts/helm-chart.ts sets appVersion and bumps the chart's patch version), and turns on
+  # auto-merge: that repository's checks lint and install the chart, then its release publishes it. A tag the
+  # chart already runs, or one older than it, changes nothing. A re-run reuses the branch and pull request.
+  publish-chart:
+    needs: [meta, release-image]
+    if: needs.meta.outputs.latest == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Two releases at once would bump the chart from the same version; the second waits for the first.
+    concurrency:
+      group: publish-chart
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.meta.outputs.tag }}
+      BRANCH: chore/zamu-${{ needs.meta.outputs.tag }}
+    steps:
+      - name: Check the charts token
+        env:
+          CHARTS_TOKEN: ${{ secrets.HELM_CHARTS_TOKEN }}
+        run: |
+          if [[ -z "$CHARTS_TOKEN" ]]; then
+            echo "::error::the HELM_CHARTS_TOKEN secret is not set; it needs Contents and Pull requests read and write on ${CHARTS_REPOSITORY}"
+            exit 1
+          fi
+      # Only the scripts. Cone mode keeps the files at the root, .nvmrc among them.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.meta.outputs.tag }}
+          path: zamu
+          persist-credentials: false
+          sparse-checkout: |
+            apps/cli/scripts
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: zamu/.nvmrc
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.CHARTS_REPOSITORY }}
+          token: ${{ secrets.HELM_CHARTS_TOKEN }}
+          path: charts
+      - name: Update the chart and open the pull request
+        working-directory: charts
+        env:
+          GH_TOKEN: ${{ secrets.HELM_CHARTS_TOKEN }}
+        run: |
+          base=$(git symbolic-ref --short HEAD)
+          files=(charts/zamu/Chart.yaml README.md)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          node ../zamu/apps/cli/scripts/helm-chart.ts --version "$TAG" --dir .
+          if [[ -z "$(git status --porcelain -- "${files[@]}")" ]]; then
+            echo "charts/zamu on ${base} already runs Zamu ${TAG} or a newer version; no pull request." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          chart=$(sed -nE 's/^version:[[:space:]]*["'\'']?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' charts/zamu/Chart.yaml)
+          title="feat(zamu): ${chart} — Zamu ${TAG}"
+          git switch --quiet -c "$BRANCH"
+          git add -- "${files[@]}"
+          git commit --quiet -m "$title"
+
+          # A re-run finds the branch of the first run. It is kept when it holds the same change, and never
+          # overwritten when it holds another one.
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            git fetch --quiet --depth=1 origin "$BRANCH"
+            if ! git diff --quiet FETCH_HEAD HEAD -- "${files[@]}"; then
+              echo "::error::${CHARTS_REPOSITORY} already has a branch ${BRANCH} with other changes to charts/zamu. Merge or close its pull request and delete the branch, then re-run this job"
+              exit 1
+            fi
+            echo "${BRANCH} already holds this change; reusing it"
+          else
+            git push --quiet origin "HEAD:refs/heads/${BRANCH}"
+          fi
+
+          url=$(gh pr list --repo "$CHARTS_REPOSITORY" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')
+          if [[ -z "$url" ]]; then
+            body="Points charts/zamu at Zamu ${TAG} (the image ${IMAGE}:${TAG}) and bumps the chart to ${chart}.
+
+          Release notes: https://github.com/reddevsdotio/zamu/blob/${TAG}/CHANGELOG.md
+
+          Opened by the Zamu release workflow. It merges once the checks pass."
+            url=$(gh pr create --repo "$CHARTS_REPOSITORY" --base "$base" --head "$BRANCH" --title "$title" --body "$body")
+          else
+            echo "reusing the open pull request ${url}"
+          fi
+          gh pr merge "$url" --repo "$CHARTS_REPOSITORY" --auto --squash
+          echo "charts/zamu ${chart} for Zamu ${TAG}: ${url} (auto-merge on)." >> "$GITHUB_STEP_SUMMARY"
+      - name: Say what the chart has
+        if: failure()
+        run: |
+          chart=$(curl -fsSL "https://raw.githubusercontent.com/${CHARTS_REPOSITORY}/HEAD/charts/zamu/Chart.yaml" 2>/dev/null \
+            | sed -nE 's/^appVersion:[[:space:]]*["'\'']?([^"'\'' #]+).*/\1/p' || true)
+          message="the image ${IMAGE}:${TAG} is pushed, but the chart pull request was not opened or not set to auto-merge; charts/zamu on the default branch runs ${chart:+Zamu }${chart:-an unknown version}. Fix the cause, then re-run this job"
           echo "::error::${message}"
           echo "${message}." >> "$GITHUB_STEP_SUMMARY"
